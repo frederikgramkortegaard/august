@@ -2,8 +2,8 @@ package store
 
 import (
 	"errors"
-	"gocuria/blockchain"
 	"fmt"
+	"gocuria/blockchain"
 )
 
 type MemoryChainStore struct {
@@ -38,10 +38,14 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 	}
 
 	chain, err := m.GetChain()
-	if err != nil {return err}
-	if chain == nil {return errors.New("chain is nil")}
+	if err != nil {
+		return err
+	}
+	if chain == nil {
+		return errors.New("chain is nil")
+	}
 	chain.Blocks = append(chain.Blocks, block)
-		
+
 	return nil
 }
 
@@ -99,5 +103,27 @@ func (m *MemoryChainStore) GetAccountStates() (map[blockchain.PublicKey]*blockch
 	}
 
 	return chain.AccountStates, nil
+}
+
+func (m *MemoryChainStore) GetBlockByHash(hash [32]byte) (*blockchain.Block, error) {
+
+	chain, err := m.GetChain()
+	if err != nil {
+		return nil, err
+	}
+
+	if chain == nil {
+		return nil, errors.New("chain is nil")
+	}
+
+	for _, block := range chain.Blocks {
+		if blockchain.HashBlockHeader(&block.Header) == hash {
+			return block, nil
+		}
+
+	}
+
+	fmt.Println("could not find block with hash %x\n", hash)
+	return nil, nil
 
 }

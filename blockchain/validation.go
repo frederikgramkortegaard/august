@@ -27,13 +27,13 @@ func validateBlockStructure(block *Block, prevBlock *Block) bool {
 			return false
 		}
 	} else {
-	// 1. Previous Hash Linking
-	prevHash := HashBlockHeader(&prevBlock.Header)
-	if block.Header.PreviousHash != prevHash {
-		fmt.Println("Failed Previous Hash Linking")
-		return false
+		// 1. Previous Hash Linking
+		prevHash := HashBlockHeader(&prevBlock.Header)
+		if block.Header.PreviousHash != prevHash {
+			fmt.Println("Failed Previous Hash Linking")
+			return false
+		}
 	}
-}
 
 	// 2. Proof Of Work
 	hash := HashBlockHeader(&block.Header)
@@ -137,7 +137,6 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 
 // ValidateAndApplyBlock validates block structure, then validates and applies each transaction
 func ValidateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
-
 
 	// First validate block structure (PoW, hashes, etc.)
 	if !validateBlockStructure(block, prevBlock) {
