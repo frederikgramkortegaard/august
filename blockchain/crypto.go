@@ -1,11 +1,10 @@
-package hashing
+package blockchain
 
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
 
 	"encoding/binary"
-	"gocuria/src/models"
 )
 
 func uint64ToBytes(n uint64) []byte {
@@ -15,18 +14,18 @@ func uint64ToBytes(n uint64) []byte {
 }
 
 // deterministic hash for transaction
-func HashTransaction(tsx *models.Transaction) [32]byte {
+func HashTransaction(tsx *Transaction) Hash32 {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
 	h.Write(uint64ToBytes(tsx.Amount))
 	h.Write(uint64ToBytes(tsx.Nonce))
-	var hash [32]byte
+	var hash Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
-func GetSigningBytesFromTransaction(tsx *models.Transaction) []byte {
+func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
@@ -35,7 +34,7 @@ func GetSigningBytesFromTransaction(tsx *models.Transaction) []byte {
 	return h.Sum(nil)
 }
 
-func SignTransaction(tsx *models.Transaction, privatekey []byte) []byte {
+func SignTransaction(tsx *Transaction, privatekey []byte) []byte {
 
 	signingbytes := GetSigningBytesFromTransaction(tsx)
 	sig := ed25519.Sign(privatekey, signingbytes)
@@ -45,22 +44,22 @@ func SignTransaction(tsx *models.Transaction, privatekey []byte) []byte {
 }
 
 // deterministic hash for block headers
-func HashBlockHeader(header *models.BlockHeader) [32]byte {
+func HashBlockHeader(header *BlockHeader) Hash32 {
 	h := sha256.New()
 	h.Write(uint64ToBytes(header.Version))
 	h.Write(header.PreviousHash[:])
 	h.Write(uint64ToBytes(header.Timestamp))
 	h.Write(header.MerkleRoot[:])
 	h.Write(uint64ToBytes(header.Nonce))
-	var hash [32]byte
+	var hash Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
 // MerkleTransactions creates a merkle root from a list of transactions
-func MerkleTransactions(transactions []models.Transaction) [32]byte {
+func MerkleTransactions(transactions []Transaction) Hash32 {
 	if len(transactions) == 0 {
-		return [32]byte{}
+		return Hash32{}
 	}
 
 	// Hash all transactions
@@ -88,8 +87,8 @@ func MerkleTransactions(transactions []models.Transaction) [32]byte {
 		hashes = newLevel
 	}
 
-	// Convert to [32]byte
-	var root [32]byte
+	// Convert to Hash32
+	var root Hash32
 	copy(root[:], hashes[0])
 	return root
 }
