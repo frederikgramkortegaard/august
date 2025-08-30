@@ -1,11 +1,10 @@
-package hashing
+package blockchain
 
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
 
 	"encoding/binary"
-	"gocuria/src/models"
 )
 
 func uint64ToBytes(n uint64) []byte {
@@ -15,7 +14,7 @@ func uint64ToBytes(n uint64) []byte {
 }
 
 // deterministic hash for transaction
-func HashTransaction(tsx *models.Transaction) [32]byte {
+func HashTransaction(tsx *Transaction) [32]byte {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
@@ -26,7 +25,7 @@ func HashTransaction(tsx *models.Transaction) [32]byte {
 	return hash
 }
 
-func GetSigningBytesFromTransaction(tsx *models.Transaction) []byte {
+func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
@@ -35,7 +34,7 @@ func GetSigningBytesFromTransaction(tsx *models.Transaction) []byte {
 	return h.Sum(nil)
 }
 
-func SignTransaction(tsx *models.Transaction, privatekey []byte) []byte {
+func SignTransaction(tsx *Transaction, privatekey []byte) []byte {
 
 	signingbytes := GetSigningBytesFromTransaction(tsx)
 	sig := ed25519.Sign(privatekey, signingbytes)
@@ -45,7 +44,7 @@ func SignTransaction(tsx *models.Transaction, privatekey []byte) []byte {
 }
 
 // deterministic hash for block headers
-func HashBlockHeader(header *models.BlockHeader) [32]byte {
+func HashBlockHeader(header *BlockHeader) [32]byte {
 	h := sha256.New()
 	h.Write(uint64ToBytes(header.Version))
 	h.Write(header.PreviousHash[:])
@@ -58,7 +57,7 @@ func HashBlockHeader(header *models.BlockHeader) [32]byte {
 }
 
 // MerkleTransactions creates a merkle root from a list of transactions
-func MerkleTransactions(transactions []models.Transaction) [32]byte {
+func MerkleTransactions(transactions []Transaction) [32]byte {
 	if len(transactions) == 0 {
 		return [32]byte{}
 	}

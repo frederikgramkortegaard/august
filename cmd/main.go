@@ -1,8 +1,8 @@
 package main
 
 import (
-	"gocuria/src/blockchain"
-	"gocuria/src/testing"
+	"gocuria/blockchain"
+	"gocuria/testing"
 )
 
 func main() {

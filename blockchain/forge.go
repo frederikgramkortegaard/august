@@ -2,36 +2,33 @@ package blockchain
 
 import (
 	"errors"
-	"gocuria/src/hashing"
-	"gocuria/src/mining"
-	"gocuria/src/models"
 	"time"
 )
 
 type BlockCreationParams struct {
 	Version      uint64
 	PreviousHash [32]byte
-	Coinbase     models.Transaction
-	Transactions []models.Transaction
+	Coinbase     Transaction
+	Transactions []Transaction
 	Timestamp    uint64
 }
 
-func NewBlock(params BlockCreationParams) (models.Block, error) {
+func NewBlock(params BlockCreationParams) (Block, error) {
 	ts := params.Timestamp
 	if ts == 0 {
 		ts = uint64(time.Now().Unix())
 	}
 
 	// Combine coinbase and regular transactions
-	tsxs := make([]models.Transaction, 0, len(params.Transactions)+1)
+	tsxs := make([]Transaction, 0, len(params.Transactions)+1)
 	tsxs = append(tsxs, params.Coinbase)
 	tsxs = append(tsxs, params.Transactions...)
 
 	// Calculate merkle root
-	merkle := hashing.MerkleTransactions(tsxs)
+	merkle := MerkleTransactions(tsxs)
 
 	// Create header
-	header := models.BlockHeader{
+	header := BlockHeader{
 		Version:      params.Version,
 		PreviousHash: params.PreviousHash,
 		Timestamp:    ts,
@@ -40,14 +37,14 @@ func NewBlock(params BlockCreationParams) (models.Block, error) {
 	}
 
 	// Mine the header to find valid nonce
-	nonce, err := mining.MineCorrectNonce(&header)
+	nonce, err := MineCorrectNonce(&header)
 	if err != nil {
-		return models.Block{}, errors.New("could not find a valid nonce")
+		return Block{}, errors.New("could not find a valid nonce")
 	}
 	header.Nonce = nonce
 
 	// Create and return the block
-	block := models.Block{
+	block := Block{
 		Header:       header,
 		Transactions: tsxs,
 	}

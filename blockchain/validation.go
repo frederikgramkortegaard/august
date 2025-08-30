@@ -3,16 +3,12 @@ package blockchain
 import (
 	"crypto/ed25519"
 	"fmt"
-	"gocuria/src/config"
-	"gocuria/src/hashing"
-	"gocuria/src/mining"
-	"gocuria/src/models"
 )
 
-func validateBlockHeaderIsGenesis(header *models.BlockHeader) bool {
+func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	// Ensure the first block is genesis
-	genesisHash := hashing.HashBlockHeader(&GenesisBlock.Header)
-	firstBlockHash := hashing.HashBlockHeader(header)
+	genesisHash := HashBlockHeader(&GenesisBlock.Header)
+	firstBlockHash := HashBlockHeader(header)
 
 	// Direct comparison for [32]byte arrays
 	if genesisHash != firstBlockHash {
@@ -23,24 +19,24 @@ func validateBlockHeaderIsGenesis(header *models.BlockHeader) bool {
 }
 
 // validateBlockStructure validates block structure without state (PoW, hashes, timestamps)
-func validateBlockStructure(block *models.Block, prevBlock *models.Block) bool {
+func validateBlockStructure(block *Block, prevBlock *Block) bool {
 	// 1. Previous Hash Linking
-	prevHash := hashing.HashBlockHeader(&prevBlock.Header)
+	prevHash := HashBlockHeader(&prevBlock.Header)
 	if block.Header.PreviousHash != prevHash {
 		fmt.Println("Failed Previous Hash Linking")
 		return false
 	}
 
 	// 2. Proof Of Work
-	hash := hashing.HashBlockHeader(&block.Header)
-	if !mining.BlockHashMeetsDifficulty(hash) {
-		fmt.Println("Block does not meet difficulty", config.Difficulty)
+	hash := HashBlockHeader(&block.Header)
+	if !BlockHashMeetsDifficulty(hash) {
+		fmt.Println("Block does not meet difficulty", Difficulty)
 		fmt.Printf("Hash: %x\n", hash[:])
 		return false
 	}
 
 	// 3. Merkle Root
-	merkle := hashing.MerkleTransactions(block.Transactions)
+	merkle := MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
 		fmt.Println("Merkle root is not correct")
 		return false
@@ -57,24 +53,24 @@ func validateBlockStructure(block *models.Block, prevBlock *models.Block) bool {
 }
 
 // validateTransactionSignature validates just the cryptographic signature
-func validateTransactionSignature(tsx *models.Transaction) bool {
-	signingData := hashing.GetSigningBytesFromTransaction(tsx)
+func validateTransactionSignature(tsx *Transaction) bool {
+	signingData := GetSigningBytesFromTransaction(tsx)
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
 	return ed25519.Verify(publicKey, signingData, signature)
 }
 
 // validateAndApplyTransaction validates a single transaction against current state and applies it
-func validateAndApplyTransaction(tsx *models.Transaction, accountStates map[models.PublicKey]*models.AccountState) bool {
+func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
 	// Coinbase transactions - just apply
-	if tsx.From == (models.PublicKey{}) {
+	if tsx.From == (PublicKey{}) {
 		fmt.Println("Processing coinbase transaction")
 		
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
 			toState.Balance += tsx.Amount
 		} else {
-			accountStates[tsx.To] = &models.AccountState{
+			accountStates[tsx.To] = &AccountState{
 				Balance: tsx.Amount,
 				Address: tsx.To,
 				Nonce:   0,
@@ -120,7 +116,7 @@ func validateAndApplyTransaction(tsx *models.Transaction, accountStates map[mode
 	if toState, ok := accountStates[tsx.To]; ok {
 		toState.Balance += tsx.Amount
 	} else {
-		accountStates[tsx.To] = &models.AccountState{
+		accountStates[tsx.To] = &AccountState{
 			Balance: tsx.Amount,
 			Address: tsx.To,
 			Nonce:   0,
@@ -132,7 +128,7 @@ func validateAndApplyTransaction(tsx *models.Transaction, accountStates map[mode
 }
 
 // validateAndApplyBlock validates block structure, then validates and applies each transaction
-func validateAndApplyBlock(block *models.Block, prevBlock *models.Block, accountStates map[models.PublicKey]*models.AccountState) bool {
+func validateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
 	// First validate block structure (PoW, hashes, etc.)
 	if !validateBlockStructure(block, prevBlock) {
 		return false
@@ -151,16 +147,16 @@ func validateAndApplyBlock(block *models.Block, prevBlock *models.Block, account
 }
 
 // ValidateAndBuildChain validates an entire chain and builds the account states
-func ValidateAndBuildChain(blocks []*models.Block) *models.Chain {
+func ValidateAndBuildChain(blocks []*Block) *Chain {
 	if len(blocks) == 0 {
 		fmt.Println("Chain has no blocks")
 		return nil
 	}
 
 	// Create chain with empty account states
-	chain := &models.Chain{
+	chain := &Chain{
 		Blocks:        blocks,
-		AccountStates: make(map[models.PublicKey]*models.AccountState),
+		AccountStates: make(map[PublicKey]*AccountState),
 	}
 
 	// Genesis block validation
