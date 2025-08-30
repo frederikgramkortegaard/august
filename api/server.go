@@ -26,6 +26,11 @@ func StartServer(store store.ChainStore) {
 		handlers.HandleChainHead(w, r, store)
 	})
 
+	// Transaction endpoints
+	mux.HandleFunc("/api/transactions", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleTransactions(w, r, store)
+	})
+
 	log.Println("Starting server on :8372")
 	log.Fatal(http.ListenAndServe(":8372", mux))
 }

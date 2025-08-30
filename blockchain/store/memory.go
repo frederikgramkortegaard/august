@@ -47,6 +47,7 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 	return nil
 }
 
+
 func (m *MemoryChainStore) GetHeadBlock() (*blockchain.Block, error) {
 
 	chain, err := m.GetChain()
@@ -103,7 +104,7 @@ func (m *MemoryChainStore) GetAccountStates() (map[blockchain.PublicKey]*blockch
 	return chain.AccountStates, nil
 }
 
-func (m *MemoryChainStore) GetBlockByHash(hash [32]byte) (*blockchain.Block, error) {
+func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error) {
 
 	chain, err := m.GetChain()
 	if err != nil {
@@ -121,7 +122,7 @@ func (m *MemoryChainStore) GetBlockByHash(hash [32]byte) (*blockchain.Block, err
 
 	}
 
-	fmt.Println("could not find block with hash %x\n", hash)
+	fmt.Printf("could not find block with hash %x\n", hash)
 	return nil, nil
 
 }

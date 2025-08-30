@@ -14,13 +14,13 @@ func uint64ToBytes(n uint64) []byte {
 }
 
 // deterministic hash for transaction
-func HashTransaction(tsx *Transaction) [32]byte {
+func HashTransaction(tsx *Transaction) Hash32 {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
 	h.Write(uint64ToBytes(tsx.Amount))
 	h.Write(uint64ToBytes(tsx.Nonce))
-	var hash [32]byte
+	var hash Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
@@ -44,22 +44,22 @@ func SignTransaction(tsx *Transaction, privatekey []byte) []byte {
 }
 
 // deterministic hash for block headers
-func HashBlockHeader(header *BlockHeader) [32]byte {
+func HashBlockHeader(header *BlockHeader) Hash32 {
 	h := sha256.New()
 	h.Write(uint64ToBytes(header.Version))
 	h.Write(header.PreviousHash[:])
 	h.Write(uint64ToBytes(header.Timestamp))
 	h.Write(header.MerkleRoot[:])
 	h.Write(uint64ToBytes(header.Nonce))
-	var hash [32]byte
+	var hash Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
 // MerkleTransactions creates a merkle root from a list of transactions
-func MerkleTransactions(transactions []Transaction) [32]byte {
+func MerkleTransactions(transactions []Transaction) Hash32 {
 	if len(transactions) == 0 {
-		return [32]byte{}
+		return Hash32{}
 	}
 
 	// Hash all transactions
@@ -87,8 +87,8 @@ func MerkleTransactions(transactions []Transaction) [32]byte {
 		hashes = newLevel
 	}
 
-	// Convert to [32]byte
-	var root [32]byte
+	// Convert to Hash32
+	var root Hash32
 	copy(root[:], hashes[0])
 	return root
 }

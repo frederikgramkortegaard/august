@@ -10,7 +10,7 @@ type ChainStore interface {
 	AddBlock(block *blockchain.Block) error
 
 	// Getters
-	GetBlockByHash(hash [32]byte) (*blockchain.Block, error)
+	GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error)
 	GetHeadBlock() (*blockchain.Block, error)
 	GetAccountState(pubkey blockchain.PublicKey) (*blockchain.AccountState, error)
 	GetChainHeight() (uint64, error)

@@ -24,7 +24,7 @@ func init() {
 	// Create genesis block header
 	header := BlockHeader{
 		Version:      1,
-		PreviousHash: [32]byte{}, // All zeros for genesis
+		PreviousHash: Hash32{}, // All zeros for genesis
 		Timestamp:    0,
 		Nonce:        0,
 		MerkleRoot:   merkleRoot, // Merkle root of genesis transaction

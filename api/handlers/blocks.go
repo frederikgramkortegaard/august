@@ -59,14 +59,14 @@ func handleGetBlockByHash(w http.ResponseWriter, r *http.Request, store store.Ch
 		return
 	}
 
-	// Convert hex string to [32]byte
+	// Convert hex string to Hash32
 	hashBytes, err := hex.DecodeString(path)
 	if err != nil || len(hashBytes) != 32 {
 		http.Error(w, "Invalid block hash format (must be 64 hex characters)", http.StatusBadRequest)
 		return
 	}
 
-	var hash [32]byte
+	var hash blockchain.Hash32
 	copy(hash[:], hashBytes)
 
 	// Get block from store

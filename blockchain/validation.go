@@ -135,6 +135,39 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	return true
 }
 
+// ValidateTransaction validates a transaction against current state WITHOUT applying changes
+func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) error {
+	// Coinbase transactions - always valid (no sender validation needed)
+	if tsx.From == (PublicKey{}) {
+		return nil
+	}
+
+	// Regular transactions - validate only
+	
+	// 1. Signature validation
+	if !validateTransactionSignature(tsx) {
+		return fmt.Errorf("invalid transaction signature")
+	}
+
+	// 2. Check sender account exists and has sufficient balance
+	fromState, exists := accountStates[tsx.From]
+	if !exists {
+		return fmt.Errorf("sender account does not exist: %x", tsx.From[:8])
+	}
+
+	if fromState.Balance < tsx.Amount {
+		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount)
+	}
+
+	// 3. Nonce validation (prevent double-spend)
+	if tsx.Nonce != (fromState.Nonce + 1) {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", fromState.Nonce+1, tsx.Nonce)
+	}
+
+	// All validation passed - transaction is valid
+	return nil
+}
+
 // ValidateAndApplyBlock validates block structure, then validates and applies each transaction
 func ValidateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
 

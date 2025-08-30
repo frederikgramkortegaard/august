@@ -2,7 +2,7 @@ package blockchain
 
 type NonceType = uint64
 
-func BlockHashMeetsDifficulty(hash [32]byte) bool {
+func BlockHashMeetsDifficulty(hash Hash32) bool {
 
 	if Difficulty > len(hash) {
 		return false
