@@ -13,8 +13,8 @@ func init() {
 	genesisCoinbase := Transaction{
 		From:      PublicKey{}, // Coinbase (empty)
 		To:        FirstUser,   // Send to FirstUser
-		Amount:    10000000,           // 10 million initial coins
-		Nonce:     0,                  // Coinbase doesn't need nonce
+		Amount:    10000000,    // 10 million initial coins
+		Nonce:     0,           // Coinbase doesn't need nonce
 		Signature: Signature{}, // Coinbase doesn't need signature
 	}
 

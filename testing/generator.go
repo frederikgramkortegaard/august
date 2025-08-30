@@ -82,7 +82,7 @@ func GenerateCoinbaseTransaction(to blockchain.PublicKey, amount uint64) blockch
 		From:      blockchain.PublicKey{}, // Zero/empty for coinbase
 		To:        to,
 		Amount:    amount,
-		Nonce:     0,                  // Coinbase doesn't need nonce
+		Nonce:     0,                      // Coinbase doesn't need nonce
 		Signature: blockchain.Signature{}, // Coinbase doesn't need signature
 	}
 }
@@ -112,7 +112,7 @@ func GenerateRandomTransactions(accounts []TestAccount, count int) []blockchain.
 		}
 
 		fromPubKey := PublicKeyToArray(accounts[fromIdx].PublicKey)
-		
+
 		// Use sequential nonce for this account
 		nonces[fromPubKey]++
 		nonce := nonces[fromPubKey]
@@ -175,7 +175,7 @@ func GeneratePrebuiltChain(blockCount int, accountCount int, transactionsPerBloc
 
 	// Global nonce tracking across all blocks
 	globalNonces := make(map[blockchain.PublicKey]uint64)
-	
+
 	// Initialize nonces for all accounts (start at 0, will increment for first transaction)
 	for _, account := range accounts {
 		globalNonces[PublicKeyToArray(account.PublicKey)] = 0
@@ -189,7 +189,7 @@ func GeneratePrebuiltChain(blockCount int, accountCount int, transactionsPerBloc
 
 	// Block 1: Distribution block - FirstUser distributes coins to test accounts
 	distributionTxs := make([]blockchain.Transaction, 0, accountCount+1)
-	
+
 	// Coinbase for miner
 	miner := PublicKeyToArray(accounts[0].PublicKey)
 	coinbase := GenerateCoinbaseTransaction(miner, 5000)
@@ -199,7 +199,7 @@ func GeneratePrebuiltChain(blockCount int, accountCount int, transactionsPerBloc
 	for _, account := range accounts {
 		// Increment FirstUser's nonce for each distribution transaction
 		globalNonces[blockchain.FirstUser]++
-		
+
 		distributionTx := GenerateValidTransaction(
 			firstUser,
 			PublicKeyToArray(account.PublicKey),
@@ -217,10 +217,10 @@ func GeneratePrebuiltChain(blockCount int, accountCount int, transactionsPerBloc
 
 	// Generate remaining blocks with random transactions between funded accounts
 	r := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-	
+
 	for i := 0; i < blockCount; i++ {
 		allTxs := make([]blockchain.Transaction, 0, transactionsPerBlock)
-		
+
 		// First transaction is always coinbase
 		minerIdx := (i + 1) % len(accounts)
 		coinbase := GenerateCoinbaseTransaction(PublicKeyToArray(accounts[minerIdx].PublicKey), 5000)
@@ -237,7 +237,7 @@ func GeneratePrebuiltChain(blockCount int, accountCount int, transactionsPerBloc
 			}
 
 			fromPubKey := PublicKeyToArray(accounts[fromIdx].PublicKey)
-			
+
 			// Use and increment the global nonce for this account
 			globalNonces[fromPubKey]++
 			nonce := globalNonces[fromPubKey]

@@ -20,12 +20,20 @@ func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 
 // validateBlockStructure validates block structure without state (PoW, hashes, timestamps)
 func validateBlockStructure(block *Block, prevBlock *Block) bool {
+
+	// Genesis
+	if prevBlock == nil {
+		if !validateBlockHeaderIsGenesis(&block.Header) {
+			return false
+		}
+	} else {
 	// 1. Previous Hash Linking
 	prevHash := HashBlockHeader(&prevBlock.Header)
 	if block.Header.PreviousHash != prevHash {
 		fmt.Println("Failed Previous Hash Linking")
 		return false
 	}
+}
 
 	// 2. Proof Of Work
 	hash := HashBlockHeader(&block.Header)
@@ -43,7 +51,7 @@ func validateBlockStructure(block *Block, prevBlock *Block) bool {
 	}
 
 	// 4. Timestamp Sanity
-	if block.Header.Timestamp <= prevBlock.Header.Timestamp {
+	if prevBlock != nil && (block.Header.Timestamp <= prevBlock.Header.Timestamp) {
 		fmt.Println("Timestamp is not in order")
 		return false
 	}
@@ -65,7 +73,7 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	// Coinbase transactions - just apply
 	if tsx.From == (PublicKey{}) {
 		fmt.Println("Processing coinbase transaction")
-		
+
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
 			toState.Balance += tsx.Amount
@@ -81,7 +89,7 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	}
 
 	// Regular transactions - validate first, then apply
-	
+
 	// 1. Signature validation
 	if !validateTransactionSignature(tsx) {
 		fmt.Println("Invalid transaction signature")
@@ -107,7 +115,7 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	}
 
 	// 4. All validation passed - apply the transaction
-	
+
 	// Deduct from sender
 	fromState.Balance -= tsx.Amount
 	fromState.Nonce += 1
@@ -127,8 +135,10 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	return true
 }
 
-// validateAndApplyBlock validates block structure, then validates and applies each transaction
-func validateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
+// ValidateAndApplyBlock validates block structure, then validates and applies each transaction
+func ValidateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
+
+
 	// First validate block structure (PoW, hashes, etc.)
 	if !validateBlockStructure(block, prevBlock) {
 		return false
@@ -176,8 +186,8 @@ func ValidateAndBuildChain(blocks []*Block) *Chain {
 	// Process remaining blocks
 	for i := 1; i < len(blocks); i++ {
 		fmt.Printf("Validating block %d\n", i)
-		
-		if !validateAndApplyBlock(blocks[i], blocks[i-1], chain.AccountStates) {
+
+		if !ValidateAndApplyBlock(blocks[i], blocks[i-1], chain.AccountStates) {
 			fmt.Printf("Block %d validation failed\n", i)
 			return nil
 		}

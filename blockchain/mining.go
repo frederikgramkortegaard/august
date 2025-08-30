@@ -1,6 +1,5 @@
 package blockchain
 
-
 type NonceType = uint64
 
 func BlockHashMeetsDifficulty(hash [32]byte) bool {
