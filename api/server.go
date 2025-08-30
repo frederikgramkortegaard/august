@@ -10,10 +10,20 @@ import (
 func StartServer(store store.ChainStore) {
 	mux := http.NewServeMux()
 
-	// Register Routes
-	 // Create handlers with store access
-	 mux.HandleFunc("/api/blocks", func(w http.ResponseWriter, r *http.Request) {
+	// Block endpoints
+	mux.HandleFunc("/api/blocks", func(w http.ResponseWriter, r *http.Request) {
 		handlers.HandleBlocks(w, r, store) 
+	})
+	mux.HandleFunc("/api/blocks/", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleBlocks(w, r, store) // Handles /api/blocks/{hash}
+	})
+
+	// Chain endpoints  
+	mux.HandleFunc("/api/chain/height", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleChainHeight(w, r, store)
+	})
+	mux.HandleFunc("/api/chain/head", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleChainHead(w, r, store)
 	})
 
 	log.Println("Starting server on :8372")

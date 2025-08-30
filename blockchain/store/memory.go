@@ -26,8 +26,6 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 		return err
 	}
 
-	fmt.Println(head)
-
 	accountStates, err := m.GetAccountStates()
 	if err != nil {
 		return err

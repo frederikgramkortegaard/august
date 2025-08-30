@@ -29,16 +29,5 @@ func main() {
 
 	}
 
-	hash := blockchain.HashBlockHeader(&chain.Blocks[0].Header)
-	fmt.Println(hash)
-	fmt.Println("---")
-
-	block, err := store.GetBlockByHash(hash)
-	if err != nil {
-		log.Fatal("err", err)
-	}
-
-	fmt.Println(blockchain.HashBlockHeader(&block.Header))
-	fmt.Println(block == chain.Blocks[0])
 
 }
