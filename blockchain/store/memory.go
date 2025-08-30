@@ -127,3 +127,21 @@ func (m *MemoryChainStore) GetBlockByHash(hash [32]byte) (*blockchain.Block, err
 	return nil, nil
 
 }
+
+
+func (m *MemoryChainStore) GetChainHeight() (uint64, error) {
+
+	chain, err := m.GetChain()
+	if err != nil {
+		return 0, err
+	}
+
+	if chain == nil {
+		return 0, errors.New("chain is nil")
+	}
+
+	return uint64(len(chain.Blocks)), nil
+
+}
+
+
