@@ -19,33 +19,33 @@ type PublicKey [ed25519.PublicKeySize]byte // 32
 type Signature [ed25519.SignatureSize]byte // 64
 
 type Transaction struct {
-	From      PublicKey
-	To        PublicKey
-	Amount    uint64
-	Signature Signature
-	Nonce     uint64
+	From      PublicKey `json:"from"`
+	To        PublicKey `json:"to"`
+	Amount    uint64    `json:"amount"`
+	Signature Signature `json:"signature"`
+	Nonce     uint64    `json:"nonce"`
 }
 
 type BlockHeader struct {
-	Version      uint64
-	PreviousHash [32]byte
-	Timestamp    uint64
-	Nonce        uint64
-	MerkleRoot   [32]byte
+	Version      uint64   `json:"version"`
+	PreviousHash [32]byte `json:"previous_hash"`
+	Timestamp    uint64   `json:"timestamp"`
+	Nonce        uint64   `json:"nonce"`
+	MerkleRoot   [32]byte `json:"merkle_root"`
 }
 
 type Block struct {
-	Header       BlockHeader
-	Transactions []Transaction
+	Header       BlockHeader   `json:"header"`
+	Transactions []Transaction `json:"transactions"`
 }
 
 type AccountState struct {
-	Address PublicKey
-	Balance uint64
-	Nonce   uint64
+	Address PublicKey `json:"address"`
+	Balance uint64    `json:"balance"`
+	Nonce   uint64    `json:"nonce"`
 }
 
 type Chain struct {
-	Blocks        []*Block
-	AccountStates map[PublicKey]*AccountState
+	Blocks        []*Block                    `json:"blocks"`
+	AccountStates map[PublicKey]*AccountState `json:"account_states"`
 }
