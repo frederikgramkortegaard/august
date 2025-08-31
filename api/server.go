@@ -21,7 +21,7 @@ func NewServer(store store.ChainStore, port string) *Server {
 		port:  port,
 		mux:   http.NewServeMux(),
 	}
-	
+
 	server.setupRoutes()
 	return server
 }

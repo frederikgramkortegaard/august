@@ -11,6 +11,7 @@ type BlockCreationParams struct {
 	Coinbase     Transaction
 	Transactions []Transaction
 	Timestamp    uint64
+	Difficulty   uint64
 }
 
 func NewBlock(params BlockCreationParams) (Block, error) {
@@ -37,7 +38,7 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	}
 
 	// Mine the header to find valid nonce
-	nonce, err := MineCorrectNonce(&header)
+	nonce, err := MineCorrectNonce(&header, params.Difficulty)
 	if err != nil {
 		return Block{}, errors.New("could not find a valid nonce")
 	}

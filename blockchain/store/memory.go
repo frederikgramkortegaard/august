@@ -21,27 +21,19 @@ func NewMemoryChainStore() *MemoryChainStore {
 
 func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 
-	head, err := m.GetHeadBlock()
-	if err != nil {
-		return err
-	}
-
-	accountStates, err := m.GetAccountStates()
-	if err != nil {
-		return err
-	}
-
-	if !blockchain.ValidateAndApplyBlock(block, head, accountStates) {
-		return errors.New("could not validate block")
-	}
-
 	chain, err := m.GetChain()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get chain: %w", err)
 	}
 	if chain == nil {
 		return errors.New("chain is nil")
 	}
+
+	if err := blockchain.ValidateAndApplyBlock(block, chain); err != nil {
+		return fmt.Errorf("could not validate block: %w", err)
+	}
+
+	// After successful validation and application, add block to chain
 	chain.Blocks = append(chain.Blocks, block)
 
 	return nil

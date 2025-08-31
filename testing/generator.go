@@ -158,7 +158,7 @@ func GenerateMinedTestBlock(prevHash [32]byte, transactions []blockchain.Transac
 	block := GenerateTestBlock(prevHash, transactions, timestamp)
 
 	// Mine the block to find valid nonce
-	nonce, err := blockchain.MineCorrectNonce(&block.Header)
+	nonce, err := blockchain.MineCorrectNonce(&block.Header, 1)
 	if err != nil {
 		panic("Failed to mine test block: " + err.Error())
 	}

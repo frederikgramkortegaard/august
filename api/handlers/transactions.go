@@ -32,16 +32,14 @@ func handleValidateTransaction(w http.ResponseWriter, r *http.Request, store sto
 	log.Printf("Decoded transaction: from=%x, to=%x, amount=%d, nonce=%d",
 		transaction.From[:4], transaction.To[:4], transaction.Amount, transaction.Nonce)
 
-	// Get current account states from store
-	log.Println("Getting account states from store")
+	// Get account states for validation
 	accountStates, err := store.GetAccountStates()
 	if err != nil {
 		log.Printf("Failed to get account states: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to get account states: %v", err), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Retrieved %d account states", len(accountStates))
-
+	
 	// Validate transaction (read-only)
 	log.Println("Validating transaction")
 	if err := blockchain.ValidateTransaction(&transaction, accountStates); err != nil {

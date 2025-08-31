@@ -11,16 +11,16 @@ import (
 func StartSimpleHTTPNode(httpPort string) error {
 	// Create store
 	chainStore := store.NewMemoryChainStore()
-	
+
 	// Add genesis block
 	if err := chainStore.AddBlock(blockchain.GenesisBlock); err != nil {
 		return err
 	}
-	
+
 	log.Println("Starting HTTP-only blockchain node...")
-	
+
 	// Start HTTP server (blocks forever)
 	StartServer(chainStore, httpPort)
-	
+
 	return nil
 }

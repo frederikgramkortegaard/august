@@ -62,7 +62,7 @@ func NewMessage(msgType MessageType, payload interface{}) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &Message{
 		Type:    msgType,
 		Payload: json.RawMessage(payloadBytes),

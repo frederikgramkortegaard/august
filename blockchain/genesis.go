@@ -31,7 +31,7 @@ func init() {
 	}
 
 	// Mine the genesis block
-	nonce, err := MineCorrectNonce(&header)
+	nonce, err := MineCorrectNonce(&header, 1)
 	if err != nil {
 		log.Fatal("Failed to mine genesis block:", err)
 	}

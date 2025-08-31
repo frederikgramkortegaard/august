@@ -5,6 +5,15 @@ import (
 	"fmt"
 )
 
+// ErrMissingParent is returned when a block's parent is not found in the chain
+type ErrMissingParent struct {
+	Hash Hash32
+}
+
+func (e ErrMissingParent) Error() string {
+	return fmt.Sprintf("missing parent block: %x", e.Hash[:8])
+}
+
 func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	// Ensure the first block is genesis
 	genesisHash := HashBlockHeader(&GenesisBlock.Header)
@@ -18,46 +27,61 @@ func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	return true
 }
 
-// validateBlockStructure validates block structure without state (PoW, hashes, timestamps)
-func validateBlockStructure(block *Block, prevBlock *Block) bool {
-
-	// Genesis
-	if prevBlock == nil {
+// validateBlockStructure validates block structure using chain context for difficulty
+func validateBlockStructure(block *Block, chain *Chain) error {
+	
+	var prevBlock *Block
+	currentHeight := len(chain.Blocks)
+	
+	// Genesis block validation
+	if currentHeight == 0 {
 		if !validateBlockHeaderIsGenesis(&block.Header) {
-			return false
+			return fmt.Errorf("block is not genesis")
 		}
 	} else {
-		// 1. Previous Hash Linking
-		prevHash := HashBlockHeader(&prevBlock.Header)
-		if block.Header.PreviousHash != prevHash {
-			fmt.Println("Failed Previous Hash Linking")
-			return false
+		// Get previous block - check if it exists
+		if currentHeight == 0 {
+			// Chain is empty but block is not genesis
+			return fmt.Errorf("chain is empty but block is not genesis")
 		}
+		
+		// Check if we have the parent block
+		parentExists := false
+		for _, chainBlock := range chain.Blocks {
+			if HashBlockHeader(&chainBlock.Header) == block.Header.PreviousHash {
+				prevBlock = chainBlock
+				parentExists = true
+				break
+			}
+		}
+		
+		if !parentExists {
+			// Parent block not found - this is an orphan
+			return ErrMissingParent{Hash: block.Header.PreviousHash}
+		}
+		
+		// 1. Previous Hash Linking - already verified above
 	}
 
-	// 2. Proof Of Work
+	// 2. Proof Of Work - calculate expected difficulty for this height
+	expectedDifficulty := GetTargetDifficulty(currentHeight, chain.Blocks)
 	hash := HashBlockHeader(&block.Header)
-	if !BlockHashMeetsDifficulty(hash) {
-		fmt.Println("Block does not meet difficulty", Difficulty)
-		fmt.Printf("Hash: %x\n", hash[:])
-		return false
+	if !BlockHashMeetsDifficulty(hash, expectedDifficulty) {
+		return fmt.Errorf("block does not meet difficulty %d, hash: %x", expectedDifficulty, hash[:8])
 	}
 
 	// 3. Merkle Root
 	merkle := MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
-		fmt.Println("Merkle root is not correct")
-		return false
+		return fmt.Errorf("merkle root is not correct")
 	}
 
 	// 4. Timestamp Sanity
 	if prevBlock != nil && (block.Header.Timestamp <= prevBlock.Header.Timestamp) {
-		fmt.Println("Timestamp is not in order")
-		return false
+		return fmt.Errorf("timestamp is not in order")
 	}
 
-	fmt.Println("Block structure validation passed")
-	return true
+	return nil
 }
 
 // validateTransactionSignature validates just the cryptographic signature
@@ -135,8 +159,10 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	return true
 }
 
+
 // ValidateTransaction validates a transaction against current state WITHOUT applying changes
 func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) error {
+	
 	// Coinbase transactions - always valid (no sender validation needed)
 	if tsx.From == (PublicKey{}) {
 		return nil
@@ -169,23 +195,21 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 }
 
 // ValidateAndApplyBlock validates block structure, then validates and applies each transaction
-func ValidateAndApplyBlock(block *Block, prevBlock *Block, accountStates map[PublicKey]*AccountState) bool {
+func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 
 	// First validate block structure (PoW, hashes, etc.)
-	if !validateBlockStructure(block, prevBlock) {
-		return false
+	if err := validateBlockStructure(block, chain); err != nil {
+		return fmt.Errorf("block structure validation failed: %w", err)
 	}
 
 	// Then validate and apply each transaction incrementally
 	for i, tsx := range block.Transactions {
-		if !validateAndApplyTransaction(&tsx, accountStates) {
-			fmt.Printf("Transaction %d failed validation\n", i)
-			return false
+		if !validateAndApplyTransaction(&tsx, chain.AccountStates) {
+			return fmt.Errorf("transaction %d failed validation", i)
 		}
 	}
 
-	fmt.Println("Block validation and application completed successfully")
-	return true
+	return nil
 }
 
 // ValidateAndBuildChain validates an entire chain and builds the account states
@@ -215,12 +239,12 @@ func ValidateAndBuildChain(blocks []*Block) *Chain {
 		}
 	}
 
-	// Process remaining blocks
+	// Process remaining blocks using ValidateAndApplyBlock
 	for i := 1; i < len(blocks); i++ {
 		fmt.Printf("Validating block %d\n", i)
 
-		if !ValidateAndApplyBlock(blocks[i], blocks[i-1], chain.AccountStates) {
-			fmt.Printf("Block %d validation failed\n", i)
+		if err := ValidateAndApplyBlock(blocks[i], chain); err != nil {
+			fmt.Printf("Block %d validation failed: %v\n", i, err)
 			return nil
 		}
 	}

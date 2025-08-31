@@ -22,24 +22,28 @@ type Config struct {
 type FullNode struct {
 	// Core blockchain storage
 	store store.ChainStore
-	
+
 	// Configuration
 	config Config
-	
+
+	// Orphan block pool for handling blocks whose parents are not yet available
+	orphanPool map[blockchain.Hash32]*blockchain.Block
+
 	// Components (each package handles its own concern)
-	httpServer  *api.Server      // HTTP API server
-	p2pServer   *p2p.Server      // P2P message handling
-	discovery   *p2p.Discovery   // Peer discovery
+	httpServer *api.Server    // HTTP API server
+	p2pServer  *p2p.Server    // P2P message handling
+	discovery  *p2p.Discovery // Peer discovery
 }
 
 // NewFullNode creates a node that runs all services
 func NewFullNode(config Config) *FullNode {
 	// Create shared store
 	chainStore := store.NewMemoryChainStore()
-	
+
 	return &FullNode{
-		store:  chainStore,
-		config: config,
+		store:      chainStore,
+		config:     config,
+		orphanPool: make(map[blockchain.Hash32]*blockchain.Block),
 		// Components will be initialized in Start()
 	}
 }
@@ -51,21 +55,21 @@ func (n *FullNode) Start() error {
 		return fmt.Errorf("failed to add genesis block: %w", err)
 	}
 	log.Println("Blockchain initialized with genesis block")
-	
+
 	// 2. Start HTTP API server (for wallets/clients)
 	go n.startHTTPAPI()
-	
+
 	// 3. Start P2P server (for node-to-node communication)
 	go n.startP2P()
-	
+
 	// 4. Start peer discovery (find and connect to other nodes)
 	// Wait a moment for P2P server to be ready
 	time.Sleep(100 * time.Millisecond)
 	go n.startDiscovery()
-	
-	log.Printf("Full node started: HTTP on :%s, P2P on :%s", 
+
+	log.Printf("Full node started: HTTP on :%s, P2P on :%s",
 		n.config.HTTPPort, n.config.P2PPort)
-	
+
 	// Block forever
 	select {}
 }
@@ -82,9 +86,10 @@ func (n *FullNode) startP2P() {
 	log.Printf("Starting P2P server on port %s", n.config.P2PPort)
 	// The p2p package handles all P2P messaging
 	p2pConfig := p2p.Config{
-		Port:   n.config.P2PPort,
-		NodeID: n.config.NodeID,
-		Store:  n.store,
+		Port:           n.config.P2PPort,
+		NodeID:         n.config.NodeID,
+		Store:          n.store,
+		BlockProcessor: n, // Pass the FullNode itself as the BlockProcessor
 	}
 	n.p2pServer = p2p.NewServer(p2pConfig)
 	err := n.p2pServer.Start()
@@ -102,4 +107,114 @@ func (n *FullNode) startDiscovery() {
 	}
 	n.discovery = p2p.NewDiscovery(discoveryConfig)
 	n.discovery.Start()
+}
+
+// ProcessBlock attempts to add a block to the main chain, handling orphans
+func (n *FullNode) ProcessBlock(block *blockchain.Block) error {
+	blockHash := blockchain.HashBlockHeader(&block.Header)
+	
+	// Get current chain for validation
+	chain, err := n.store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get chain: %w", err)
+	}
+	
+	// Try to validate and add block directly to main chain
+	if err := blockchain.ValidateAndApplyBlock(block, chain); err != nil {
+		// Check if this is a missing parent error (orphan block)
+		if missingParentErr, ok := err.(blockchain.ErrMissingParent); ok {
+			log.Printf("Block %x is orphan, missing parent %x. Adding to orphan pool.", 
+				blockHash[:8], missingParentErr.Hash[:8])
+			
+			// Store in orphan pool
+			n.orphanPool[blockHash] = block
+			
+			// TODO: Request missing parent block from peers
+			log.Printf("Need to request parent block %x from peers", missingParentErr.Hash[:8])
+			return nil
+		}
+		
+		// Other validation errors
+		return fmt.Errorf("block validation failed: %w", err)
+	}
+	
+	// Block successfully added to main chain
+	log.Printf("Block %x added to main chain", blockHash[:8])
+	
+	// Try to connect any orphan blocks that might now be connectible
+	n.tryConnectOrphans()
+	
+	return nil
+}
+
+// tryConnectOrphans attempts to connect orphan blocks to the main chain
+func (n *FullNode) tryConnectOrphans() {
+	connected := true
+	
+	// Keep trying until no more orphans can be connected
+	for connected {
+		connected = false
+		
+		// Get current chain state for each attempt
+		chain, err := n.store.GetChain()
+		if err != nil {
+			log.Printf("Failed to get chain for orphan connection: %v", err)
+			return
+		}
+		
+		// Check each orphan block
+		for orphanHash, orphanBlock := range n.orphanPool {
+			// Try to validate and add this orphan block
+			if err := blockchain.ValidateAndApplyBlock(orphanBlock, chain); err == nil {
+				// Successfully connected!
+				log.Printf("Connected orphan block %x to main chain", orphanHash[:8])
+				
+				// Remove from orphan pool
+				delete(n.orphanPool, orphanHash)
+				connected = true
+				
+				// Don't continue iterating as we modified the map
+				break
+			}
+		}
+	}
+	
+	if len(n.orphanPool) > 0 {
+		log.Printf("Still have %d orphan blocks waiting for parents", len(n.orphanPool))
+	}
+}
+
+// copyChainForValidation creates a deep copy of the chain for validation experiments
+func (n *FullNode) copyChainForValidation() (*blockchain.Chain, error) {
+	originalChain, err := n.store.GetChain()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get original chain: %w", err)
+	}
+	
+	// Create a deep copy
+	chainCopy := &blockchain.Chain{
+		Blocks:        make([]*blockchain.Block, len(originalChain.Blocks)),
+		AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+	}
+	
+	// Copy blocks
+	for i, block := range originalChain.Blocks {
+		blockCopy := &blockchain.Block{
+			Header:       block.Header,
+			Transactions: make([]blockchain.Transaction, len(block.Transactions)),
+		}
+		copy(blockCopy.Transactions, block.Transactions)
+		chainCopy.Blocks[i] = blockCopy
+	}
+	
+	// Copy account states
+	for pubkey, accountState := range originalChain.AccountStates {
+		chainCopy.AccountStates[pubkey] = &blockchain.AccountState{
+			Address: accountState.Address,
+			Balance: accountState.Balance,
+			Nonce:   accountState.Nonce,
+		}
+	}
+	
+	return chainCopy, nil
 }

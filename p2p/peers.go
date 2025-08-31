@@ -22,15 +22,15 @@ type Peer struct {
 }
 
 type PeerManager struct {
-	peers map[string]*Peer
-	maxPeers int
+	peers     map[string]*Peer
+	maxPeers  int
 	seedPeers []string
 }
 
 func NewPeerManager(seeds []string) *PeerManager {
 	return &PeerManager{
-		peers: make(map[string]*Peer),
-		maxPeers: 8,
+		peers:     make(map[string]*Peer),
+		maxPeers:  8,
 		seedPeers: seeds,
 	}
 }
@@ -41,13 +41,15 @@ func (pm *PeerManager) AddPeer(address string) *Peer {
 	}
 
 	_, ok := pm.peers[address]
-	if ok {return nil}
+	if ok {
+		return nil
+	}
 
 	pm.peers[address] = &Peer{
-		ID: fmt.Sprintf("peer-%d", time.Now().Unix()),
-		Address: address,
+		ID:       fmt.Sprintf("peer-%d", time.Now().Unix()),
+		Address:  address,
 		LastSeen: time.Now(),
-		Status: PeerConnecting,
+		Status:   PeerConnecting,
 	}
 
 	return pm.peers[address]
@@ -57,7 +59,7 @@ func (pm *PeerManager) GetConnectedPeers() []*Peer {
 	connectedPeers := make([]*Peer, 0, pm.maxPeers)
 	for _, p := range pm.peers {
 		if p.Status == PeerConnected {
-		connectedPeers = append(connectedPeers, p)
+			connectedPeers = append(connectedPeers, p)
 		}
 	}
 
