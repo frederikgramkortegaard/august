@@ -26,16 +26,18 @@ type Config struct {
 
 // Server handles P2P networking and message passing
 type Server struct {
-	config      Config
-	listener    net.Listener
-	peerManager *PeerManager
+	config         Config
+	listener       net.Listener
+	peerManager    *PeerManager
+	peerConnections map[string]net.Conn // Active connections by peer address
 }
 
 // NewServer creates a new P2P server
 func NewServer(config Config) *Server {
 	return &Server{
-		config:      config,
-		peerManager: NewPeerManager([]string{}), // Will be set by discovery
+		config:          config,
+		peerManager:     NewPeerManager([]string{}), // Will be set by discovery
+		peerConnections: make(map[string]net.Conn),
 	}
 }
 
@@ -84,6 +86,13 @@ func (s *Server) handlePeerConnection(conn net.Conn) {
 
 	peer.Status = PeerConnected
 	log.Printf("Peer %s connected", peerAddr)
+
+	// Store the connection for later message sending
+	s.peerConnections[peerAddr] = conn
+	defer func() {
+		delete(s.peerConnections, peerAddr)
+		peer.Status = PeerDisconnected
+	}()
 
 	// Send handshake
 	s.sendHandshake(conn)
@@ -171,6 +180,9 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 				log.Printf("Failed to process block %x from peer %s: %v", blockHash[:8], peer.Address, err)
 			} else {
 				log.Printf("Successfully processed block %x from peer %s", blockHash[:8], peer.Address)
+				
+				// Relay the block to all other peers (except the sender to avoid loops)
+				s.relayBlockToOthers(blockPayload.Block, peer.Address)
 			}
 		} else {
 			log.Printf("No block processor configured, cannot process block %x", blockHash[:8])
@@ -199,4 +211,38 @@ func (s *Server) GetListener() net.Listener {
 // GetPeerManager returns the peer manager (for testing)
 func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
+}
+
+// relayBlockToOthers broadcasts a block to all connected peers except the sender
+func (s *Server) relayBlockToOthers(block *blockchain.Block, excludePeerAddr string) {
+	blockHash := blockchain.HashBlockHeader(&block.Header)
+	log.Printf("Relaying block %x to other peers (excluding %s)", blockHash[:8], excludePeerAddr)
+	
+	// Create the block payload
+	blockPayload := NewBlockPayload{Block: block}
+	msg, err := NewMessage(MessageTypeNewBlock, blockPayload)
+	if err != nil {
+		log.Printf("Failed to create relay message for block %x: %v", blockHash[:8], err)
+		return
+	}
+	
+	// Send to all connected peers except the sender
+	relayCount := 0
+	for _, peer := range s.peerManager.GetConnectedPeers() {
+		if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
+			// Get the stored connection for this peer
+			if conn, exists := s.peerConnections[peer.Address]; exists {
+				if err := s.sendMessage(conn, msg); err != nil {
+					log.Printf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
+				} else {
+					log.Printf("Relayed block %x to peer %s", blockHash[:8], peer.Address)
+					relayCount++
+				}
+			} else {
+				log.Printf("No active connection for peer %s, skipping relay", peer.Address)
+			}
+		}
+	}
+	
+	log.Printf("Successfully relayed block %x to %d peers", blockHash[:8], relayCount)
 }
