@@ -47,7 +47,6 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 	return nil
 }
 
-
 func (m *MemoryChainStore) GetHeadBlock() (*blockchain.Block, error) {
 
 	chain, err := m.GetChain()
@@ -127,7 +126,6 @@ func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.B
 
 }
 
-
 func (m *MemoryChainStore) GetChainHeight() (uint64, error) {
 
 	chain, err := m.GetChain()
@@ -142,5 +140,3 @@ func (m *MemoryChainStore) GetChainHeight() (uint64, error) {
 	return uint64(len(chain.Blocks)), nil
 
 }
-
-

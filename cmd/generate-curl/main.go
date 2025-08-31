@@ -15,7 +15,7 @@ func main() {
 
 	// Generate a small test chain (3 blocks, 2 accounts, 5 transactions per block)
 	blocks := testing.GeneratePrebuiltChain(3, 2, 5)
-	
+
 	// Create curl directory if it doesn't exist
 	if err := os.MkdirAll("curl", 0755); err != nil {
 		log.Fatal("Failed to create curl directory:", err)
@@ -24,7 +24,7 @@ func main() {
 	// Generate scripts for each block (skip genesis block at index 0)
 	for i, block := range blocks[1:] {
 		blockNum := i + 1
-		
+
 		// Convert block to pretty JSON
 		jsonData, err := json.MarshalIndent(block, "", "  ")
 		if err != nil {
@@ -54,7 +54,7 @@ echo -e "\n"
 			log.Printf("Failed to write script %s: %v", filename, err)
 			continue
 		}
-		
+
 		fmt.Printf("Generated: %s\n", filename)
 	}
 

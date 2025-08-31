@@ -31,7 +31,7 @@ func TestHandleTransactions(t *testing.T) {
 			method: "POST",
 			body: map[string]interface{}{
 				"from":      "mT/mo20Z7VJ4kKdpjpQMPBxinKBkQ4N4ccsO0ZQ1Ips=", // FirstUser base64
-				"to":        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",      // Zero recipient
+				"to":        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", // Zero recipient
 				"amount":    1000,
 				"nonce":     1,
 				"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", // Zero signature

@@ -20,7 +20,7 @@ func HandleTransactions(w http.ResponseWriter, r *http.Request, store store.Chai
 
 func handleValidateTransaction(w http.ResponseWriter, r *http.Request, store store.ChainStore) {
 	log.Println("Received transaction validation request")
-	
+
 	// Deserialize JSON from request body
 	var transaction blockchain.Transaction
 	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
@@ -28,8 +28,8 @@ func handleValidateTransaction(w http.ResponseWriter, r *http.Request, store sto
 		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
-	
-	log.Printf("Decoded transaction: from=%x, to=%x, amount=%d, nonce=%d", 
+
+	log.Printf("Decoded transaction: from=%x, to=%x, amount=%d, nonce=%d",
 		transaction.From[:4], transaction.To[:4], transaction.Amount, transaction.Nonce)
 
 	// Get current account states from store
@@ -50,7 +50,7 @@ func handleValidateTransaction(w http.ResponseWriter, r *http.Request, store sto
 			"status": "invalid",
 			"error":  err.Error(),
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(response)

@@ -143,7 +143,7 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	}
 
 	// Regular transactions - validate only
-	
+
 	// 1. Signature validation
 	if !validateTransactionSignature(tsx) {
 		return fmt.Errorf("invalid transaction signature")

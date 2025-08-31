@@ -86,7 +86,7 @@ func TestMemoryChainStore(t *testing.T) {
 	// Test GetBlockByHash
 	t.Run("get block by hash", func(t *testing.T) {
 		genesisHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
-		
+
 		block, err := store.GetBlockByHash(genesisHash)
 		if err != nil {
 			t.Fatalf("GetBlockByHash() failed: %v", err)

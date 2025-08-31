@@ -17,9 +17,9 @@ func TestValidateTransaction(t *testing.T) {
 	testRecipient := PublicKey{0x01, 0x02, 0x03} // Just first few bytes for test
 
 	tests := []struct {
-		name    string
-		tx      Transaction
-		wantErr bool
+		name        string
+		tx          Transaction
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -52,7 +52,7 @@ func TestValidateTransaction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateTransaction(&tt.tx, accountStates)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("ValidateTransaction() expected error, got nil")
@@ -100,7 +100,7 @@ func TestValidateTransactionLogic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateTransaction(&tt.tx, accountStates)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("ValidateTransaction() expected error, got nil")
@@ -182,10 +182,10 @@ func TestBlockHashMeetsDifficulty(t *testing.T) {
 
 // Helper function to check if a string contains a substring
 func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(substr) > 0 && len(s) > len(substr) && 
-		 (s[0:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		  findInString(s, substr))))
+	return len(s) >= len(substr) && (s == substr ||
+		(len(substr) > 0 && len(s) > len(substr) &&
+			(s[0:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+				findInString(s, substr))))
 }
 
 func findInString(s, substr string) bool {

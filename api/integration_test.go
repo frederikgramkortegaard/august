@@ -23,7 +23,7 @@ func TestAPIIntegration(t *testing.T) {
 
 	// Create test server with all routes
 	mux := http.NewServeMux()
-	
+
 	// Add all API routes like in server.go
 	mux.HandleFunc("/api/blocks", func(w http.ResponseWriter, r *http.Request) {
 		handlers.HandleBlocks(w, r, testStore)
@@ -164,7 +164,7 @@ func TestAPIIntegration(t *testing.T) {
 		// Request block by hash (hex format)
 		hashHex := string(genesisHash[:])
 		resp, err := http.Get(server.URL + "/api/blocks/" + hashHex)
-		
+
 		// This might fail due to hex encoding issues, but test the attempt
 		if err == nil {
 			resp.Body.Close()
