@@ -51,7 +51,7 @@ func TestServerStart(t *testing.T) {
 	}
 
 	// Clean up
-	defer server.listener.Close()
+	defer server.Stop()
 
 	// Get the actual port that was assigned
 	addr := server.listener.Addr().(*net.TCPAddr)
@@ -73,7 +73,7 @@ func TestServerAcceptConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.listener.Close()
+	defer server.Stop()
 
 	// Get server address
 	serverAddr := server.listener.Addr().String()
@@ -108,7 +108,7 @@ func TestHandshakeExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.listener.Close()
+	defer server.Stop()
 
 	// Connect to server
 	serverAddr := server.listener.Addr().String()
@@ -162,7 +162,7 @@ func TestPingPongExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.listener.Close()
+	defer server.Stop()
 
 	// Connect to server
 	serverAddr := server.listener.Addr().String()

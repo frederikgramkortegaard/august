@@ -52,18 +52,20 @@ func (d *Discovery) connectToPeer(address string) {
 		return
 	}
 
-	// Add peer to our peer manager
+	// Add peer to our peer manager (but don't mark as connected yet)
 	if d.config.P2PServer != nil {
 		peer := d.config.P2PServer.GetPeerManager().AddPeer(address)
 		if peer != nil {
-			peer.Status = PeerConnected
 			log.Printf("Successfully connected to peer: %s", address)
+			// Hand over connection to P2P server for proper management
+			go d.config.P2PServer.HandlePeerConnection(conn)
+		} else {
+			// If we can't add the peer, close the connection
+			conn.Close()
 		}
+	} else {
+		conn.Close()
 	}
-
-	// Keep connection alive briefly to establish handshake
-	time.Sleep(100 * time.Millisecond)
-	conn.Close()
 }
 
 // periodicDiscovery runs periodic peer discovery

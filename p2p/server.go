@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,18 +27,23 @@ type Config struct {
 
 // Server handles P2P networking and message passing
 type Server struct {
-	config         Config
-	listener       net.Listener
-	peerManager    *PeerManager
-	peerConnections map[string]net.Conn // Active connections by peer address
+	config            Config
+	listener          net.Listener
+	peerManager       *PeerManager
+	peerConnections   map[string]net.Conn // Active connections by peer address
+	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
+	shutdown          chan bool           // Signal to stop server
+	shutdownComplete  chan bool           // Signal that server has stopped
 }
 
 // NewServer creates a new P2P server
 func NewServer(config Config) *Server {
 	return &Server{
-		config:          config,
-		peerManager:     NewPeerManager([]string{}), // Will be set by discovery
-		peerConnections: make(map[string]net.Conn),
+		config:           config,
+		peerManager:      NewPeerManager([]string{}), // Will be set by discovery
+		peerConnections:  make(map[string]net.Conn),
+		shutdown:         make(chan bool),
+		shutdownComplete: make(chan bool),
 	}
 }
 
@@ -59,20 +65,47 @@ func (s *Server) Start() error {
 
 // acceptConnections handles incoming peer connections
 func (s *Server) acceptConnections() {
+	defer func() {
+		s.shutdownComplete <- true
+	}()
+	
 	for {
+		// Set a short accept timeout to allow checking shutdown signal
 		conn, err := s.listener.Accept()
 		if err != nil {
-			log.Printf("Failed to accept connection: %v", err)
-			continue
+			// Check if we're shutting down
+			select {
+			case <-s.shutdown:
+				// Shutdown requested, exit gracefully without logging error
+				return
+			default:
+				// Only log if it's not a shutdown-related error
+				if !isNetworkClosedError(err) {
+					log.Printf("Failed to accept connection: %v", err)
+				}
+				return
+			}
 		}
 
-		// Handle peer connection in goroutine
-		go s.handlePeerConnection(conn)
+		// Check for shutdown before handling connection
+		select {
+		case <-s.shutdown:
+			conn.Close()
+			return
+		default:
+			// Handle peer connection in goroutine
+			go s.HandlePeerConnection(conn)
+		}
 	}
 }
 
-// handlePeerConnection manages communication with a connected peer
-func (s *Server) handlePeerConnection(conn net.Conn) {
+// isNetworkClosedError checks if error is due to closed network connection
+func isNetworkClosedError(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+// HandlePeerConnection manages communication with a connected peer (public for discovery)
+func (s *Server) HandlePeerConnection(conn net.Conn) {
 	defer conn.Close()
 
 	peerAddr := conn.RemoteAddr().String()
@@ -88,9 +121,14 @@ func (s *Server) handlePeerConnection(conn net.Conn) {
 	log.Printf("Peer %s connected", peerAddr)
 
 	// Store the connection for later message sending
+	s.peerConnectionsMu.Lock()
 	s.peerConnections[peerAddr] = conn
+	s.peerConnectionsMu.Unlock()
+	
 	defer func() {
+		s.peerConnectionsMu.Lock()
 		delete(s.peerConnections, peerAddr)
+		s.peerConnectionsMu.Unlock()
 		peer.Status = PeerDisconnected
 	}()
 
@@ -213,6 +251,30 @@ func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
 }
 
+// Stop gracefully shuts down the P2P server
+func (s *Server) Stop() error {
+	if s.listener != nil {
+		// Close the listener first
+		s.listener.Close()
+	}
+	
+	// Signal shutdown
+	close(s.shutdown)
+	
+	// Wait for acceptConnections to finish
+	<-s.shutdownComplete
+	
+	// Close all peer connections
+	s.peerConnectionsMu.Lock()
+	for addr, conn := range s.peerConnections {
+		conn.Close()
+		delete(s.peerConnections, addr)
+	}
+	s.peerConnectionsMu.Unlock()
+	
+	return nil
+}
+
 // relayBlockToOthers broadcasts a block to all connected peers except the sender
 func (s *Server) relayBlockToOthers(block *blockchain.Block, excludePeerAddr string) {
 	blockHash := blockchain.HashBlockHeader(&block.Header)
@@ -230,8 +292,12 @@ func (s *Server) relayBlockToOthers(block *blockchain.Block, excludePeerAddr str
 	relayCount := 0
 	for _, peer := range s.peerManager.GetConnectedPeers() {
 		if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
-			// Get the stored connection for this peer
-			if conn, exists := s.peerConnections[peer.Address]; exists {
+			// Get the stored connection for this peer (with read lock)
+			s.peerConnectionsMu.RLock()
+			conn, exists := s.peerConnections[peer.Address]
+			s.peerConnectionsMu.RUnlock()
+			
+			if exists {
 				if err := s.sendMessage(conn, msg); err != nil {
 					log.Printf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
 				} else {
@@ -245,4 +311,10 @@ func (s *Server) relayBlockToOthers(block *blockchain.Block, excludePeerAddr str
 	}
 	
 	log.Printf("Successfully relayed block %x to %d peers", blockHash[:8], relayCount)
+}
+
+// RelayBlock is a public method to relay blocks to all connected peers
+func (s *Server) RelayBlock(block *blockchain.Block) {
+	// Use empty string as excludePeerAddr since this block was added locally
+	s.relayBlockToOthers(block, "")
 }

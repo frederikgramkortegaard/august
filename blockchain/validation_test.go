@@ -172,7 +172,7 @@ func TestBlockHashMeetsDifficulty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BlockHashMeetsDifficulty(tt.hash)
+			got := BlockHashMeetsDifficulty(tt.hash, 1) // Using difficulty 1 for test
 			if got != tt.want {
 				t.Errorf("BlockHashMeetsDifficulty() = %v, want %v", got, tt.want)
 			}

@@ -32,9 +32,20 @@ func handlePostBlock(w http.ResponseWriter, r *http.Request, store store.ChainSt
 		return
 	}
 
-	// 2. Business Logic
-	if err := store.AddBlock(&block); err != nil {
+	// 2. Business Logic - validate then add
+	chain, err := store.GetChain()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get chain: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	if err := blockchain.ValidateAndApplyBlock(&block, chain); err != nil {
 		http.Error(w, fmt.Sprintf("Block validation failed: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	if err := store.AddBlock(&block); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add block: %v", err), http.StatusInternalServerError)
 		return
 	}
 

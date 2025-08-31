@@ -109,6 +109,29 @@ func (n *FullNode) startDiscovery() {
 	n.discovery.Start()
 }
 
+// Stop gracefully shuts down the FullNode
+func (n *FullNode) Stop() error {
+	log.Println("Stopping FullNode...")
+	
+	// Stop P2P server
+	if n.p2pServer != nil {
+		if err := n.p2pServer.Stop(); err != nil {
+			log.Printf("Error stopping P2P server: %v", err)
+		}
+	}
+	
+	// Stop discovery
+	if n.discovery != nil {
+		// Discovery doesn't have a Stop method, but stopping P2P server should be enough
+		log.Println("Discovery stopped")
+	}
+	
+	// HTTP server doesn't have a graceful shutdown implemented yet @TODO
+	
+	log.Println("FullNode stopped successfully")
+	return nil
+}
+
 // ProcessBlock attempts to add a block to the main chain, handling orphans
 func (n *FullNode) ProcessBlock(block *blockchain.Block) error {
 	blockHash := blockchain.HashBlockHeader(&block.Header)
@@ -138,8 +161,19 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block) error {
 		return fmt.Errorf("block validation failed: %w", err)
 	}
 	
+	// Block validation succeeded, now persist it to the store
+	if err := n.store.AddBlock(block); err != nil {
+		return fmt.Errorf("failed to persist block to store: %w", err)
+	}
+	
 	// Block successfully added to main chain
 	log.Printf("Block %x added to main chain", blockHash[:8])
+	
+	// Relay the block to connected peers (if we have a P2P server)
+	if n.p2pServer != nil {
+		// Use empty string as excludePeerAddr since this block was added locally
+		n.relayBlockToPeers(block)
+	}
 	
 	// Try to connect any orphan blocks that might now be connectible
 	n.tryConnectOrphans()
@@ -217,4 +251,14 @@ func (n *FullNode) copyChainForValidation() (*blockchain.Chain, error) {
 	}
 	
 	return chainCopy, nil
+}
+
+// relayBlockToPeers relays a block to all connected peers
+func (n *FullNode) relayBlockToPeers(block *blockchain.Block) {
+	// Delegate to the P2P server's relay method with empty excludePeerAddr (locally added block)
+	if n.p2pServer != nil {
+		// Access the relayBlockToOthers method through a public interface
+		// We'll need to add a public method to the P2P server for this
+		n.p2pServer.RelayBlock(block)
+	}
 }

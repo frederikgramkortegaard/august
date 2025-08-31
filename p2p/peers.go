@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type PeerManager struct {
 	peers     map[string]*Peer
 	maxPeers  int
 	seedPeers []string
+	mu        sync.RWMutex // Protects the peers map
 }
 
 func NewPeerManager(seeds []string) *PeerManager {
@@ -36,6 +38,9 @@ func NewPeerManager(seeds []string) *PeerManager {
 }
 
 func (pm *PeerManager) AddPeer(address string) *Peer {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	
 	if len(pm.peers) >= pm.maxPeers {
 		return nil
 	}
@@ -56,6 +61,9 @@ func (pm *PeerManager) AddPeer(address string) *Peer {
 }
 
 func (pm *PeerManager) GetConnectedPeers() []*Peer {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	
 	connectedPeers := make([]*Peer, 0, pm.maxPeers)
 	for _, p := range pm.peers {
 		if p.Status == PeerConnected {

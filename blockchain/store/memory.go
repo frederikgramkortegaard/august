@@ -29,11 +29,7 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 		return errors.New("chain is nil")
 	}
 
-	if err := blockchain.ValidateAndApplyBlock(block, chain); err != nil {
-		return fmt.Errorf("could not validate block: %w", err)
-	}
-
-	// After successful validation and application, add block to chain
+	// Just append the block to the chain - validation should be done by caller
 	chain.Blocks = append(chain.Blocks, block)
 
 	return nil
