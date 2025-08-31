@@ -25,6 +25,7 @@ type Peer struct {
 type PeerManager struct {
 	peers     map[string]*Peer
 	maxPeers  int
+	currentPeers	int
 	seedPeers []string
 	mu        sync.RWMutex // Protects the peers map
 }
@@ -32,7 +33,8 @@ type PeerManager struct {
 func NewPeerManager(seeds []string) *PeerManager {
 	return &PeerManager{
 		peers:     make(map[string]*Peer),
-		maxPeers:  8,
+		maxPeers:  128,
+		currentPeers: 0,
 		seedPeers: seeds,
 	}
 }
@@ -41,10 +43,9 @@ func (pm *PeerManager) AddPeer(address string) *Peer {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	
-	if len(pm.peers) >= pm.maxPeers {
+	if pm.currentPeers >= pm.maxPeers {
 		return nil
 	}
-
 	_, ok := pm.peers[address]
 	if ok {
 		return nil
@@ -56,6 +57,8 @@ func (pm *PeerManager) AddPeer(address string) *Peer {
 		LastSeen: time.Now(),
 		Status:   PeerConnecting,
 	}
+
+	pm.currentPeers += 1
 
 	return pm.peers[address]
 }

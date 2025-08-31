@@ -1,107 +1,139 @@
-# Blockchain Implementation TODO
-
-## ✅ Phase 1: Core Foundation (COMPLETED)
-- [x] **Block structure** - BlockHeader + Transactions with proper types
-- [x] **Transaction structure** - Ed25519 signatures, account model, nonces
-- [x] **Cryptographic hashing** - SHA256, Ed25519, Merkle trees ([32]byte consistent)
-- [x] **Proof-of-work mining** - Configurable difficulty, nonce finding
-- [x] **Genesis block** - Initial coin supply, proper mining
-- [x] **Account model validation** - Balance tracking, nonce enforcement, double-spend prevention
-- [x] **Chain validation** - Incremental transaction processing with state building
-- [x] **Test data generation** - Realistic blockchain scenarios with proper nonce sequences
-
-## 🚧 Phase 2: Node Infrastructure (CURRENT)
-### Blockchain Management & Storage
-- [ ] **Chain management API** - AddBlock(), GetLatestBlock(), GetBlockByHash()
-- [ ] **Block persistence** - Save/load blockchain to/from disk (JSON/binary)
-- [ ] **State persistence** - Save/load AccountStates (separate from blocks)
-- [ ] **Database integration** - SQLite/BadgerDB for efficient block/state storage
-- [ ] **Chain reorganization** - Handle forks, revert state, switch to longer chain
-
-### Transaction Pool (Mempool)  
-- [ ] **Mempool implementation** - Pending transaction storage
-- [ ] **Transaction validation** - Pre-validate before adding to mempool
-- [ ] **Fee-based ordering** - Priority queue for transaction selection
-- [ ] **Mempool cleanup** - Remove confirmed/expired transactions
-- [ ] **Transaction relay** - Broadcast valid transactions to peers
-
-### Mining & Block Creation
-- [ ] **Mining interface** - Continuous mining loop, stop/start controls
-- [ ] **Block template creation** - Select transactions from mempool
-- [ ] **Mining rewards** - Configurable block rewards + transaction fees
-- [ ] **Difficulty adjustment** - Automatic adjustment based on block timing
-- [ ] **Mining pool support** - External miner integration (optional)
-
-## 📋 Phase 3: Networking & P2P (NEXT)
-### Peer-to-Peer Networking
-- [ ] **Node discovery** - Bootstrap nodes, peer exchange protocol
-- [ ] **P2P message protocol** - Block/transaction/peer messages
-- [ ] **Connection management** - Maintain peer connections, handle failures
-- [ ] **Message validation** - Verify messages before processing
-- [ ] **Rate limiting** - Prevent spam/DoS attacks
-
-### Blockchain Synchronization
-- [ ] **Initial block download (IBD)** - Sync full chain from peers
-- [ ] **Header-first sync** - Download headers, then blocks
-- [ ] **Incremental sync** - Stay up-to-date with new blocks
-- [ ] **Fork detection** - Identify competing chains from peers
-- [ ] **Longest chain selection** - Choose chain with most work
-
-### Network Services
-- [ ] **Block propagation** - Announce new blocks to peers
-- [ ] **Transaction broadcasting** - Spread transactions across network  
-- [ ] **Peer synchronization** - Help other nodes sync blockchain
-- [ ] **Network health monitoring** - Track peer status, connection quality
-
-## 📋 Phase 4: User Interface & APIs (FUTURE)
-### Wallet Functionality
-- [ ] **Key management** - Generate, store, backup Ed25519 keypairs
-- [ ] **Address derivation** - Create addresses from public keys
-- [ ] **Transaction creation** - Build, sign, broadcast transactions
-- [ ] **Balance calculation** - Query account balances from blockchain state
-- [ ] **Transaction history** - Track sent/received transactions
-
-### API & Interface Layer
-- [ ] **JSON-RPC API** - Standard blockchain RPC methods
-- [ ] **REST API** - HTTP endpoints for web applications
-- [ ] **CLI commands** - Command-line wallet and node management
-- [ ] **Block explorer** - Web interface to browse blockchain
-- [ ] **WebSocket feeds** - Real-time blockchain updates
-
-## 📋 Phase 5: Advanced Features (OPTIONAL)
-### Consensus & Security
-- [ ] **Advanced fork resolution** - Handle deep reorganizations safely  
-- [ ] **Checkpoint system** - Prevent very deep reorgs
-- [ ] **Network security** - Eclipse attack prevention, Sybil resistance
-- [ ] **Alternative consensus** - PoS/DPoS implementation (research)
-
-### Performance & Scalability  
-- [ ] **Transaction batching** - Process multiple transactions efficiently
-- [ ] **Parallel validation** - Validate blocks/transactions concurrently
-- [ ] **Pruned nodes** - Store only recent blockchain data
-- [ ] **Light clients** - SPV verification without full blockchain
-- [ ] **Sharding** - Horizontal scaling research (very advanced)
-
-### Developer Features
-- [ ] **Smart contracts** - Simple scripting language (research)
-- [ ] **Multi-signature transactions** - Require multiple signatures
-- [ ] **Time-locked transactions** - Transactions that activate later
-- [ ] **Atomic swaps** - Cross-chain transaction exchanges
-
-## 🎯 Current Priority Order
-1. **Chain management API** - Core blockchain operations
-2. **Block persistence** - Save/load blockchain data  
-3. **Mempool implementation** - Transaction pool management
-4. **Basic P2P networking** - Node-to-node communication
-5. **Blockchain synchronization** - Multi-node consensus
-
-## 🧪 Testing Strategy (See FUTURE.md)
-- **Unit tests** - Individual component testing
-- **Integration tests** - Multi-component interaction testing  
-- **Multi-node testing** - Distributed system validation
-- **Attack simulations** - Security and resilience testing
-- **Performance benchmarks** - Scalability and efficiency testing
-
----
-
-**Current Status**: Core blockchain functionality complete. Ready to build node infrastructure and P2P networking layer.
+# Future Blockchain Development Plan	
+	
+## Distributed System Testing & Implementation	
+	
+### Phase 1: Multi-Node Infrastructure	
+	
+#### Node Architecture	
+- **Separate node processes** - Each node runs as independent process/binary	
+- **Configurable ports** - Nodes listen on different ports (8001, 8002, 8003...)	
+- **Node discovery** - Bootstrap nodes + peer discovery mechanism	
+- **Persistent storage** - Each node maintains its own blockchain database	
+	
+#### Network Communication	
+- **P2P Protocol** - Direct TCP/HTTP communication between nodes	
+- **Message types**:	
+  - Block announcements	
+  - Transaction broadcasts	
+  - Peer discovery/handshake	
+  - Chain sync requests	
+  - Fork resolution messages	
+	
+#### Sync States & Testing Scenarios	
+- **Fresh node** - Starts with only genesis, syncs full chain	
+- **Partial sync** - Node behind by N blocks, catches up	
+- **Network split** - Partition nodes, create forks, then merge	
+- **Slow node** - Simulates bandwidth/processing delays	
+- **Byzantine node** - Sends invalid blocks/transactions (attack testing)	
+	
+### Phase 2: Consensus & Fork Resolution	
+	
+#### Longest Chain Rule	
+- **Chain comparison** - Compare total work (block count × difficulty)	
+- **Reorganization** - Switch to longer chain when discovered	
+- **Orphaned blocks** - Handle blocks that become invalid after reorg	
+	
+#### Fork Scenarios to Test	
+- **Natural fork** - Two miners find blocks simultaneously	
+- **Network partition** - Split network creates competing chains  	
+- **Malicious fork** - Attacker tries to double-spend with longer chain	
+- **Deep reorganization** - Very long fork requires major chain rewrite	
+	
+### Phase 3: Test Orchestration Framework	
+	
+#### Multi-Node Test Suite	
+```go	
+type NetworkTestHarness struct {	
+    nodes    []*Node	
+    network  *SimulatedNetwork  // Control message delays, drops, partitions	
+    scenario *TestScenario      // Predefined test cases	
+}	
+```	
+	
+#### Test Scenarios	
+- **Happy Path Sync** - All nodes sync to same chain	
+- **Fork Resolution** - Create fork, verify longest chain wins	
+- **Byzantine Fault** - 1/3 malicious nodes, verify honest nodes succeed  	
+- **Network Partition** - Split network, verify eventual consistency	
+- **Stress Test** - High transaction volume, many nodes	
+- **Chaos Test** - Random node failures, message drops	
+	
+#### Network Simulation	
+- **Message delays** - Simulate internet latency (100ms-2s)	
+- **Packet loss** - Random message drops (1-5%)	
+- **Bandwidth limits** - Throttle large block transfers  	
+- **Network partitions** - Split nodes into isolated groups	
+- **Node crashes** - Simulate hardware failures, restarts	
+	
+### Phase 4: Real-World Testing	
+	
+#### Docker Composition	
+```yaml	
+services:	
+  node1:	
+    build: .	
+    command: --port=8001 --peers=node2:8002,node3:8003	
+  node2:	
+    build: .  	
+    command: --port=8002 --peers=node1:8001,node3:8003	
+  node3:	
+    build: .	
+    command: --port=8003 --peers=node1:8001,node2:8002	
+```	
+	
+#### Integration Tests	
+- **Container orchestration** - Spin up N nodes via Docker	
+- **Real network stack** - Actual TCP/IP, no simulation	
+- **Persistent volumes** - Each node has real blockchain database	
+- **Load testing** - High transaction throughput across nodes	
+- **Failure injection** - Kill containers, simulate partitions	
+	
+### Phase 5: Performance & Scalability	
+	
+#### Metrics Collection	
+- **Block propagation time** - How fast blocks spread through network	
+- **Transaction throughput** - TPS across all nodes	
+- **Sync performance** - Time for new node to sync full chain	
+- **Memory usage** - RAM per node at different chain lengths	
+- **Network bandwidth** - Data usage for P2P communication	
+	
+#### Optimization Targets	
+- **Sub-second block propagation** - Blocks reach 90% of nodes within 1s	
+- **Parallel validation** - Validate multiple blocks simultaneously	
+- **Efficient sync** - New nodes sync via block headers first	
+- **Pruned nodes** - Store recent blocks only, not full history	
+- **Light clients** - SPV verification without full blockchain	
+	
+### Phase 6: Attack Resistance Testing	
+	
+#### Attack Scenarios  	
+- **51% Attack** - Majority hashrate attempts chain reorg	
+- **Eclipse Attack** - Isolate node from honest network	
+- **Sybil Attack** - Flood network with fake nodes	
+- **Double Spend** - Attempt to spend same coins twice	
+- **Selfish Mining** - Withhold blocks to gain unfair advantage	
+	
+#### Security Validation	
+- **Cryptographic verification** - All signatures valid	
+- **Economic incentives** - Mining rewards encourage honest behavior  	
+- **Network resilience** - System functions with node failures	
+- **Fork choice rules** - Honest nodes converge on same chain	
+	
+## Implementation Roadmap	
+	
+1. **Week 1-2**: Basic P2P networking, node discovery	
+2. **Week 3-4**: Block/transaction broadcasting, chain sync	
+3. **Week 5-6**: Fork detection and resolution logic	
+4. **Week 7-8**: Multi-node test framework	
+5. **Week 9-10**: Stress testing, performance optimization	
+6. **Week 11-12**: Security testing, attack simulations	
+	
+## Success Metrics	
+	
+- **Consistency**: All honest nodes converge on same chain	
+- **Performance**: Handle 100+ TPS across 10+ nodes  	
+- **Resilience**: Function with 30% node failures	
+- **Security**: Resist attacks with <51% hashrate	
+- **Usability**: New nodes sync within 10 minutes	
+	
+This distributed testing approach will validate that the blockchain works correctly as a real peer-to-peer network, not just as isolated components.	

@@ -113,7 +113,7 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 
 	peer := s.peerManager.AddPeer(peerAddr)
 	if peer == nil {
-		log.Printf("Failed to add peer %s (max peers reached)", peerAddr)
+		log.Printf("Failed to add peer %s", peerAddr)
 		return
 	}
 

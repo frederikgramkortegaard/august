@@ -15,6 +15,7 @@ const (
 	MessageTypeNewTx        MessageType = "new_transaction"
 	MessageTypePing         MessageType = "ping"
 	MessageTypePong         MessageType = "pong"
+	MessageTypeSharePeers		MessageType	= "share_peers"
 )
 
 // Message represents a P2P message between nodes
@@ -28,6 +29,11 @@ type HandshakePayload struct {
 	NodeID      string `json:"node_id"`
 	ChainHeight int    `json:"chain_height"`
 	Version     string `json:"version"`
+}
+
+type SharePeersPayload struct {
+	Addresses []string `json:"addresses"`
+	NumPeers uint8		 `json:"num_peers"`
 }
 
 // NewBlockPayload broadcasts a new block to peers

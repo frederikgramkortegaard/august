@@ -2,7 +2,6 @@ package node
 
 import (
 	"fmt"
-	"gocuria/api"
 	"gocuria/blockchain"
 	"gocuria/blockchain/processing"
 	"gocuria/blockchain/store"
@@ -13,13 +12,12 @@ import (
 
 // Config holds all configuration for a full node
 type Config struct {
-	HTTPPort  string
 	P2PPort   string
 	NodeID    string
 	SeedPeers []string
 }
 
-// FullNode orchestrates all components: HTTP API, P2P, Discovery
+// FullNode orchestrates Peer Discovery and the rest of P2P stuff
 type FullNode struct {
 	// Core blockchain storage
 	store store.ChainStore
@@ -28,10 +26,11 @@ type FullNode struct {
 	config Config
 
 	// Block processing (handles validation, orphans, etc.)
+	// We have this because BlockProcessing will also make P2P requests
+	// e.g. to request missing blocks
 	blockProcessor *processing.BlockProcessor
 
 	// Components (each package handles its own concern)
-	httpServer *api.Server    // HTTP API server
 	p2pServer  *p2p.Server    // P2P message handling
 	discovery  *p2p.Discovery // Peer discovery
 }
@@ -60,10 +59,7 @@ func (n *FullNode) Start() error {
 	}
 	log.Println("Blockchain initialized with genesis block")
 
-	// 2. Start HTTP API server (for wallets/clients)
-	go n.startHTTPAPI()
-
-	// 3. Start P2P server (for node-to-node communication)
+	//  Start P2P server (for node-to-node communication)
 	go n.startP2P()
 
 	// 4. Start peer discovery (find and connect to other nodes)
@@ -71,19 +67,10 @@ func (n *FullNode) Start() error {
 	time.Sleep(100 * time.Millisecond)
 	go n.startDiscovery()
 
-	log.Printf("Full node started: HTTP on :%s, P2P on :%s",
-		n.config.HTTPPort, n.config.P2PPort)
+	log.Printf("Full node started: P2P on :%s", n.config.P2PPort)
 
 	// Block forever
 	select {}
-}
-
-func (n *FullNode) startHTTPAPI() {
-	log.Printf("Starting HTTP API on port %s", n.config.HTTPPort)
-	n.httpServer = api.NewServer(n.store, n.config.HTTPPort)
-	if err := n.httpServer.Start(); err != nil {
-		log.Printf("HTTP server error: %v", err)
-	}
 }
 
 func (n *FullNode) startP2P() {
@@ -134,18 +121,7 @@ func (n *FullNode) Stop() error {
 		log.Println("Discovery stopped")
 	}
 	
-	// HTTP server doesn't have a graceful shutdown implemented yet @TODO
 	
 	log.Println("FullNode stopped successfully")
 	return nil
-}
-
-// ProcessBlock delegates to the dedicated block processor
-func (n *FullNode) ProcessBlock(block *blockchain.Block) error {
-	return n.blockProcessor.ProcessBlock(block)
-}
-
-// GetOrphanCount returns the number of orphan blocks waiting for parents
-func (n *FullNode) GetOrphanCount() int {
-	return n.blockProcessor.GetOrphanCount()
 }
