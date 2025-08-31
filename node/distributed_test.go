@@ -162,8 +162,8 @@ func TestOrphanBlockHandling(t *testing.T) {
 	}
 	
 	// Check that block B is in orphan pool
-	if len(node2.orphanPool) != 1 {
-		t.Errorf("Expected 1 block in orphan pool, got %d", len(node2.orphanPool))
+	if node2.GetOrphanCount() != 1 {
+		t.Errorf("Expected 1 block in orphan pool, got %d", node2.GetOrphanCount())
 	}
 	
 	// Now send block A to node 2 (should connect the orphan)
@@ -177,8 +177,8 @@ func TestOrphanBlockHandling(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	
 	// Check that orphan pool is now empty (block B should be connected)
-	if len(node2.orphanPool) != 0 {
-		t.Errorf("Expected 0 blocks in orphan pool after connection, got %d", len(node2.orphanPool))
+	if node2.GetOrphanCount() != 0 {
+		t.Errorf("Expected 0 blocks in orphan pool after connection, got %d", node2.GetOrphanCount())
 	}
 	
 	// Check that both blocks are in the chain
