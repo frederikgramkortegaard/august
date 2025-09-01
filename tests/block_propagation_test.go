@@ -83,6 +83,7 @@ func TestBlockPropagation(t *testing.T) {
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
+		Height:       uint64(len(chainA.Blocks)), // Next block height
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{}, // No additional transactions
 		Timestamp:    0,                          // Will use current time

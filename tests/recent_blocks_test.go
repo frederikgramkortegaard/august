@@ -54,6 +54,7 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
+		Height:       uint64(len(chainA.Blocks)), // Next block height
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,
@@ -171,6 +172,7 @@ func TestRecentBlocksCleanup(t *testing.T) {
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
+		Height:       uint64(len(chain.Blocks)), // Next block height
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,

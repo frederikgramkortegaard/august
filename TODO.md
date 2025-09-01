@@ -28,86 +28,102 @@ Architecture:
 - [x] Modular component design
 - [x] Channel-based asynchronous coordination
 - [x] Request-response abstraction layer (reqresp package)
+- [x] Service layer pattern for business logic
+- [x] Function-based approach over OOP methods
 
-## Immediate Tasks
+## Priority 1: Chain Resolution & Consensus
 
-Peer Management: 
-- [ ] Fix duplicate connection detection (prevent double connections)
-- [ ] Connection state machine improvements
+Core functionality required for a working blockchain:
 
-Chain management:
 - [ ] Chain reorganization (switch to longer chain)
 - [ ] Fork detection and resolution
-- [ ] Transaction mempool
-- [ ] Block validation caching
+- [ ] Proper longest chain rule (total work)
+- [ ] Chain sync for new nodes (initial block download)
+- [ ] Fix division by zero in difficulty calculation during orphan tests
 
-Storage:
-- [ ] Database backend (replace in-memory)
-- [ ] State persistence
+## Priority 2: Storage & State Management
+
+Foundation for persistent blockchain state:
+
+- [ ] Database backend (replace in-memory storage)
+- [ ] SQLite or BoltDB backend
+- [ ] Block index for fast lookups
+- [ ] State persistence across restarts
+- [ ] State snapshots for fast sync
 - [ ] Chain pruning options
 
-## Short Term (1-2 weeks)
+## Priority 3: Transaction Processing
 
-Persistent storage:
-- [ ] SQLite or BoltDB backend
-- [ ] Block index
-- [ ] UTXO set tracking
-- [ ] State snapshots
+Complete transaction lifecycle management:
 
-Consensus improvements:
-- [ ] Proper longest chain rule (total work)
-- [ ] Fork handling
-- [ ] Reorg implementation
-- [x] Request missing blocks from peers (implemented for orphans)
-
-## Medium Term (3-4 weeks)
-
-Transaction pool:
-- [ ] Mempool data structure
+- [ ] Transaction mempool data structure
 - [ ] Transaction validation and deduplication
-- [ ] Fee-based priority
+- [ ] Fee-based priority ordering
 - [ ] Mempool synchronization between peers
+- [ ] Block validation caching
 
-Testing:
-- [x] Basic multi-node integration tests
-- [x] Block propagation tests
-- [x] P2P deduplication tests
+## Priority 4: Testing & Quality Assurance
+
+Comprehensive testing before production use:
+
 - [ ] Network partition tests
 - [ ] Fork scenario tests
 - [ ] Performance benchmarks
+- [ ] Missing comprehensive test coverage
+- [x] Basic multi-node integration tests
+- [x] Block propagation tests
+- [x] P2P deduplication tests
 
-## Long Term
+## Priority 5: Networking Robustness
 
-Performance:
+Network resilience features (not blocking core functionality):
+
+- [ ] Fix duplicate connection detection (prevent double connections)
+- [ ] Connection state machine improvements
+- [ ] Handshake timeout handling
+- [ ] Peer quality scoring and reputation
+- [ ] Anti-DDoS protection mechanisms
+- [ ] Connection retry logic with backoff
+- [ ] Bandwidth throttling
+- [ ] Peer blacklisting
+
+## Priority 6: Performance Optimization
+
+Performance improvements for scalability:
+
 - [ ] Parallel block validation
 - [ ] Headers-first synchronization
 - [ ] Compact blocks
 - [ ] Transaction batching
+- [ ] Message compression
+- [ ] Connection pooling
 
-Features:
+## Priority 7: Advanced Features
+
+Extended functionality (future enhancements):
+
 - [ ] Basic scripting
 - [ ] Multi-signature support
 - [ ] Time-locked transactions
+- [ ] Smart contract support
 
-Infrastructure:
+## Priority 8: Infrastructure & Operations
+
+Deployment and monitoring capabilities:
+
 - [ ] Docker containerization
 - [ ] Metrics and monitoring
 - [ ] Configuration management
 - [ ] Logging improvements
-
-## Known Issues
-
-- Division by zero in difficulty calculation during orphan tests
-- Duplicate connection detection needs improvement
-- No chain sync for new nodes (only receives new blocks)
-- Missing comprehensive test coverage
+- [ ] Health check endpoints
+- [ ] Administrative APIs
 
 ## Design Decisions
 
-The system uses a simple architecture:
-- In-memory storage (for now)
-- JSON message encoding (not optimal but simple)
-- TCP for P2P (could use UDP for some messages)
-- Single-threaded validation (could parallelize)
-
-These choices prioritize simplicity and correctness over performance.
+The system uses a simple architecture prioritizing correctness over performance:
+- In-memory storage (temporary - will be replaced with persistent storage)
+- JSON message encoding (simple but not optimal)
+- TCP for P2P (reliable but could add UDP for some messages)
+- Single-threaded validation (could parallelize later)
+- Function-based service layer (not OOP methods)
+- Service functions return completion channels for async tracking

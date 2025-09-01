@@ -8,6 +8,7 @@ import (
 type BlockCreationParams struct {
 	Version      uint64
 	PreviousHash [32]byte
+	Height       uint64
 	Coinbase     Transaction
 	Transactions []Transaction
 	Timestamp    uint64
@@ -32,6 +33,7 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	header := BlockHeader{
 		Version:      params.Version,
 		PreviousHash: params.PreviousHash,
+		Height:       params.Height,
 		Timestamp:    ts,
 		Nonce:        0,
 		MerkleRoot:   merkle,

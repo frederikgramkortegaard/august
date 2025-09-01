@@ -105,6 +105,7 @@ func (h *Hash32) UnmarshalJSON(data []byte) error {
 type BlockHeader struct {
 	Version      uint64 `json:"version"`
 	PreviousHash Hash32 `json:"previous_hash"`
+	Height       uint64 `json:"height"`
 	Timestamp    uint64 `json:"timestamp"`
 	Nonce        uint64 `json:"nonce"`
 	MerkleRoot   Hash32 `json:"merkle_root"`

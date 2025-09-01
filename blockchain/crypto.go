@@ -47,6 +47,7 @@ func HashBlockHeader(header *BlockHeader) Hash32 {
 	h := sha256.New()
 	h.Write(uint64ToBytes(header.Version))
 	h.Write(header.PreviousHash[:])
+	h.Write(uint64ToBytes(header.Height))
 	h.Write(uint64ToBytes(header.Timestamp))
 	h.Write(header.MerkleRoot[:])
 	h.Write(uint64ToBytes(header.Nonce))
