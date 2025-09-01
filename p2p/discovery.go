@@ -189,28 +189,21 @@ func (d *Discovery) periodicDiscovery() {
 		if removed > 0 {
 			d.logf("Cleaned up %d dead peers", removed)
 		}
-		
-		// Simple peer count summary
-		d.logf("Network status: %d peers connected", len(connected))
-
 		// Different strategies based on connection count
 		if len(connected) == 0 {
 			// No connections, try seed peers
 			d.logf("No connected peers, attempting to connect to seed peers")
 			go d.connectToSeeds()
+			// @TODO : If len(pm.discoveredPeers) > 0 we could also try to connect to them, becuase otherwise we reply on full uptime for seed nodes...
 		} else if len(connected) < 5 {
 			// Few connections, try to get more
 			// First try to connect to any peers we already know about
 			go d.connectToDiscoveredPeers()
 			// Request more peers and schedule connection attempts
 			go d.requestPeerSharingAndConnect()
-		} else {
 			// Good number of connections, just maintain
-			if len(connected) < 10 {
+		} else if len(connected) < 10 {
 				go d.connectToDiscoveredPeers()
-			}
-			// Always try to discover new peers
-			go d.requestPeerSharing()
 		}
 	}
 }
