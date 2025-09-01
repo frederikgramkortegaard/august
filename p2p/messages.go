@@ -21,8 +21,10 @@ const (
 
 // Message represents a P2P message between nodes
 type Message struct {
-	Type    MessageType     `json:"type"`
-	Payload json.RawMessage `json:"payload"`
+	Type      MessageType     `json:"type"`
+	RequestID string          `json:"request_id,omitempty"` // For correlating requests
+	ReplyTo   string          `json:"reply_to,omitempty"`   // For correlating responses
+	Payload   json.RawMessage `json:"payload"`
 }
 
 // HandshakePayload is sent when nodes first connect
@@ -84,4 +86,21 @@ func NewMessage(msgType MessageType, payload interface{}) (*Message, error) {
 // ParsePayload unmarshals the message payload into the provided interface
 func (m *Message) ParsePayload(payload interface{}) error {
 	return json.Unmarshal(m.Payload, payload)
+}
+
+// RequestResponse interface implementation
+func (m *Message) GetRequestID() string {
+	return m.RequestID
+}
+
+func (m *Message) SetRequestID(id string) {
+	m.RequestID = id
+}
+
+func (m *Message) GetReplyTo() string {
+	return m.ReplyTo
+}
+
+func (m *Message) SetReplyTo(id string) {
+	m.ReplyTo = id
 }

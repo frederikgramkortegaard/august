@@ -74,16 +74,27 @@ func (d *Discovery) connectToDiscoveredPeers() {
 	pm.mu.RUnlock()
 	
 	// Try connecting to discovered peers we're not already connected to
+	var connectionTasks []chan bool
 	connected := 0
 	for _, addr := range discoveredPeers {
 		if !currentPeers[addr] && connected < 5 { // Limit to 5 new connections per cycle
-			go d.connectToPeer(addr)
+			done := make(chan bool, 1)
+			connectionTasks = append(connectionTasks, done)
+			go func(address string, doneCh chan bool) {
+				defer func() { doneCh <- true }()
+				d.connectToPeer(address)
+			}(addr, done)
 			connected++
 		}
 	}
 	
 	if connected > 0 {
 		d.logf("Attempting to connect to %d discovered peers", connected)
+		// Wait for all connection attempts to complete
+		for _, done := range connectionTasks {
+			<-done
+		}
+		d.logf("All connection attempts completed")
 	}
 }
 
@@ -99,46 +110,48 @@ func (d *Discovery) requestPeerSharing() {
 		return
 	}
 
-	// Send peer requests to all connected peers
-	requestsSent := 0
+	// Request peers from all connected peers and collect responses
+	allDiscoveredPeers := make([]string, 0)
+	successfulRequests := 0
+	
 	for _, peer := range connectedPeers {
 		if peer.Status == PeerConnected {
-			// Send request for up to 50 peers from each connected peer
-			err := d.config.P2PServer.SendPeerRequest(peer.Address, 50)
+			// Use the new synchronous method to get immediate response
+			peers, err := d.config.P2PServer.RequestPeersFromPeer(peer.Address, 50)
 			if err != nil {
 				d.logf("Failed to request peers from %s: %v", peer.Address, err)
 			} else {
-				requestsSent++
+				allDiscoveredPeers = append(allDiscoveredPeers, peers...)
+				successfulRequests++
 			}
 		}
 	}
 	
-	if requestsSent > 0 {
-		d.logf("Sent peer requests to %d connected peers", requestsSent)
+	if successfulRequests > 0 {
+		d.logf("Successfully requested peers from %d peers", successfulRequests)
+		
+		// Add all discovered peers to our peer manager
+		if len(allDiscoveredPeers) > 0 {
+			newPeerCount := pm.AddDiscoveredPeers(allDiscoveredPeers)
+			if newPeerCount > 0 {
+				d.logf("Discovered %d new peers through peer sharing", newPeerCount)
+			}
+		}
 	}
-	
-	// The responses will be handled by handleMessages in server.go
-	// which will call AddDiscoveredPeers directly
-
 }
 
 // requestPeerSharingAndConnect requests peers and then tries to connect to them
-// This fixes the race condition where connectToDiscoveredPeers was called
-// before peer sharing responses were received
 func (d *Discovery) requestPeerSharingAndConnect() {
 	d.logf("Starting peer sharing and connect sequence")
-	// First request peers
+	// Request peers (now synchronous - responses are handled immediately)
 	d.requestPeerSharing()
 	
-	// Wait a short time for responses to arrive and be processed
-	time.Sleep(200 * time.Millisecond)
-	
-	// Then try to connect to any newly discovered peers
+	// Now try to connect to any newly discovered peers
 	d.logf("Now attempting to connect to discovered peers")
 	d.connectToDiscoveredPeers()
 }
 
-// connectToPeer attempts to connect to a specific peer
+// connectToPeer attempts to connect to a specific peer and waits for handshake completion
 func (d *Discovery) connectToPeer(address string) {
 	d.logf("Attempting to connect to peer: %s", address)
 
@@ -148,13 +161,36 @@ func (d *Discovery) connectToPeer(address string) {
 		return
 	}
 
-	// Add peer to our peer manager (but don't mark as connected yet)
+	// Add peer to our peer manager
 	if d.config.P2PServer != nil {
 		peer := d.config.P2PServer.GetPeerManager().AddPeer(address)
 		if peer != nil {
-			d.logf("Successfully connected to peer: %s", address)
-			// Hand over connection to P2P server for proper management
+			d.logf("TCP connection established to peer: %s", address)
+			
+			// Start the connection handler in background
 			go d.config.P2PServer.HandlePeerConnection(conn)
+			
+			// Wait for handshake to complete
+			timeout := time.NewTimer(5 * time.Second)
+			defer timeout.Stop()
+			
+			for {
+				select {
+				case <-timeout.C:
+					d.logf("Handshake timeout for peer %s", address)
+					return
+				case <-time.After(50 * time.Millisecond):
+					// Check if peer is now connected (handshake completed)
+					pm := d.config.P2PServer.GetPeerManager()
+					pm.mu.RLock()
+					if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
+						pm.mu.RUnlock()
+						d.logf("Handshake completed with peer: %s", address)
+						return
+					}
+					pm.mu.RUnlock()
+				}
+			}
 		} else {
 			// If we can't add the peer, close the connection
 			conn.Close()

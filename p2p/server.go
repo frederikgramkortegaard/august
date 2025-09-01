@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gocuria/blockchain"
 	"gocuria/blockchain/store"
+	"gocuria/p2p/reqresp"
 	"io"
 	"log"
 	"net"
@@ -24,6 +25,12 @@ type Config struct {
 	NodeID         string
 	Store          store.ChainStore
 	BlockProcessor BlockProcessor
+	ReqRespConfig  reqresp.Config // Request-response configuration
+}
+
+// DefaultReqRespConfig returns default request-response configuration
+func DefaultReqRespConfig() reqresp.Config {
+	return reqresp.DefaultConfig()
 }
 
 // Server handles P2P networking and message passing
@@ -35,6 +42,7 @@ type Server struct {
 	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
+	reqRespClient     *reqresp.Client     // Request-response client
 }
 
 // logf logs with node ID prefix
@@ -45,13 +53,38 @@ func (s *Server) logf(format string, args ...interface{}) {
 
 // NewServer creates a new P2P server
 func NewServer(config Config) *Server {
-	return &Server{
+	server := &Server{
 		config:           config,
 		peerManager:      NewPeerManager([]string{}), // Will be set by discovery
 		peerConnections:  make(map[string]net.Conn),
 		shutdown:         make(chan bool),
 		shutdownComplete: make(chan bool),
 	}
+	
+	// Create request-response client with this server as the sender
+	server.reqRespClient = reqresp.NewClient(config.ReqRespConfig, server)
+	
+	return server
+}
+
+// SendMessage implements the MessageSender interface for reqresp client
+func (s *Server) SendMessage(peerAddress string, msg reqresp.RequestResponse) error {
+	// Get the connection for this peer
+	s.peerConnectionsMu.RLock()
+	conn, exists := s.peerConnections[peerAddress]
+	s.peerConnectionsMu.RUnlock()
+	
+	if !exists {
+		return fmt.Errorf("no connection to peer %s", peerAddress)
+	}
+	
+	// Cast to *Message and send
+	message, ok := msg.(*Message)
+	if !ok {
+		return fmt.Errorf("invalid message type")
+	}
+	
+	return s.sendMessage(conn, message)
 }
 
 // Start begins listening for P2P connections
@@ -212,6 +245,12 @@ func (s *Server) handleMessages(conn net.Conn, peer *Peer) {
 
 // processMessage handles different types of P2P messages
 func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
+	// First check if this is a response to a pending request
+	if handled := s.reqRespClient.HandleResponse(msg); handled {
+		s.logf("Delivered response for request %s", msg.ReplyTo)
+		return
+	}
+
 	switch msg.Type {
 	case MessageTypeHandshake:
 		var handshake HandshakePayload
@@ -349,6 +388,10 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 		// Send response
 		sharePayload := SharePeersPayload{Peers: peerAddresses}
 		if shareMsg, err := NewMessage(MessageTypeSharePeers, sharePayload); err == nil {
+			// Set ReplyTo field if this was a request with an ID
+			if msg.GetRequestID() != "" {
+				shareMsg.SetReplyTo(msg.GetRequestID())
+			}
 			s.sendMessage(conn, shareMsg)
 			s.logf("Shared %d peers with %s", len(peerAddresses), peer.Address)
 		}
@@ -397,6 +440,11 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 		if err != nil {
 			s.logf("Failed to create block response message: %v", err)
 			return
+		}
+		
+		// Set ReplyTo field if this was a request with an ID
+		if msg.GetRequestID() != "" {
+			response.SetReplyTo(msg.GetRequestID())
 		}
 		
 		if err := s.sendMessage(conn, response); err != nil {
@@ -515,27 +563,60 @@ func (s *Server) SendPeerRequest(peerAddress string, maxPeers int) error {
 	return nil
 }
 
-func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) error {
-
-	s.peerConnectionsMu.RLock()
-	conn, exists := s.peerConnections[peerAddress]
-	s.peerConnectionsMu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("no connection to peer %s", peerAddress)
-	}
-	
+// RequestBlockFromPeer requests a block and waits for the response
+func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) (*blockchain.Block, error) {
 	requestPayload := RequestBlockPayload{BlockHash: blockHash}
+	
 	msg, err := NewMessage(MessageTypeRequestBlock, requestPayload)
 	if err != nil {
-		return fmt.Errorf("failed to create request message: %w", err)
-	}
-
-	if err := s.sendMessage(conn, msg); err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to create request message: %w", err)
 	}
 	
-	s.logf("Sent block request to %s (hash: %s)", peerAddress, blockHash)
-	return nil
+	response, err := s.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Cast back to Message and parse the response as a NewBlock message
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeNewBlock {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+	
+	var blockPayload NewBlockPayload
+	if err := responseMsg.ParsePayload(&blockPayload); err != nil {
+		return nil, fmt.Errorf("failed to parse block response: %w", err)
+	}
+	
+	s.logf("Received block %s from %s", blockHash, peerAddress)
+	return blockPayload.Block, nil
+}
 
+// RequestPeersFromPeer requests peers and waits for the response
+func (s *Server) RequestPeersFromPeer(peerAddress string, maxPeers int) ([]string, error) {
+	requestPayload := RequestPeersPayload{MaxPeers: maxPeers}
+	
+	msg, err := NewMessage(MessageTypeRequestPeers, requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request message: %w", err)
+	}
+	
+	response, err := s.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Cast back to Message and parse the response as a SharePeers message
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeSharePeers {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+	
+	var sharePayload SharePeersPayload
+	if err := responseMsg.ParsePayload(&sharePayload); err != nil {
+		return nil, fmt.Errorf("failed to parse peers response: %w", err)
+	}
+	
+	s.logf("Received %d peers from %s", len(sharePayload.Peers), peerAddress)
+	return sharePayload.Peers, nil
 }

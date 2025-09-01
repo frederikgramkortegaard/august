@@ -81,6 +81,7 @@ func (n *FullNode) startP2P() {
 		NodeID:         n.config.NodeID,
 		Store:          n.store,
 		BlockProcessor: n.blockProcessor, // Use the dedicated block processor
+		ReqRespConfig:  p2p.DefaultReqRespConfig(), // Use default request-response configuration
 	}
 	n.p2pServer = p2p.NewServer(p2pConfig)
 

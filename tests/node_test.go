@@ -97,14 +97,24 @@ func TestRequestBlock(t *testing.T) {
 		t.Fatal("Node A P2P server is nil")
 	}
 	
-	// Request the genesis block from node B
-	err := p2pServerA.RequestBlockFromPeer("127.0.0.1:19002", genesisHashString)
+	// Request the genesis block from node B (now synchronous)
+	block, err := p2pServerA.RequestBlockFromPeer("127.0.0.1:19002", genesisHashString)
 	if err != nil {
 		t.Errorf("Failed to request block from peer: %v", err)
 	}
 	
-	// Give time for the response
-	time.Sleep(100 * time.Millisecond)
+	// Verify we received the correct block
+	if block != nil {
+		receivedHash := blockchain.HashBlockHeader(&block.Header)
+		receivedHashString := base64.StdEncoding.EncodeToString(receivedHash[:])
+		if receivedHashString != genesisHashString {
+			t.Errorf("Received wrong block: expected %s, got %s", genesisHashString, receivedHashString)
+		} else {
+			t.Logf("Successfully received genesis block from peer")
+		}
+	} else {
+		t.Error("Received nil block")
+	}
 	
 	// Stop both nodes
 	if err := nodeA.Stop(); err != nil {
