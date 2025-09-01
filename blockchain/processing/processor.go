@@ -49,7 +49,20 @@ func (bp *BlockProcessor) ProcessBlock(block *blockchain.Block) error {
 			bp.orphanPool[blockHash] = block
 
 			// TODO: Request missing parent block from peers
+			// I wonder whether or not the peers should send it as a NewBlock message, or if there
+			// should be a special messagetype for sending requested blocks, if we use the NewBlock
+			// we can leverage in a sort of recursive manner, the pre-existing ProcessBlock situation.
 			log.Printf("Need to request parent block %x from peers", missingParentErr.Hash[:8])
+
+			pm := bp.p2pServer.peerManager
+			if pm == nil {return nil}
+
+			//@TODO : @NOTE : in the future maybe we should just random subsample peers
+			pm.mu.RLock()
+			for address, peer := pm.peers {
+				go bp.p2pServer.RequestBlockFromPeer(address, missingParentErr.Hash)
+			}
+			pm.mu.RUnlock()
 			return nil
 		}
 

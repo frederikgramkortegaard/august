@@ -367,7 +367,21 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 			if newPeerCount > 0 {
 				s.logf("Received %d new peers from %s", newPeerCount, peer.Address)
 			}
+	}
+
+	case MessageTypeRequestBlock:
+		// if the request block exists, send it back to the requester as a regular NewBlock message
+		var requestBlockPayload RequestBlockPayload 
+		if err := msg.ParsePayload(&requestBlockPayload); err != nil {
+			s.logf("Failed to parse request block payload: %v", err)
+			return
 		}
+
+		
+
+		
+
+
 
 	default:
 		s.logf("Unknown message type: %s", msg.Type)
@@ -476,4 +490,29 @@ func (s *Server) SendPeerRequest(peerAddress string, maxPeers int) error {
 	
 	s.logf("Sent peer request to %s (max: %d)", peerAddress, maxPeers)
 	return nil
+}
+
+func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) {
+
+	s.peerConnectionsMu.RLock()
+	conn, exist s:= s.peerConnections[peerAddress]
+	s.peerConnectionsMu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("no connection to peer %s", peerAddress)
+	}
+	
+	requestPayload := RequestBlockPayload{BlockHash: bockHash}
+	msh, err := NewMessage(MessageTypeRequestBlock, requestPayload)
+	if err != nil {
+		return fmt.Errorf("failed to create request message: %w" ,err)
+	}
+
+	if err := s.sendMessage(conn, msg); err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	
+	s.logf("Sent peer request to %s (max: %d)", peerAddress, maxPeers)
+	return nil
+
 }

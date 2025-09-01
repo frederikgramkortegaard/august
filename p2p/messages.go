@@ -41,7 +41,6 @@ type NewBlockPayload struct {
 // RequestBlockPayload requests a specific block
 type RequestBlockPayload struct {
 	BlockHash string `json:"block_hash"`
-	Height    int    `json:"height"`
 }
 
 // NewTxPayload broadcasts a new transaction
