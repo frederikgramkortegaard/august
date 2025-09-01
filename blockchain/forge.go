@@ -9,6 +9,7 @@ type BlockCreationParams struct {
 	Version      uint64
 	PreviousHash [32]byte
 	Height       uint64
+	PreviousWork string // Total work of previous block (big.Int as string)
 	Coinbase     Transaction
 	Transactions []Transaction
 	Timestamp    uint64
@@ -29,6 +30,12 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	// Calculate merkle root
 	merkle := MerkleTransactions(tsxs)
 
+	// Calculate work for this block
+	blockWork := CalculateBlockWork(params.Difficulty)
+	
+	// Calculate total work (previous work + this block's work)
+	totalWork := AddWork(params.PreviousWork, blockWork.String())
+
 	// Create header
 	header := BlockHeader{
 		Version:      params.Version,
@@ -37,6 +44,7 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 		Timestamp:    ts,
 		Nonce:        0,
 		MerkleRoot:   merkle,
+		TotalWork:    totalWork,
 	}
 
 	// Mine the header to find valid nonce

@@ -50,6 +50,7 @@ func HashBlockHeader(header *BlockHeader) Hash32 {
 	h.Write(uint64ToBytes(header.Height))
 	h.Write(uint64ToBytes(header.Timestamp))
 	h.Write(header.MerkleRoot[:])
+	h.Write([]byte(header.TotalWork)) // Write TotalWork as string bytes
 	h.Write(uint64ToBytes(header.Nonce))
 	var hash Hash32
 	copy(hash[:], h.Sum(nil))

@@ -109,6 +109,7 @@ type BlockHeader struct {
 	Timestamp    uint64 `json:"timestamp"`
 	Nonce        uint64 `json:"nonce"`
 	MerkleRoot   Hash32 `json:"merkle_root"`
+	TotalWork    string `json:"total_work"`    // Cumulative work from genesis to this block (big.Int as string)
 }
 
 type Block struct {

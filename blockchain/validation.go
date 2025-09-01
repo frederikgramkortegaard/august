@@ -17,7 +17,8 @@ func (e ErrMissingParent) Error() string {
 
 // ErrSwitchChain is returned when a block triggers a chain reorganization
 type ErrSwitchChain struct {
-	Block *Block
+	Block           *Block
+	CommonAncestor  *Block
 }
 
 func (e ErrSwitchChain) Error() string {
@@ -67,7 +68,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		// Check if this is a fork (parent exists but is not the tip)
 		if len(chain.Blocks) > 0 && HashBlockHeader(&chain.Blocks[len(chain.Blocks)-1].Header) != block.Header.PreviousHash {
 			// This is a fork - let ValidateAndApplyBlock handle chain switching
-			return ErrSwitchChain{Block: block}
+			return ErrSwitchChain{Block: block, CommonAncestor: prevBlock}
 		}
 	}
 

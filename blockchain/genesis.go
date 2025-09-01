@@ -21,6 +21,9 @@ func init() {
 	// Calculate merkle root for the single transaction
 	merkleRoot := MerkleTransactions([]Transaction{genesisCoinbase})
 
+	// Calculate work for genesis block (difficulty = 1)
+	genesisWork := CalculateBlockWork(1)
+
 	// Create genesis block header
 	header := BlockHeader{
 		Version:      1,
@@ -29,6 +32,7 @@ func init() {
 		Timestamp:    0,
 		Nonce:        0,
 		MerkleRoot:   merkleRoot, // Merkle root of genesis transaction
+		TotalWork:    genesisWork.String(), // Proper work calculation
 	}
 
 	// Mine the genesis block
