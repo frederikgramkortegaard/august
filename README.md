@@ -15,14 +15,18 @@ Working:
 - [x] Peer-to-peer networking
 - [x] Block broadcasting and propagation
 - [x] Peer discovery and management
-- [x] Message protocol (handshake, blocks, transactions)
-- [x] Orphan block handling
+- [x] Message protocol (handshake, blocks, transactions, peer sharing)
+- [x] Orphan block handling with automatic parent requests
+- [x] Request-response correlation with timeout handling
+- [x] Broadcast storm mitigation (block deduplication)
+- [x] Channel-based asynchronous coordination
 
 Not implemented:
 - [ ] Persistent storage (database backend)
 - [ ] Transaction mempool
 - [ ] Chain reorganization (longest chain rule)
 - [ ] Fork resolution
+- [ ] Duplicate connection prevention
 - [ ] Comprehensive test coverage
 
 ## Building
@@ -58,6 +62,7 @@ blockchain/           Core blockchain logic
   validation.go      Block and transaction validation
   mining.go          Proof of work implementation
   difficulty.go      Difficulty adjustment algorithm
+  forge.go           Block creation and mining
   processing/        Block processing and orphan handling
   store/             Storage interface and memory implementation
 
@@ -66,9 +71,15 @@ p2p/                 Peer-to-peer networking
   discovery.go       Peer discovery mechanism
   messages.go        Protocol message types
   peers.go           Peer management
+  reqresp/           Request-response correlation layer
 
 node/                Full node implementation
   node.go            FullNode orchestration
+
+tests/               Integration tests
+  node_test.go       Basic node operations
+  block_propagation_test.go  Block propagation testing
+  recent_blocks_test.go      Deduplication testing
 
 cmd/                 Command-line entry point
 ```
@@ -77,14 +88,23 @@ cmd/                 Command-line entry point
 
 The P2P protocol uses TCP with JSON-encoded messages. Message types:
 
-- HANDSHAKE: Initial peer identification
-- NEW_BLOCK: Block announcement
+- HANDSHAKE: Initial peer identification with height and node info
+- NEW_BLOCK: Block announcement and propagation
 - NEW_TX: Transaction broadcast
 - REQUEST_BLOCK: Block request by hash
+- REQUEST_PEERS/SHARE_PEERS: Peer discovery protocol
 - PING/PONG: Connection keepalive
+
+Features:
+- Request-response correlation with unique message IDs
+- Timeout handling for pending requests (default 30s)
+- Broadcast storm mitigation via block deduplication
+- Recent blocks tracking with 5-minute TTL
+- Automatic cleanup of expired block hashes
 
 Nodes maintain an orphan pool for blocks received out of order. When a block's
 parent arrives, orphaned children are automatically connected to the chain.
+Missing parent blocks are automatically requested from connected peers.
 
 ## Development
 

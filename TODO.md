@@ -17,16 +17,23 @@ P2P networking:
 - [x] Block broadcasting and relay
 - [x] Orphan block pool
 - [x] Concurrent connection management
+- [x] Request-response correlation with timeout handling
+- [x] Broadcast storm mitigation via block deduplication
+- [x] Automatic orphan parent block requests
+- [x] Peer sharing protocol
 
 Architecture:
 - [x] Separation of processing logic from node orchestration
 - [x] Thread-safe peer management
 - [x] Modular component design
+- [x] Channel-based asynchronous coordination
+- [x] Request-response abstraction layer (reqresp package)
 
 ## Immediate Tasks
 
-Peer Management & Broadcast Regulations: 
-- [x] Peer Sharing
+Peer Management: 
+- [ ] Fix duplicate connection detection (prevent double connections)
+- [ ] Connection state machine improvements
 
 Chain management:
 - [ ] Chain reorganization (switch to longer chain)
@@ -46,13 +53,12 @@ Persistent storage:
 - [ ] Block index
 - [ ] UTXO set tracking
 - [ ] State snapshots
-- [ ] Broadcast Storm mitigation
 
 Consensus improvements:
 - [ ] Proper longest chain rule (total work)
 - [ ] Fork handling
 - [ ] Reorg implementation
-- [ ] Request missing blocks from peers
+- [x] Request missing blocks from peers (implemented for orphans)
 
 ## Medium Term (3-4 weeks)
 
@@ -63,7 +69,9 @@ Transaction pool:
 - [ ] Mempool synchronization between peers
 
 Testing:
-- [ ] Multi-node integration tests
+- [x] Basic multi-node integration tests
+- [x] Block propagation tests
+- [x] P2P deduplication tests
 - [ ] Network partition tests
 - [ ] Fork scenario tests
 - [ ] Performance benchmarks
@@ -90,9 +98,8 @@ Infrastructure:
 ## Known Issues
 
 - Division by zero in difficulty calculation during orphan tests
-- Excessive block relay (broadcast storm)
-- No mechanism to request specific blocks
-- No chain sync for new nodes
+- Duplicate connection detection needs improvement
+- No chain sync for new nodes (only receives new blocks)
 - Missing comprehensive test coverage
 
 ## Design Decisions
