@@ -1,6 +1,7 @@
 package processing
 
 import (
+	"encoding/base64"
 	"fmt"
 	"gocuria/blockchain"
 	"gocuria/blockchain/store"
@@ -54,15 +55,15 @@ func (bp *BlockProcessor) ProcessBlock(block *blockchain.Block) error {
 			// we can leverage in a sort of recursive manner, the pre-existing ProcessBlock situation.
 			log.Printf("Need to request parent block %x from peers", missingParentErr.Hash[:8])
 
-			pm := bp.p2pServer.peerManager
+			pm := bp.p2pServer.GetPeerManager()
 			if pm == nil {return nil}
 
 			//@TODO : @NOTE : in the future maybe we should just random subsample peers
-			pm.mu.RLock()
-			for address, peer := range pm.peers {
-				go bp.p2pServer.RequestBlockFromPeer(address, missingParentErr.Hash)
+			connectedPeers := pm.GetConnectedPeers()
+			hashString := base64.StdEncoding.EncodeToString(missingParentErr.Hash[:])
+			for _, peer := range connectedPeers {
+				go bp.p2pServer.RequestBlockFromPeer(peer.Address, hashString)
 			}
-			pm.mu.RUnlock()
 			return nil
 		}
 
