@@ -43,6 +43,9 @@ type Server struct {
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
 	reqRespClient     *reqresp.Client     // Request-response client
+	recentBlocks map[blockchain.Hash32]time.Time
+	recentBlocksTTL time.Duration
+		recentBlocksMu		sync.RWMutex
 }
 
 // logf logs with node ID prefix
@@ -59,6 +62,8 @@ func NewServer(config Config) *Server {
 		peerConnections:  make(map[string]net.Conn),
 		shutdown:         make(chan bool),
 		shutdownComplete: make(chan bool),
+		recentBlocks: 		make(map[blockchain.Hash32]time.Time),
+		recentBlocksTTL: 5*time.Minute,
 	}
 	
 	// Create request-response client with this server as the sender
@@ -100,7 +105,33 @@ func (s *Server) Start() error {
 	// Accept connections in background
 	go s.acceptConnections()
 
+	go s.periodicRecentBlocksCleanup()
+
 	return nil
+}
+
+func (s *Server) cleanupRecentBlocks() {
+	now := time.Now()
+	s.recentBlocksMu.Lock()
+	defer s.recentBlocksMu.Unlock()
+	for hash, addedTime := range s.recentBlocks {
+		if now.Sub(addedTime) > s.recentBlocksTTL {
+			delete(s.recentBlocks, hash)
+		}
+	}
+}
+func (s *Server) periodicRecentBlocksCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanupRecentBlocks()
+		case <-s.shutdown:
+			return
+		}
+	}
 }
 
 // acceptConnections handles incoming peer connections
@@ -330,6 +361,19 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 			return
 		}
 		blockHash := blockchain.HashBlockHeader(&blockPayload.Block.Header)
+
+		// Mitigate Broadcast Storm by keeping list of blocks to ignore
+		s.recentBlocksMu.Lock()
+		if addedTime, seen := s.recentBlocks[blockHash]; seen {
+			if time.Now().Sub(addedTime) <= s.recentBlocksTTL {
+				s.recentBlocksMu.Unlock()
+				s.logf("Ignoring new block: %x because its in recentblocks", blockHash[:8])
+				return
+			}
+		} 
+		s.recentBlocks[blockHash] = time.Now()
+		s.recentBlocksMu.Unlock()
+
 		s.logf("Received new block %x from peer %s", blockHash[:8], peer.Address)
 
 		// Process block using the FullNode's ProcessBlock method (handles orphans)
@@ -453,6 +497,19 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 			s.logf("Sent requested block %s to %s", requestBlockPayload.BlockHash, peer.Address)
 		}
 
+	case MessageTypeNewTx:
+		// Handle incoming transaction
+		var txPayload NewTxPayload
+		if err := msg.ParsePayload(&txPayload); err != nil {
+			s.logf("Failed to parse transaction payload: %v", err)
+			return
+		}
+		
+		s.logf("Received transaction from peer %s", peer.Address)
+		
+		// TODO: Validate transaction and add to mempool
+		// For now, just relay to other peers to avoid loops
+		s.broadcastTransactionToAllExcept(txPayload.Transaction, peer.Address)
 
 	default:
 		s.logf("Unknown message type: %s", msg.Type)
@@ -467,6 +524,16 @@ func (s *Server) GetListener() net.Listener {
 // GetPeerManager returns the peer manager (for testing)
 func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
+}
+
+// GetChainStore returns the chain store for testing purposes
+func (s *Server) GetChainStore() store.ChainStore {
+	return s.config.Store
+}
+
+// GetBlockProcessor returns the block processor for testing purposes
+func (s *Server) GetBlockProcessor() BlockProcessor {
+	return s.config.BlockProcessor
 }
 
 // Stop gracefully shuts down the P2P server
@@ -619,4 +686,48 @@ func (s *Server) RequestPeersFromPeer(peerAddress string, maxPeers int) ([]strin
 	
 	s.logf("Received %d peers from %s", len(sharePayload.Peers), peerAddress)
 	return sharePayload.Peers, nil
+}
+
+// BroadcastTransaction broadcasts a transaction to all connected peers
+func (s *Server) BroadcastTransaction(tx *blockchain.Transaction) error {
+	s.broadcastTransactionToAllExcept(tx, "")
+	return nil
+}
+
+// broadcastTransactionToAllExcept broadcasts a transaction to all connected peers except the specified one
+func (s *Server) broadcastTransactionToAllExcept(tx *blockchain.Transaction, excludePeerAddr string) {
+	// Create the transaction payload
+	txPayload := NewTxPayload{Transaction: tx}
+	msg, err := NewMessage(MessageTypeNewTx, txPayload)
+	if err != nil {
+		s.logf("Failed to create transaction message: %v", err)
+		return
+	}
+	
+	if excludePeerAddr == "" {
+		s.logf("Broadcasting transaction to all peers")
+	} else {
+		s.logf("Relaying transaction to other peers (excluding %s)", excludePeerAddr)
+	}
+	
+	// Send to all connected peers except the excluded one
+	sentCount := 0
+	for _, peer := range s.peerManager.GetConnectedPeers() {
+		if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
+			s.peerConnectionsMu.RLock()
+			conn, exists := s.peerConnections[peer.Address]
+			s.peerConnectionsMu.RUnlock()
+			
+			if exists {
+				if err := s.sendMessage(conn, msg); err != nil {
+					s.logf("Failed to send transaction to peer %s: %v", peer.Address, err)
+				} else {
+					s.logf("Sent transaction to peer %s", peer.Address)
+					sentCount++
+				}
+			}
+		}
+	}
+	
+	s.logf("Successfully sent transaction to %d peers", sentCount)
 }

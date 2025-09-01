@@ -3,6 +3,7 @@ package blockchain
 import (
 	"crypto/ed25519"
 	"fmt"
+	"log"
 )
 
 // ErrMissingParent is returned when a block's parent is not found in the chain
@@ -86,17 +87,27 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 
 // validateTransactionSignature validates just the cryptographic signature
 func validateTransactionSignature(tsx *Transaction) bool {
+	log.Printf("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
 	signingData := GetSigningBytesFromTransaction(tsx)
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
-	return ed25519.Verify(publicKey, signingData, signature)
+	valid := ed25519.Verify(publicKey, signingData, signature)
+	if !valid {
+		log.Printf("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
+	} else {
+		log.Printf("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
+	}
+	return valid
 }
 
 // validateAndApplyTransaction validates a single transaction against current state and applies it
 func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
+	log.Printf("VALIDATION\tValidating transaction: %x -> %x, amount=%d, nonce=%d", 
+		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
+	
 	// Coinbase transactions - just apply
 	if tsx.From == (PublicKey{}) {
-		fmt.Println("Processing coinbase transaction")
+		log.Printf("VALIDATION\tProcessing coinbase transaction")
 
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
@@ -116,33 +127,37 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 
 	// 1. Signature validation
 	if !validateTransactionSignature(tsx) {
-		fmt.Println("Invalid transaction signature")
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: Invalid signature")
 		return false
 	}
 
 	// 2. Check sender account exists and has sufficient balance
 	fromState, exists := accountStates[tsx.From]
 	if !exists {
-		fmt.Printf("Sender account does not exist: %x\n", tsx.From[:])
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: Sender account does not exist: %x", tsx.From[:8])
 		return false
 	}
 
+	log.Printf("VALIDATION\tSender %x has balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
+
 	if fromState.Balance < tsx.Amount {
-		fmt.Printf("Insufficient balance: has %d, needs %d\n", fromState.Balance, tsx.Amount)
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: Insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount)
 		return false
 	}
 
 	// 3. Nonce validation (prevent double-spend)
 	if tsx.Nonce != (fromState.Nonce + 1) {
-		fmt.Printf("Invalid nonce: expected %d, got %d\n", fromState.Nonce+1, tsx.Nonce)
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: Invalid nonce: expected %d, got %d", fromState.Nonce+1, tsx.Nonce)
 		return false
 	}
 
 	// 4. All validation passed - apply the transaction
+	log.Printf("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
 
 	// Deduct from sender
 	fromState.Balance -= tsx.Amount
 	fromState.Nonce += 1
+	log.Printf("VALIDATION\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
 
 	// Credit recipient
 	if toState, ok := accountStates[tsx.To]; ok {

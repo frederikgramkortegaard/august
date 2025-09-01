@@ -3,7 +3,6 @@ package tests
 import (
 	"encoding/base64"
 	"testing"
-	"time"
 	"gocuria/node"
 	"gocuria/blockchain"
 )
@@ -22,15 +21,11 @@ func TestSingleNodeStartup(t *testing.T) {
 		t.Fatal("Failed to create test node")
 	}
 	
-	// Start node in goroutine since Start() blocks
-	go func() {
-		if err := testNode.Start(); err != nil {
-			t.Errorf("Failed to start node: %v", err)
-		}
-	}()
-	
-	// Give node time to start up
-	time.Sleep(100 * time.Millisecond)
+	// Start node and wait for it to be ready
+	ready := testNode.Start()
+	if !<-ready {
+		t.Fatal("Failed to start test node")
+	}
 	
 	// For now, just verify the node was created
 	// TODO: Add proper checks for P2P server listening, etc.
@@ -56,14 +51,10 @@ func TestRequestBlock(t *testing.T) {
 	}
 	
 	// Start node B
-	go func() {
-		if err := nodeB.Start(); err != nil {
-			t.Errorf("Failed to start node B: %v", err)
-		}
-	}()
-	
-	// Give node B time to start up
-	time.Sleep(150 * time.Millisecond)
+	readyB := nodeB.Start()
+	if !<-readyB {
+		t.Fatal("Failed to start node B")
+	}
 	
 	// Create Node A (will connect to B and request genesis block)
 	configA := node.Config{
@@ -78,14 +69,13 @@ func TestRequestBlock(t *testing.T) {
 	}
 	
 	// Start node A
-	go func() {
-		if err := nodeA.Start(); err != nil {
-			t.Errorf("Failed to start node A: %v", err)
-		}
-	}()
+	readyA := nodeA.Start()
+	if !<-readyA {
+		t.Fatal("Failed to start node A")
+	}
 	
-	// Give nodes time to connect
-	time.Sleep(200 * time.Millisecond)
+	// Wait for nodes to connect - RunDiscoveryRound now waits for actual connections
+	<-nodeA.GetDiscovery().RunDiscoveryRound()
 	
 	// Get the genesis block hash and convert to string
 	genesisHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
@@ -134,22 +124,28 @@ func TestPeerSharing(t *testing.T) {
 	nodeB := node.NewFullNode(node.Config{
 		P2PPort: "19010", NodeID: "node-B", SeedPeers: []string{},
 	})
-	go nodeB.Start()
-	time.Sleep(100 * time.Millisecond)
+	readyB := nodeB.Start()
+	if !<-readyB {
+		t.Fatal("Failed to start node B")
+	}
 	
 	// Node C connects to B
 	nodeC := node.NewFullNode(node.Config{
 		P2PPort: "19011", NodeID: "node-C", SeedPeers: []string{"127.0.0.1:19010"},
 	})
-	go nodeC.Start()
-	time.Sleep(150 * time.Millisecond)
+	readyC := nodeC.Start()
+	if !<-readyC {
+		t.Fatal("Failed to start node C")
+	}
 	
 	// Node A connects to B
 	nodeA := node.NewFullNode(node.Config{
 		P2PPort: "19012", NodeID: "node-A", SeedPeers: []string{"127.0.0.1:19010"},
 	})
-	go nodeA.Start()
-	time.Sleep(200 * time.Millisecond) // Allow nodes to connect
+	readyA := nodeA.Start()
+	if !<-readyA {
+		t.Fatal("Failed to start node A")
+	}
 	
 	// Manually trigger discovery on node A
 	<-nodeA.GetDiscovery().RunDiscoveryRound()
@@ -167,3 +163,4 @@ func TestPeerSharing(t *testing.T) {
 	nodeB.Stop() 
 	nodeC.Stop()
 }
+
