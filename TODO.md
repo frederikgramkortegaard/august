@@ -26,8 +26,7 @@ Architecture:
 ## Immediate Tasks
 
 Peer Management & Broadcast Regulations: 
-- [ ] Peer Sharing
-- [ ] Broadcast Storm mitigation
+- [x] Peer Sharing
 
 Chain management:
 - [ ] Chain reorganization (switch to longer chain)
@@ -47,6 +46,7 @@ Persistent storage:
 - [ ] Block index
 - [ ] UTXO set tracking
 - [ ] State snapshots
+- [ ] Broadcast Storm mitigation
 
 Consensus improvements:
 - [ ] Proper longest chain rule (total work)
