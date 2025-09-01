@@ -15,6 +15,15 @@ func (e ErrMissingParent) Error() string {
 	return fmt.Sprintf("missing parent block: %x", e.Hash[:8])
 }
 
+// ErrSwitchChain is returned when a block triggers a chain reorganization
+type ErrSwitchChain struct {
+	Block *Block
+}
+
+func (e ErrSwitchChain) Error() string {
+	return "chain reorganization required"
+}
+
 func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	// Ensure the first block is genesis
 	genesisHash := HashBlockHeader(&GenesisBlock.Header)
@@ -40,12 +49,6 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 			return fmt.Errorf("block is not genesis")
 		}
 	} else {
-		// Get previous block - check if it exists
-		if currentHeight == 0 {
-			// Chain is empty but block is not genesis
-			return fmt.Errorf("chain is empty but block is not genesis")
-		}
-
 		// Check if we have the parent block
 		parentExists := false
 		for _, chainBlock := range chain.Blocks {
@@ -56,12 +59,16 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 			}
 		}
 
+		// Parent block not found - this is an orphan
 		if !parentExists {
-			// Parent block not found - this is an orphan
 			return ErrMissingParent{Hash: block.Header.PreviousHash}
 		}
 
-		// 1. Previous Hash Linking - already verified above
+		// Check if this is a fork (parent exists but is not the tip)
+		if len(chain.Blocks) > 0 && HashBlockHeader(&chain.Blocks[len(chain.Blocks)-1].Header) != block.Header.PreviousHash {
+			// This is a fork - let ValidateAndApplyBlock handle chain switching
+			return ErrSwitchChain{Block: block}
+		}
 	}
 
 	// 2. Proof Of Work - calculate expected difficulty for this height
@@ -213,6 +220,13 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 
 	// First validate block structure (PoW, hashes, etc.)
 	if err := validateBlockStructure(block, chain); err != nil {
+		// Propagate ErrSwitchChain and ErrMissingParent directly, wrap other errors
+		if _, ok := err.(ErrSwitchChain); ok {
+			return err
+		}
+		if _, ok := err.(ErrMissingParent); ok {
+			return err
+		}
 		return fmt.Errorf("block structure validation failed: %w", err)
 	}
 

@@ -214,6 +214,15 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 				return
 			}
 
+			// Check if this is a chain switch request (fork detected)
+			if _, ok := err.(blockchain.ErrSwitchChain); ok {
+				server.logf("Block %x detected fork, need to check for chain reorganization", blockHash[:8])
+				// TODO: Implement chain reorganization logic here
+				// For now, just log and ignore the block
+				server.logf("Chain reorganization not implemented yet, ignoring block %x", blockHash[:8])
+				return
+			}
+
 			// Other validation errors
 			server.logf("Block %x validation failed: %v", blockHash[:8], err)
 			return
