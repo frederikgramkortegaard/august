@@ -15,6 +15,8 @@ const (
 	MessageTypeNewTx        MessageType = "new_transaction"
 	MessageTypePing         MessageType = "ping"
 	MessageTypePong         MessageType = "pong"
+	MessageTypeRequestPeers MessageType = "request_peers"
+	MessageTypeSharePeers   MessageType = "share_peers"
 )
 
 // Message represents a P2P message between nodes
@@ -28,6 +30,7 @@ type HandshakePayload struct {
 	NodeID      string `json:"node_id"`
 	ChainHeight int    `json:"chain_height"`
 	Version     string `json:"version"`
+	ListenPort  string `json:"listen_port"` // The port this node is listening on
 }
 
 // NewBlockPayload broadcasts a new block to peers
@@ -54,6 +57,16 @@ type PingPayload struct {
 // PongPayload response to ping
 type PongPayload struct {
 	Timestamp int64 `json:"timestamp"`
+}
+
+// RequestPeersPayload requests a list of known peers
+type RequestPeersPayload struct {
+	MaxPeers int `json:"max_peers"` // Maximum number of peers to return
+}
+
+// SharePeersPayload shares a list of known peer addresses
+type SharePeersPayload struct {
+	Peers []string `json:"peers"` // List of peer addresses
 }
 
 // NewMessage creates a new P2P message with the given type and payload

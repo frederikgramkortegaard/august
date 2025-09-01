@@ -71,7 +71,7 @@ func MerkleTransactions(transactions []Transaction) Hash32 {
 	// Build merkle tree
 	for len(hashes) > 1 {
 		// If odd number, duplicate last hash
-		if len(hashes) % 2 == 1 {
+		if len(hashes)%2 == 1 {
 			hashes = append(hashes, hashes[len(hashes)-1])
 		}
 

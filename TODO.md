@@ -25,6 +25,10 @@ Architecture:
 
 ## Immediate Tasks
 
+Peer Management & Broadcast Regulations: 
+- [ ] Peer Sharing
+- [ ] Broadcast Storm mitigation
+
 Chain management:
 - [ ] Chain reorganization (switch to longer chain)
 - [ ] Fork detection and resolution

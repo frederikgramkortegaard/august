@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"gocuria/node"
 	"log"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -20,6 +22,11 @@ func main() {
 		seedPeers = strings.Split(*seeds, ",")
 	}
 
+	// Auto-generate node ID if not provided
+	if *nodeID == "" {
+		*nodeID = fmt.Sprintf("node-%s-%d", *p2pPort, time.Now().Unix()%10000)
+	}
+
 	// Create node configuration
 	config := node.Config{
 		P2PPort:   *p2pPort,
@@ -30,13 +37,13 @@ func main() {
 	// Create and start full node
 	fullNode := node.NewFullNode(config)
 
-	log.Printf("Starting full node: P2P on :%s", *p2pPort)
+	log.Printf("%s\tStarting full node: P2P on :%s", *nodeID, *p2pPort)
 	if len(seedPeers) > 0 {
-		log.Printf("Seed peers: %v", seedPeers)
+		log.Printf("%s\tSeed peers: %v", *nodeID, seedPeers)
 	}
 
 	// This blocks forever
 	if err := fullNode.Start(); err != nil {
-		log.Fatal("Failed to start node:", err)
+		log.Fatalf("%s\tFailed to start node: %v", *nodeID, err)
 	}
 }

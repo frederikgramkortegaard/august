@@ -29,10 +29,10 @@ func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 
 // validateBlockStructure validates block structure using chain context for difficulty
 func validateBlockStructure(block *Block, chain *Chain) error {
-	
+
 	var prevBlock *Block
 	currentHeight := len(chain.Blocks)
-	
+
 	// Genesis block validation
 	if currentHeight == 0 {
 		if !validateBlockHeaderIsGenesis(&block.Header) {
@@ -44,7 +44,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 			// Chain is empty but block is not genesis
 			return fmt.Errorf("chain is empty but block is not genesis")
 		}
-		
+
 		// Check if we have the parent block
 		parentExists := false
 		for _, chainBlock := range chain.Blocks {
@@ -54,12 +54,12 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 				break
 			}
 		}
-		
+
 		if !parentExists {
 			// Parent block not found - this is an orphan
 			return ErrMissingParent{Hash: block.Header.PreviousHash}
 		}
-		
+
 		// 1. Previous Hash Linking - already verified above
 	}
 
@@ -159,10 +159,9 @@ func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	return true
 }
 
-
 // ValidateTransaction validates a transaction against current state WITHOUT applying changes
 func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) error {
-	
+
 	// Coinbase transactions - always valid (no sender validation needed)
 	if tsx.From == (PublicKey{}) {
 		return nil

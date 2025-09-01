@@ -3,6 +3,7 @@ package blockchain
 type NonceType = uint64
 
 const MaxTarget = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+
 func BlockHashMeetsDifficulty(hash Hash32, difficulty uint64) bool {
 	// Convert hash to big integer for comparison
 	// For simplicity, check if hash starts with enough zero bytes

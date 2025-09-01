@@ -31,8 +31,8 @@ type FullNode struct {
 	blockProcessor *processing.BlockProcessor
 
 	// Components (each package handles its own concern)
-	p2pServer  *p2p.Server    // P2P message handling
-	discovery  *p2p.Discovery // Peer discovery
+	p2pServer *p2p.Server    // P2P message handling
+	discovery *p2p.Discovery // Peer discovery
 }
 
 // NewFullNode creates a node that runs all services
@@ -57,7 +57,7 @@ func (n *FullNode) Start() error {
 	if err := n.store.AddBlock(blockchain.GenesisBlock); err != nil {
 		return fmt.Errorf("failed to add genesis block: %w", err)
 	}
-	log.Println("Blockchain initialized with genesis block")
+	log.Printf("%s\tBlockchain initialized with genesis block", n.config.NodeID)
 
 	//  Start P2P server (for node-to-node communication)
 	go n.startP2P()
@@ -67,14 +67,14 @@ func (n *FullNode) Start() error {
 	time.Sleep(100 * time.Millisecond)
 	go n.startDiscovery()
 
-	log.Printf("Full node started: P2P on :%s", n.config.P2PPort)
+	log.Printf("%s\tFull node started: P2P on :%s", n.config.NodeID, n.config.P2PPort)
 
 	// Block forever
 	select {}
 }
 
 func (n *FullNode) startP2P() {
-	log.Printf("Starting P2P server on port %s", n.config.P2PPort)
+	log.Printf("%s\tStarting P2P server on port %s", n.config.NodeID, n.config.P2PPort)
 	// The p2p package handles all P2P messaging
 	p2pConfig := p2p.Config{
 		Port:           n.config.P2PPort,
@@ -83,18 +83,18 @@ func (n *FullNode) startP2P() {
 		BlockProcessor: n.blockProcessor, // Use the dedicated block processor
 	}
 	n.p2pServer = p2p.NewServer(p2pConfig)
-	
+
 	// Link the block processor with the P2P server for relaying
 	n.blockProcessor.SetP2PServer(n.p2pServer)
-	
+
 	err := n.p2pServer.Start()
 	if err != nil {
-		log.Printf("Failed to start P2P server: %v", err)
+		log.Printf("%s\tFailed to start P2P server: %v", n.config.NodeID, err)
 	}
 }
 
 func (n *FullNode) startDiscovery() {
-	log.Println("Starting peer discovery...")
+	log.Printf("%s\tStarting peer discovery...", n.config.NodeID)
 	// The p2p package also handles discovery
 	discoveryConfig := p2p.DiscoveryConfig{
 		SeedPeers: n.config.SeedPeers,
@@ -106,22 +106,21 @@ func (n *FullNode) startDiscovery() {
 
 // Stop gracefully shuts down the FullNode
 func (n *FullNode) Stop() error {
-	log.Println("Stopping FullNode...")
-	
+	log.Printf("%s\tStopping FullNode...", n.config.NodeID)
+
 	// Stop P2P server
 	if n.p2pServer != nil {
 		if err := n.p2pServer.Stop(); err != nil {
-			log.Printf("Error stopping P2P server: %v", err)
+			log.Printf("%s\tError stopping P2P server: %v", n.config.NodeID, err)
 		}
 	}
-	
+
 	// Stop discovery
 	if n.discovery != nil {
 		// Discovery doesn't have a Stop method, but stopping P2P server should be enough
 		log.Println("Discovery stopped")
 	}
-	
-	
+
 	log.Println("FullNode stopped successfully")
 	return nil
 }
