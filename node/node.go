@@ -124,3 +124,8 @@ func (n *FullNode) Stop() error {
 	log.Println("FullNode stopped successfully")
 	return nil
 }
+
+// GetP2PServer returns the P2P server for testing purposes
+func (n *FullNode) GetP2PServer() *p2p.Server {
+	return n.p2pServer
+}
