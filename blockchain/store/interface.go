@@ -8,6 +8,7 @@ type ChainStore interface {
 
 	// Update/Add/Put
 	AddBlock(block *blockchain.Block) error
+	ReplaceChain(newChain *blockchain.Chain) error
 
 	// Getters
 	GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error)

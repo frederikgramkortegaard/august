@@ -208,7 +208,7 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	return nil
 }
 
-// ValidateAndApplyBlock validates block structure, then validates and applies each transaction
+// ValidateAndApplyBlock validates block structure, applies transactions, and adds block to chain
 func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 
 	// First validate block structure (PoW, hashes, etc.)
@@ -222,6 +222,9 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 			return fmt.Errorf("transaction %d failed validation", i)
 		}
 	}
+
+	// Add the validated block to the chain
+	chain.Blocks = append(chain.Blocks, block)
 
 	return nil
 }

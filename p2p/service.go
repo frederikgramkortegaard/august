@@ -175,15 +175,22 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 
 		blockHash := blockchain.HashBlockHeader(&block.Header)
 
-		// Get current chain for validation
-		chain, err := server.config.Store.GetChain()
+		// Get current chain and make a deep copy for validation
+		originalChain, err := server.config.Store.GetChain()
 		if err != nil {
 			server.logf("Failed to get chain for block %x: %v", blockHash[:8], err)
 			return
 		}
 
-		// Try to validate and add block directly to main chain
-		if err := blockchain.ValidateAndApplyBlock(block, chain); err != nil {
+		// Make a deep copy to validate on without affecting the original
+		chainCopy := originalChain.DeepCopy()
+		if chainCopy == nil {
+			server.logf("Failed to create chain copy for block %x", blockHash[:8])
+			return
+		}
+
+		// Try to validate and apply block to the copy (this also adds the block to the chain)
+		if err := blockchain.ValidateAndApplyBlock(block, chainCopy); err != nil {
 			// Check if this is a missing parent error (orphan block)
 			if missingParentErr, ok := err.(blockchain.ErrMissingParent); ok {
 				server.logf("Block %x is orphan, missing parent %x. Adding to orphan pool.",
@@ -212,9 +219,9 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 			return
 		}
 
-		// Block validation succeeded, now persist it to the store
-		if err := server.config.Store.AddBlock(block); err != nil {
-			server.logf("Failed to persist block %x to store: %v", blockHash[:8], err)
+		// Block validation succeeded and was added to the copy, now atomically replace the chain
+		if err := server.config.Store.ReplaceChain(chainCopy); err != nil {
+			server.logf("Failed to replace chain with validated block %x: %v", blockHash[:8], err)
 			return
 		}
 
@@ -244,7 +251,7 @@ func tryConnectOrphans(server *Server) {
 		connected = false
 
 		// Get current chain state for each attempt
-		chain, err := server.config.Store.GetChain()
+		originalChain, err := server.config.Store.GetChain()
 		if err != nil {
 			server.logf("Failed to get chain for orphan connection: %v", err)
 			return
@@ -253,11 +260,18 @@ func tryConnectOrphans(server *Server) {
 		server.orphanPoolMu.Lock()
 		// Check each orphan block
 		for orphanHash, orphanBlock := range server.orphanPool {
-			// Try to validate and add this orphan block
-			if err := blockchain.ValidateAndApplyBlock(orphanBlock, chain); err == nil {
-				// Validation succeeded, now persist to store
-				if err := server.config.Store.AddBlock(orphanBlock); err != nil {
-					server.logf("Failed to persist orphan block %x to store: %v", orphanHash[:8], err)
+			// Make a deep copy to validate on without affecting the original
+			chainCopy := originalChain.DeepCopy()
+			if chainCopy == nil {
+				server.logf("Failed to create chain copy for orphan block %x", orphanHash[:8])
+				continue
+			}
+
+			// Try to validate and add this orphan block to the copy (this also adds the block to the chain)
+			if err := blockchain.ValidateAndApplyBlock(orphanBlock, chainCopy); err == nil {
+				// Block validation succeeded and was added to the copy, now atomically replace the chain
+				if err := server.config.Store.ReplaceChain(chainCopy); err != nil {
+					server.logf("Failed to replace chain with orphan block %x: %v", orphanHash[:8], err)
 					continue
 				}
 
@@ -267,6 +281,9 @@ func tryConnectOrphans(server *Server) {
 				// Remove from orphan pool
 				delete(server.orphanPool, orphanHash)
 				connected = true
+
+				// Update originalChain for next iteration
+				originalChain = chainCopy
 
 				// Don't continue iterating as we modified the map
 				break

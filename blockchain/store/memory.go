@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"gocuria/blockchain"
+	"sync"
 )
 
 type MemoryChainStore struct {
 	chain *blockchain.Chain
+	mu    sync.RWMutex
 }
 
 func NewMemoryChainStore() *MemoryChainStore {
@@ -20,8 +22,10 @@ func NewMemoryChainStore() *MemoryChainStore {
 }
 
 func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return fmt.Errorf("failed to get chain: %w", err)
 	}
@@ -36,8 +40,10 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 }
 
 func (m *MemoryChainStore) GetHeadBlock() (*blockchain.Block, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +61,10 @@ func (m *MemoryChainStore) GetHeadBlock() (*blockchain.Block, error) {
 }
 
 func (m *MemoryChainStore) GetAccountState(pubkey blockchain.PublicKey) (*blockchain.AccountState, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +82,21 @@ func (m *MemoryChainStore) GetAccountState(pubkey blockchain.PublicKey) (*blockc
 }
 
 func (m *MemoryChainStore) GetChain() (*blockchain.Chain, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.getChainUnsafe()
+}
+
+// getChainUnsafe returns the chain without locking - must be called with lock held
+func (m *MemoryChainStore) getChainUnsafe() (*blockchain.Chain, error) {
 	return m.chain, nil
 }
 
 func (m *MemoryChainStore) GetAccountStates() (map[blockchain.PublicKey]*blockchain.AccountState, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +109,10 @@ func (m *MemoryChainStore) GetAccountStates() (map[blockchain.PublicKey]*blockch
 }
 
 func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return nil, err
 	}
@@ -106,17 +125,17 @@ func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.B
 		if blockchain.HashBlockHeader(&block.Header) == hash {
 			return block, nil
 		}
-
 	}
 
 	fmt.Printf("could not find block with hash %x\n", hash)
 	return nil, nil
-
 }
 
 func (m *MemoryChainStore) GetChainHeight() (uint64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	chain, err := m.GetChain()
+	chain, err := m.getChainUnsafe()
 	if err != nil {
 		return 0, err
 	}
@@ -126,5 +145,17 @@ func (m *MemoryChainStore) GetChainHeight() (uint64, error) {
 	}
 
 	return uint64(len(chain.Blocks)), nil
+}
 
+// ReplaceChain atomically replaces the entire chain - used after validation on copy
+func (m *MemoryChainStore) ReplaceChain(newChain *blockchain.Chain) error {
+	if newChain == nil {
+		return errors.New("cannot replace with nil chain")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.chain = newChain
+	return nil
 }

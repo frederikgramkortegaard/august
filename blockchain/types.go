@@ -126,3 +126,34 @@ type Chain struct {
 	Blocks        []*Block                    `json:"blocks"`
 	AccountStates map[PublicKey]*AccountState `json:"account_states"`
 }
+
+// DeepCopy creates a deep copy of the chain for safe concurrent validation
+func (c *Chain) DeepCopy() *Chain {
+	if c == nil {
+		return nil
+	}
+
+	// Copy blocks slice
+	blocks := make([]*Block, len(c.Blocks))
+	for i, block := range c.Blocks {
+		// Blocks are immutable once created, so shallow copy is safe
+		blocks[i] = block
+	}
+
+	// Deep copy account states map
+	accountStates := make(map[PublicKey]*AccountState)
+	for pubKey, state := range c.AccountStates {
+		if state != nil {
+			accountStates[pubKey] = &AccountState{
+				Address: state.Address,
+				Balance: state.Balance,
+				Nonce:   state.Nonce,
+			}
+		}
+	}
+
+	return &Chain{
+		Blocks:        blocks,
+		AccountStates: accountStates,
+	}
+}
