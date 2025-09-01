@@ -101,3 +101,14 @@ func (c *Client) GetPendingRequestCount() int {
 	defer c.pendingMutex.RUnlock()
 	return len(c.pendingRequests)
 }
+
+// SendNotification sends a fire-and-forget message without waiting for response
+func (c *Client) SendNotification(peerAddress string, msg RequestResponse) error {
+	// Notifications don't need request IDs or correlation
+	// Clear any existing request ID to indicate this is a notification
+	msg.SetRequestID("")
+	msg.SetReplyTo("")
+	
+	// Just send the message and return
+	return c.sender.SendMessage(peerAddress, msg)
+}

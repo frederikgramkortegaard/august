@@ -577,20 +577,12 @@ func (s *Server) relayBlockToOthers(block *blockchain.Block, excludePeerAddr str
 	relayCount := 0
 	for _, peer := range s.peerManager.GetConnectedPeers() {
 		if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
-			// Get the stored connection for this peer (with read lock)
-			s.peerConnectionsMu.RLock()
-			conn, exists := s.peerConnections[peer.Address]
-			s.peerConnectionsMu.RUnlock()
-
-			if exists {
-				if err := s.sendMessage(conn, msg); err != nil {
-					s.logf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
-				} else {
-					s.logf("Relayed block %x to peer %s", blockHash[:8], peer.Address)
-					relayCount++
-				}
+			// Use SendNotification for fire-and-forget broadcast
+			if err := s.reqRespClient.SendNotification(peer.Address, msg); err != nil {
+				s.logf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
 			} else {
-				s.logf("No active connection for peer %s, skipping relay", peer.Address)
+				s.logf("Relayed block %x to peer %s", blockHash[:8], peer.Address)
+				relayCount++
 			}
 		}
 	}
@@ -714,17 +706,12 @@ func (s *Server) broadcastTransactionToAllExcept(tx *blockchain.Transaction, exc
 	sentCount := 0
 	for _, peer := range s.peerManager.GetConnectedPeers() {
 		if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
-			s.peerConnectionsMu.RLock()
-			conn, exists := s.peerConnections[peer.Address]
-			s.peerConnectionsMu.RUnlock()
-			
-			if exists {
-				if err := s.sendMessage(conn, msg); err != nil {
-					s.logf("Failed to send transaction to peer %s: %v", peer.Address, err)
-				} else {
-					s.logf("Sent transaction to peer %s", peer.Address)
-					sentCount++
-				}
+			// Use SendNotification for fire-and-forget broadcast
+			if err := s.reqRespClient.SendNotification(peer.Address, msg); err != nil {
+				s.logf("Failed to send transaction to peer %s: %v", peer.Address, err)
+			} else {
+				s.logf("Sent transaction to peer %s", peer.Address)
+				sentCount++
 			}
 		}
 	}
