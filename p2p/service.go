@@ -164,6 +164,126 @@ func RequestPeersFromPeer(server *Server, peerAddress string, maxPeers int) ([]s
 	return sharePayload.Peers, nil
 }
 
+// RequestChainHeadFromPeer requests the current chain head from a peer
+func RequestChainHeadFromPeer(server *Server, peerAddress string) (*ChainHeadPayload, error) {
+	requestPayload := RequestChainHeadPayload{}
+
+	msg, err := NewMessage(MessageTypeRequestChainHead, requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chain head request: %w", err)
+	}
+
+	response, err := server.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeChainHead {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+
+	var headPayload ChainHeadPayload
+	if err := responseMsg.ParsePayload(&headPayload); err != nil {
+		return nil, fmt.Errorf("failed to parse chain head response: %w", err)
+	}
+
+	server.logf("Received chain head from %s: height=%d", peerAddress, headPayload.Height)
+	return &headPayload, nil
+}
+
+// RequestHeadersFromPeer requests block headers in a range from a peer
+func RequestHeadersFromPeer(server *Server, peerAddress string, startHeight uint64, count uint64) ([]blockchain.BlockHeader, error) {
+	requestPayload := RequestHeadersPayload{
+		StartHeight: startHeight,
+		Count:       count,
+	}
+
+	msg, err := NewMessage(MessageTypeRequestHeaders, requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create headers request: %w", err)
+	}
+
+	response, err := server.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeHeaders {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+
+	var headersPayload HeadersPayload
+	if err := responseMsg.ParsePayload(&headersPayload); err != nil {
+		return nil, fmt.Errorf("failed to parse headers response: %w", err)
+	}
+
+	server.logf("Received %d headers from %s starting at height %d", len(headersPayload.Headers), peerAddress, startHeight)
+	return headersPayload.Headers, nil
+}
+
+// RequestBlocksFromPeer requests full blocks in a range from a peer  
+func RequestBlocksFromPeer(server *Server, peerAddress string, startHeight uint64, count uint64) ([]*blockchain.Block, error) {
+	requestPayload := RequestBlocksPayload{
+		StartHeight: startHeight,
+		Count:       count,
+	}
+
+	msg, err := NewMessage(MessageTypeRequestBlocks, requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create blocks request: %w", err)
+	}
+
+	response, err := server.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeBlocks {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+
+	var blocksPayload BlocksPayload
+	if err := responseMsg.ParsePayload(&blocksPayload); err != nil {
+		return nil, fmt.Errorf("failed to parse blocks response: %w", err)
+	}
+
+	server.logf("Received %d blocks from %s starting at height %d", len(blocksPayload.Blocks), peerAddress, startHeight)
+	return blocksPayload.Blocks, nil
+}
+
+// RequestBlocksByHashesFromPeer requests specific blocks by their hashes from a peer
+func RequestBlocksByHashesFromPeer(server *Server, peerAddress string, blockHashes []string) ([]*blockchain.Block, error) {
+	requestPayload := RequestBlocksPayload{
+		Hashes: blockHashes,
+	}
+
+	msg, err := NewMessage(MessageTypeRequestBlocks, requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create blocks request: %w", err)
+	}
+
+	response, err := server.reqRespClient.SendRequest(peerAddress, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	responseMsg := response.(*Message)
+	if responseMsg.Type != MessageTypeBlocks {
+		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
+	}
+
+	var blocksPayload BlocksPayload
+	if err := responseMsg.ParsePayload(&blocksPayload); err != nil {
+		return nil, fmt.Errorf("failed to parse blocks response: %w", err)
+	}
+
+	server.logf("Received %d requested blocks from %s", len(blocksPayload.Blocks), peerAddress)
+	return blocksPayload.Blocks, nil
+}
+
 // ProcessBlock attempts to add a block to the main chain, handling orphans
 // Returns a completion channel that will be closed when processing completes
 // excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)

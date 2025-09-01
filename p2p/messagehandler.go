@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"encoding/base64"
 	"net"
 	"strings"
 	"time"
@@ -33,6 +34,18 @@ func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 		handleRequestBlock(server, msg, peer, conn)
 	case MessageTypeNewTx:
 		handleNewTransaction(server, msg, peer)
+	case MessageTypeRequestChainHead:
+		handleRequestChainHead(server, msg, peer, conn)
+	case MessageTypeChainHead:
+		handleChainHead(server, msg, peer)
+	case MessageTypeRequestHeaders:
+		handleRequestHeaders(server, msg, peer, conn)
+	case MessageTypeHeaders:
+		handleHeaders(server, msg, peer)
+	case MessageTypeRequestBlocks:
+		handleRequestBlocks(server, msg, peer, conn)
+	case MessageTypeBlocks:
+		handleBlocks(server, msg, peer)
 	default:
 		server.logf("Unknown message type: %s", msg.Type)
 	}
@@ -257,4 +270,239 @@ func handleNewTransaction(server *Server, msg *Message, peer *Peer) {
 	// TODO: Add transaction to mempool and validate
 	// For now, just relay to other peers
 	go func() { <-broadcastTransactionToAllExcept(server, txPayload.Transaction, peer.Address) }()
+}
+
+// handleRequestChainHead processes requests for current chain head information
+func handleRequestChainHead(server *Server, msg *Message, peer *Peer, conn net.Conn) {
+	var requestPayload RequestChainHeadPayload
+	if err := msg.ParsePayload(&requestPayload); err != nil {
+		server.logf("Failed to parse chain head request: %v", err)
+		return
+	}
+
+	// Get current chain
+	chain, err := server.config.Store.GetChain()
+	if err != nil {
+		server.logf("Failed to get chain for head request: %v", err)
+		return
+	}
+
+	if len(chain.Blocks) == 0 {
+		server.logf("No blocks in chain to respond with")
+		return
+	}
+
+	// Get the chain head (latest block)
+	headBlock := chain.Blocks[len(chain.Blocks)-1]
+	headHash := blockchain.HashBlockHeader(&headBlock.Header)
+
+	// Create chain head response
+	headPayload := ChainHeadPayload{
+		Height:    headBlock.Header.Height,
+		HeadHash:  base64.StdEncoding.EncodeToString(headHash[:]),
+		TotalWork: headBlock.Header.TotalWork,
+		Header:    headBlock.Header,
+	}
+
+	response, err := NewMessage(MessageTypeChainHead, headPayload)
+	if err != nil {
+		server.logf("Failed to create chain head response: %v", err)
+		return
+	}
+
+	// Set reply correlation
+	if msg.GetRequestID() != "" {
+		response.SetReplyTo(msg.GetRequestID())
+	}
+
+	if err := server.sendMessage(conn, response); err != nil {
+		server.logf("Failed to send chain head to %s: %v", peer.Address, err)
+	} else {
+		server.logf("Sent chain head (height %d) to %s", headBlock.Header.Height, peer.Address)
+	}
+}
+
+// handleChainHead processes received chain head information
+func handleChainHead(server *Server, msg *Message, peer *Peer) {
+	var headPayload ChainHeadPayload
+	if err := msg.ParsePayload(&headPayload); err != nil {
+		server.logf("Failed to parse chain head: %v", err)
+		return
+	}
+
+	server.logf("Received chain head from %s: height=%d, hash=%s", 
+		peer.Address, headPayload.Height, headPayload.HeadHash[:16])
+	
+	// TODO: Compare with our chain and initiate sync if needed
+	// This is where IBD logic would go
+}
+
+// handleRequestHeaders processes requests for block headers in a range
+func handleRequestHeaders(server *Server, msg *Message, peer *Peer, conn net.Conn) {
+	var requestPayload RequestHeadersPayload
+	if err := msg.ParsePayload(&requestPayload); err != nil {
+		server.logf("Failed to parse headers request: %v", err)
+		return
+	}
+
+	chain, err := server.config.Store.GetChain()
+	if err != nil {
+		server.logf("Failed to get chain for headers request: %v", err)
+		return
+	}
+
+	var headers []blockchain.BlockHeader
+	maxHeaders := int(requestPayload.Count)
+	if maxHeaders > 2000 { // Limit to prevent abuse
+		maxHeaders = 2000
+	}
+
+	// Handle request by start height
+	if requestPayload.StartHeight > 0 {
+		startIdx := int(requestPayload.StartHeight)
+		if startIdx < len(chain.Blocks) {
+			endIdx := startIdx + maxHeaders
+			if endIdx > len(chain.Blocks) {
+				endIdx = len(chain.Blocks)
+			}
+			
+			for i := startIdx; i < endIdx; i++ {
+				headers = append(headers, chain.Blocks[i].Header)
+			}
+		}
+	}
+
+	// Send headers response
+	headersPayload := HeadersPayload{Headers: headers}
+	response, err := NewMessage(MessageTypeHeaders, headersPayload)
+	if err != nil {
+		server.logf("Failed to create headers response: %v", err)
+		return
+	}
+
+	if msg.GetRequestID() != "" {
+		response.SetReplyTo(msg.GetRequestID())
+	}
+
+	if err := server.sendMessage(conn, response); err != nil {
+		server.logf("Failed to send headers to %s: %v", peer.Address, err)
+	} else {
+		server.logf("Sent %d headers to %s", len(headers), peer.Address)
+	}
+}
+
+// handleHeaders processes received block headers
+func handleHeaders(server *Server, msg *Message, peer *Peer) {
+	var headersPayload HeadersPayload
+	if err := msg.ParsePayload(&headersPayload); err != nil {
+		server.logf("Failed to parse headers: %v", err)
+		return
+	}
+
+	server.logf("Received %d headers from %s", len(headersPayload.Headers), peer.Address)
+	
+	// TODO: Validate headers and request missing blocks
+	// This is where headers-first sync logic would go
+}
+
+// handleRequestBlocks processes requests for full blocks
+func handleRequestBlocks(server *Server, msg *Message, peer *Peer, conn net.Conn) {
+	var requestPayload RequestBlocksPayload
+	if err := msg.ParsePayload(&requestPayload); err != nil {
+		server.logf("Failed to parse blocks request: %v", err)
+		return
+	}
+
+	chain, err := server.config.Store.GetChain()
+	if err != nil {
+		server.logf("Failed to get chain for blocks request: %v", err)
+		return
+	}
+
+	var blocks []*blockchain.Block
+	maxBlocks := int(requestPayload.Count)
+	if maxBlocks > 500 { // Limit to prevent abuse
+		maxBlocks = 500
+	}
+
+	// Handle request by start height and count
+	if requestPayload.StartHeight > 0 && requestPayload.Count > 0 {
+		startIdx := int(requestPayload.StartHeight)
+		if startIdx < len(chain.Blocks) {
+			endIdx := startIdx + maxBlocks
+			if endIdx > len(chain.Blocks) {
+				endIdx = len(chain.Blocks)
+			}
+			
+			for i := startIdx; i < endIdx; i++ {
+				blocks = append(blocks, chain.Blocks[i])
+			}
+		}
+	}
+
+	// Handle request by specific hashes
+	if len(requestPayload.Hashes) > 0 {
+		blocks = []*blockchain.Block{} // Clear any height-based results
+		for _, hashStr := range requestPayload.Hashes {
+			if len(blocks) >= maxBlocks {
+				break
+			}
+			
+			hashBytes, err := base64.StdEncoding.DecodeString(hashStr)
+			if err != nil {
+				continue
+			}
+			
+			var blockHash blockchain.Hash32
+			copy(blockHash[:], hashBytes)
+			
+			// Linear search through blocks (could be optimized with a map)
+			for _, block := range chain.Blocks {
+				if blockchain.HashBlockHeader(&block.Header) == blockHash {
+					blocks = append(blocks, block)
+					break
+				}
+			}
+		}
+	}
+
+	// Send blocks response
+	blocksPayload := BlocksPayload{Blocks: blocks}
+	response, err := NewMessage(MessageTypeBlocks, blocksPayload)
+	if err != nil {
+		server.logf("Failed to create blocks response: %v", err)
+		return
+	}
+
+	if msg.GetRequestID() != "" {
+		response.SetReplyTo(msg.GetRequestID())
+	}
+
+	if err := server.sendMessage(conn, response); err != nil {
+		server.logf("Failed to send blocks to %s: %v", peer.Address, err)
+	} else {
+		server.logf("Sent %d blocks to %s", len(blocks), peer.Address)
+	}
+}
+
+// handleBlocks processes received full blocks
+func handleBlocks(server *Server, msg *Message, peer *Peer) {
+	var blocksPayload BlocksPayload
+	if err := msg.ParsePayload(&blocksPayload); err != nil {
+		server.logf("Failed to parse blocks: %v", err)
+		return
+	}
+
+	server.logf("Received %d blocks from %s", len(blocksPayload.Blocks), peer.Address)
+	
+	// Process each block sequentially
+	for _, block := range blocksPayload.Blocks {
+		blockHash := blockchain.HashBlockHeader(&block.Header)
+		server.logf("Processing batch block %x from %s", blockHash[:8], peer.Address)
+		
+		// Process block through the normal pipeline
+		go func(b *blockchain.Block) {
+			<-ProcessBlock(server, b, peer.Address)
+		}(block)
+	}
 }
