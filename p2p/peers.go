@@ -48,9 +48,10 @@ func (pm *PeerManager) AddPeer(address string) *Peer {
 	if pm.currentPeers >= pm.maxPeers {
 		return nil
 	}
-	_, ok := pm.peers[address]
-	if ok {
-		return nil
+	existingPeer, exists := pm.peers[address]
+	if exists {
+		// Peer already exists, return it so connection can proceed
+		return existingPeer
 	}
 
 	pm.peers[address] = &Peer{

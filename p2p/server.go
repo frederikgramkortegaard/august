@@ -363,10 +363,7 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 		
 		s.logf("Received %d peers from %s", len(sharePayload.Peers), peer.Address)
 		
-		// Store these peers temporarily for the worker to collect
-		// The worker will be responsible for aggregating and deduplicating
-		// For now, we'll just add them directly to discovered peers
-		// In a more sophisticated implementation, you might want to queue them
+		// Store these peers for the next discovery cycle to connect to
 		if len(sharePayload.Peers) > 0 {
 			s.peerManager.AddDiscoveredPeers(sharePayload.Peers)
 		}

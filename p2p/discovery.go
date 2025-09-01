@@ -62,11 +62,14 @@ func (d *Discovery) connectToDiscoveredPeers() {
 	pm := d.config.P2PServer.GetPeerManager()
 	discoveredPeers := pm.GetDiscoveredPeers()
 	
+	
 	// Get current peers to avoid duplicate connections
 	pm.mu.RLock()
 	currentPeers := make(map[string]bool)
+	var currentAddrs []string
 	for addr := range pm.peers {
 		currentPeers[addr] = true
+		currentAddrs = append(currentAddrs, addr)
 	}
 	pm.mu.RUnlock()
 	
@@ -119,6 +122,22 @@ func (d *Discovery) requestPeerSharing() {
 
 }
 
+// requestPeerSharingAndConnect requests peers and then tries to connect to them
+// This fixes the race condition where connectToDiscoveredPeers was called
+// before peer sharing responses were received
+func (d *Discovery) requestPeerSharingAndConnect() {
+	d.logf("Starting peer sharing and connect sequence")
+	// First request peers
+	d.requestPeerSharing()
+	
+	// Wait a short time for responses to arrive and be processed
+	time.Sleep(200 * time.Millisecond)
+	
+	// Then try to connect to any newly discovered peers
+	d.logf("Now attempting to connect to discovered peers")
+	d.connectToDiscoveredPeers()
+}
+
 // connectToPeer attempts to connect to a specific peer
 func (d *Discovery) connectToPeer(address string) {
 	d.logf("Attempting to connect to peer: %s", address)
@@ -159,7 +178,11 @@ func (d *Discovery) periodicDiscovery() {
 
 		pm := d.config.P2PServer.GetPeerManager()
 		connected := pm.GetConnectedPeers()
-		d.logf("Periodic discovery check: %d connected peers", len(connected))
+		var connectedAddrs []string
+		for _, peer := range connected {
+			connectedAddrs = append(connectedAddrs, peer.Address)
+		}
+		d.logf("Periodic discovery check: %d connected peers: %v", len(connected), connectedAddrs)
 
 		// Clean up dead peers
 		removed := pm.CleanupDeadPeers()
@@ -174,8 +197,10 @@ func (d *Discovery) periodicDiscovery() {
 			go d.connectToSeeds()
 		} else if len(connected) < 5 {
 			// Few connections, try to get more
-			go d.requestPeerSharing()
+			// First try to connect to any peers we already know about
 			go d.connectToDiscoveredPeers()
+			// Request more peers and schedule connection attempts
+			go d.requestPeerSharingAndConnect()
 		} else {
 			// Good number of connections, just maintain
 			if len(connected) < 10 {
