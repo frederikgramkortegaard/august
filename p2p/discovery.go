@@ -38,7 +38,7 @@ func NewDiscovery(config DiscoveryConfig) *Discovery {
 // Start begins peer discovery process
 func (d *Discovery) Start() <-chan bool {
 	ready := make(chan bool, 1)
-	
+
 	go func() {
 		d.logf("Starting peer discovery with %d seed peers", len(d.config.SeedPeers))
 
@@ -54,29 +54,29 @@ func (d *Discovery) Start() <-chan bool {
 
 		// Periodic peer discovery
 		go d.periodicDiscovery()
-		
+
 		d.logf("Peer discovery started successfully")
 		ready <- true
 	}()
-	
+
 	return ready
 }
 
 // connectToSeeds attempts to connect to all seed peers and waits for completion
 func (d *Discovery) connectToSeeds() <-chan bool {
 	done := make(chan bool, 1)
-	
+
 	go func() {
 		if len(d.config.SeedPeers) == 0 {
 			done <- true
 			return
 		}
-		
+
 		var connectionTasks []<-chan bool
 		for _, seedAddr := range d.config.SeedPeers {
 			connectionTasks = append(connectionTasks, d.connectToPeer(seedAddr))
 		}
-		
+
 		// Wait for all connection attempts to complete
 		successCount := 0
 		for _, task := range connectionTasks {
@@ -84,27 +84,27 @@ func (d *Discovery) connectToSeeds() <-chan bool {
 				successCount++
 			}
 		}
-		
+
 		d.logf("Seed connection attempts completed: %d/%d successful", successCount, len(d.config.SeedPeers))
 		done <- true
 	}()
-	
+
 	return done
 }
 
 // connectToDiscoveredPeers attempts to connect to peers we've learned about
 func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 	done := make(chan bool, 1)
-	
+
 	go func() {
 		if d.config.P2PServer == nil {
 			done <- true
 			return
 		}
-		
+
 		pm := d.config.P2PServer.GetPeerManager()
 		discoveredPeers := pm.GetDiscoveredPeers()
-		
+
 		// Get current peers to avoid duplicate connections
 		pm.mu.RLock()
 		currentPeers := make(map[string]bool)
@@ -112,7 +112,7 @@ func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 			currentPeers[addr] = true
 		}
 		pm.mu.RUnlock()
-		
+
 		// Try connecting to discovered peers we're not already connected to
 		var connectionTasks []<-chan bool
 		connected := 0
@@ -122,7 +122,7 @@ func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 				connected++
 			}
 		}
-		
+
 		if connected > 0 {
 			d.logf("Attempting to connect to %d discovered peers", connected)
 			// Wait for all connection attempts to complete
@@ -134,10 +134,10 @@ func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 			}
 			d.logf("Discovery connection attempts completed: %d/%d successful", successCount, connected)
 		}
-		
+
 		done <- true
 	}()
-	
+
 	return done
 }
 
@@ -156,7 +156,7 @@ func (d *Discovery) requestPeerSharing() {
 	// Request peers from all connected peers and collect responses
 	allDiscoveredPeers := make([]string, 0)
 	successfulRequests := 0
-	
+
 	for _, peer := range connectedPeers {
 		if peer.Status == PeerConnected {
 			// Use the new synchronous method to get immediate response
@@ -169,10 +169,10 @@ func (d *Discovery) requestPeerSharing() {
 			}
 		}
 	}
-	
+
 	if successfulRequests > 0 {
 		d.logf("Successfully requested peers from %d peers", successfulRequests)
-		
+
 		// Add all discovered peers to our peer manager
 		if len(allDiscoveredPeers) > 0 {
 			newPeerCount := pm.AddDiscoveredPeers(allDiscoveredPeers)
@@ -186,29 +186,29 @@ func (d *Discovery) requestPeerSharing() {
 // requestPeerSharingAndConnect requests peers and then tries to connect to them
 func (d *Discovery) requestPeerSharingAndConnect() <-chan bool {
 	done := make(chan bool, 1)
-	
+
 	go func() {
 		d.logf("Starting peer sharing and connect sequence")
 		// Request peers (synchronous - responses are handled immediately)
 		d.requestPeerSharing()
-		
+
 		// Now try to connect to any newly discovered peers
 		d.logf("Now attempting to connect to discovered peers")
 		<-d.connectToDiscoveredPeers()
-		
+
 		done <- true
 	}()
-	
+
 	return done
 }
 
 // connectToPeer attempts to connect to a specific peer and waits for handshake completion
 func (d *Discovery) connectToPeer(address string) <-chan bool {
 	result := make(chan bool, 1)
-	
+
 	go func() {
 		defer func() { result <- false }() // Default to failure
-		
+
 		d.logf("Attempting to connect to peer: %s", address)
 
 		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
@@ -222,21 +222,21 @@ func (d *Discovery) connectToPeer(address string) <-chan bool {
 			peer := d.config.P2PServer.GetPeerManager().AddPeer(address)
 			if peer != nil {
 				d.logf("TCP connection established to peer: %s", address)
-				
+
 				// Start the connection handler in background
 				go d.config.P2PServer.HandlePeerConnection(conn)
-				
+
 				// Wait for handshake to complete using channels
 				handshakeComplete := make(chan bool, 1)
-				
+
 				go func() {
 					// Monitor for handshake completion
 					timeout := time.NewTimer(5 * time.Second)
 					defer timeout.Stop()
-					
+
 					ticker := time.NewTicker(50 * time.Millisecond)
 					defer ticker.Stop()
-					
+
 					for {
 						select {
 						case <-timeout.C:
@@ -257,7 +257,7 @@ func (d *Discovery) connectToPeer(address string) <-chan bool {
 						}
 					}
 				}()
-				
+
 				// Wait for handshake result
 				if <-handshakeComplete {
 					result <- true
@@ -271,7 +271,7 @@ func (d *Discovery) connectToPeer(address string) <-chan bool {
 			conn.Close()
 		}
 	}()
-	
+
 	return result
 }
 
@@ -290,10 +290,10 @@ func (d *Discovery) periodicDiscovery() {
 // Returns a channel that signals when the discovery round is complete
 func (d *Discovery) RunDiscoveryRound() <-chan bool {
 	done := make(chan bool, 1)
-	
+
 	go func() {
 		defer func() { done <- true }()
-		
+
 		// Check if P2P server is available
 		if d.config.P2PServer == nil {
 			d.logf("P2P server not available, skipping discovery")
@@ -313,7 +313,7 @@ func (d *Discovery) RunDiscoveryRound() <-chan bool {
 		if removed > 0 {
 			d.logf("Cleaned up %d dead peers", removed)
 		}
-		
+
 		// Different strategies based on connection count
 		if len(connected) == 0 {
 			// No connections, try seed peers
@@ -326,9 +326,9 @@ func (d *Discovery) RunDiscoveryRound() <-chan bool {
 		} else if len(connected) < 10 {
 			<-d.connectToDiscoveredPeers()
 		}
-		
+
 		d.logf("Discovery round completed")
 	}()
-	
+
 	return done
 }

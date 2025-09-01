@@ -16,10 +16,10 @@ import (
 
 // Config holds P2P server configuration
 type Config struct {
-	Port           string
-	NodeID         string
-	Store          store.ChainStore
-	ReqRespConfig  reqresp.Config // Request-response configuration
+	Port          string
+	NodeID        string
+	Store         store.ChainStore
+	ReqRespConfig reqresp.Config // Request-response configuration
 }
 
 // DefaultReqRespConfig returns default request-response configuration
@@ -37,11 +37,11 @@ type Server struct {
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
 	reqRespClient     *reqresp.Client     // Request-response client
-	recentBlocks map[blockchain.Hash32]time.Time
-	recentBlocksTTL time.Duration
-		recentBlocksMu		sync.RWMutex
-	orphanPool     map[blockchain.Hash32]*blockchain.Block // Orphan blocks waiting for parents
-	orphanPoolMu   sync.RWMutex                           // Protects orphan pool
+	recentBlocks      map[blockchain.Hash32]time.Time
+	recentBlocksTTL   time.Duration
+	recentBlocksMu    sync.RWMutex
+	orphanPool        map[blockchain.Hash32]*blockchain.Block // Orphan blocks waiting for parents
+	orphanPoolMu      sync.RWMutex                            // Protects orphan pool
 }
 
 // logf logs with node ID prefix
@@ -58,14 +58,14 @@ func NewServer(config Config) *Server {
 		peerConnections:  make(map[string]net.Conn),
 		shutdown:         make(chan bool),
 		shutdownComplete: make(chan bool),
-		recentBlocks: 		make(map[blockchain.Hash32]time.Time),
-		recentBlocksTTL: 5*time.Minute,
-		orphanPool:      make(map[blockchain.Hash32]*blockchain.Block),
+		recentBlocks:     make(map[blockchain.Hash32]time.Time),
+		recentBlocksTTL:  5 * time.Minute,
+		orphanPool:       make(map[blockchain.Hash32]*blockchain.Block),
 	}
-	
+
 	// Create request-response client with this server as the sender
 	server.reqRespClient = reqresp.NewClient(config.ReqRespConfig, server)
-	
+
 	return server
 }
 
@@ -75,17 +75,17 @@ func (s *Server) SendMessage(peerAddress string, msg reqresp.RequestResponse) er
 	s.peerConnectionsMu.RLock()
 	conn, exists := s.peerConnections[peerAddress]
 	s.peerConnectionsMu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("no connection to peer %s", peerAddress)
 	}
-	
+
 	// Cast to *Message and send
 	message, ok := msg.(*Message)
 	if !ok {
 		return fmt.Errorf("invalid message type")
 	}
-	
+
 	return s.sendMessage(conn, message)
 }
 
@@ -271,7 +271,6 @@ func (s *Server) handleMessages(conn net.Conn, peer *Peer) {
 	}
 }
 
-
 // GetListener returns the server listener (for testing)
 func (s *Server) GetListener() net.Listener {
 	return s.listener
@@ -286,7 +285,6 @@ func (s *Server) GetPeerManager() *PeerManager {
 func (s *Server) GetChainStore() store.ChainStore {
 	return s.config.Store
 }
-
 
 // Stop gracefully shuts down the P2P server
 func (s *Server) Stop() error {
@@ -311,4 +309,3 @@ func (s *Server) Stop() error {
 
 	return nil
 }
-

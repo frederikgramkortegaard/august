@@ -23,7 +23,6 @@ type FullNode struct {
 	// Configuration
 	config Config
 
-
 	// Components (each package handles its own concern)
 	p2pServer *p2p.Server    // P2P message handling
 	discovery *p2p.Discovery // Peer discovery
@@ -44,7 +43,7 @@ func NewFullNode(config Config) *FullNode {
 // Start initializes and starts all components and returns when ready
 func (n *FullNode) Start() <-chan bool {
 	ready := make(chan bool, 1)
-	
+
 	go func() {
 		// 1. Initialize blockchain with genesis
 		if err := n.store.AddBlock(blockchain.GenesisBlock); err != nil {
@@ -61,7 +60,7 @@ func (n *FullNode) Start() <-chan bool {
 			ready <- false
 			return
 		}
-		
+
 		// 3. Start peer discovery (P2P server is ready)
 		discoveryReady := n.startDiscovery()
 		if !<-discoveryReady {
@@ -69,16 +68,16 @@ func (n *FullNode) Start() <-chan bool {
 			ready <- false
 			return
 		}
-		
+
 		log.Printf("%s\tFull node started: P2P on :%s", n.config.NodeID, n.config.P2PPort)
-		
+
 		// Signal ready
 		ready <- true
-		
+
 		// Block forever
 		select {}
 	}()
-	
+
 	return ready
 }
 
@@ -86,13 +85,12 @@ func (n *FullNode) startP2P() {
 	log.Printf("%s\tStarting P2P server on port %s", n.config.NodeID, n.config.P2PPort)
 	// The p2p package handles all P2P messaging
 	p2pConfig := p2p.Config{
-		Port:           n.config.P2PPort,
+		Port:          n.config.P2PPort,
 		NodeID:        n.config.NodeID,
 		Store:         n.store,
 		ReqRespConfig: p2p.DefaultReqRespConfig(), // Use default request-response configuration
 	}
 	n.p2pServer = p2p.NewServer(p2pConfig)
-
 
 	err := n.p2pServer.Start()
 	if err != nil {
@@ -103,10 +101,10 @@ func (n *FullNode) startP2P() {
 // startP2PWithCompletion starts P2P server and signals when ready
 func (n *FullNode) startP2PWithCompletion() <-chan bool {
 	ready := make(chan bool, 1)
-	
+
 	go func() {
 		log.Printf("%s\tStarting P2P server on port %s", n.config.NodeID, n.config.P2PPort)
-		
+
 		p2pConfig := p2p.Config{
 			Port:          n.config.P2PPort,
 			NodeID:        n.config.NodeID,
@@ -123,23 +121,23 @@ func (n *FullNode) startP2PWithCompletion() <-chan bool {
 			ready <- true
 		}
 	}()
-	
+
 	return ready
 }
 
 func (n *FullNode) startDiscovery() <-chan bool {
 	ready := make(chan bool, 1)
-	
+
 	go func() {
 		log.Printf("%s\tStarting peer discovery...", n.config.NodeID)
-		
+
 		// Double-check P2P server is available
 		if n.p2pServer == nil {
 			log.Printf("%s\tP2P server not ready for discovery", n.config.NodeID)
 			ready <- false
 			return
 		}
-		
+
 		// The p2p package also handles discovery
 		discoveryConfig := p2p.DiscoveryConfig{
 			SeedPeers: n.config.SeedPeers,
@@ -152,10 +150,10 @@ func (n *FullNode) startDiscovery() <-chan bool {
 			ready <- false
 			return
 		}
-		
+
 		ready <- true
 	}()
-	
+
 	return ready
 }
 
@@ -195,7 +193,7 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	if n.p2pServer == nil {
 		return fmt.Errorf("P2P server not initialized")
 	}
-	
+
 	// Broadcast the transaction to all connected peers
 	go func() { <-p2p.BroadcastTransaction(n.p2pServer, tx) }()
 	return nil

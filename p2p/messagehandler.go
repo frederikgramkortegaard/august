@@ -45,7 +45,7 @@ func handleHandshake(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 		server.logf("Failed to parse handshake: %v", err)
 		return
 	}
-	
+
 	// Construct the proper peer address using IP from connection + ListenPort from handshake
 	remoteAddr := conn.RemoteAddr().String()
 	host, _, err := net.SplitHostPort(remoteAddr)
@@ -53,10 +53,10 @@ func handleHandshake(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 		server.logf("Failed to parse remote address %s: %v", remoteAddr, err)
 		return
 	}
-	
+
 	properPeerAddr := net.JoinHostPort(host, handshake.ListenPort)
 	server.logf("Handshake debug: current=%s, proper=%s, listenPort=%s", peer.Address, properPeerAddr, handshake.ListenPort)
-	
+
 	// Check for duplicate connections (bidirectional connection detection)
 	server.peerManager.mu.Lock()
 	existingPeer, exists := server.peerManager.peers[properPeerAddr]
@@ -64,13 +64,13 @@ func handleHandshake(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 		// We have a duplicate connection!
 		// Determine which connection to keep based on address comparison
 		localListenAddr := net.JoinHostPort(host, server.config.Port) // Use same IP, our port
-		
+
 		server.logf("Duplicate connection detected: local=%s, remote=%s", localListenAddr, properPeerAddr)
-		
+
 		if strings.Compare(localListenAddr, properPeerAddr) < 0 {
 			// Our address is "smaller", keep incoming connection (this one)
 			server.logf("Keeping incoming connection from %s (lower address)", properPeerAddr)
-			
+
 			// Close the existing outgoing connection
 			existingPeer.Status = PeerDisconnected
 			// Remove old peer and replace with this one
@@ -79,37 +79,37 @@ func handleHandshake(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 			// Remote address is "smaller", keep existing outgoing connection
 			server.logf("Rejecting incoming connection from %s (keeping outgoing)", properPeerAddr)
 			server.peerManager.mu.Unlock()
-			
+
 			// Close this connection and return
 			conn.Close()
 			peer.Status = PeerDisconnected
 			return
 		}
 	}
-	
+
 	// Update peer address if different
 	if peer.Address != properPeerAddr {
 		server.logf("Updating peer address from %s to %s", peer.Address, properPeerAddr)
-		
+
 		// Remove from old address and add to new address
 		delete(server.peerManager.peers, peer.Address)
-		
+
 		// Update the peer connection mapping
 		server.peerConnectionsMu.Lock()
 		delete(server.peerConnections, peer.Address)
 		server.peerConnections[properPeerAddr] = conn
 		server.peerConnectionsMu.Unlock()
-		
+
 		// Update peer address
 		peer.Address = properPeerAddr
 	}
-	
-	// Register the peer with proper address  
+
+	// Register the peer with proper address
 	peer.ID = handshake.NodeID
 	peer.Status = PeerConnected
 	server.peerManager.peers[properPeerAddr] = peer
 	server.peerManager.mu.Unlock()
-	
+
 	server.logf("Received handshake from %s (height: %d)", handshake.NodeID, handshake.ChainHeight)
 }
 
@@ -120,7 +120,7 @@ func handleNewBlock(server *Server, msg *Message, peer *Peer) {
 		server.logf("Failed to parse block payload: %v", err)
 		return
 	}
-	
+
 	// Mitigate Broadcast Storm by keeping list of blocks to ignore
 	blockHash := blockchain.HashBlockHeader(&blockPayload.Block.Header)
 	server.recentBlocksMu.Lock()
@@ -130,12 +130,12 @@ func handleNewBlock(server *Server, msg *Message, peer *Peer) {
 			server.logf("Ignoring new block: %x because its in recentblocks", blockHash[:8])
 			return
 		}
-	} 
+	}
 	server.recentBlocks[blockHash] = time.Now()
 	server.recentBlocksMu.Unlock()
-	
+
 	server.logf("Received new block %x from peer %s", blockHash[:8], peer.Address)
-	
+
 	// Process the block using the service layer (exclude the sender from relay)
 	go func() { <-ProcessBlock(server, blockPayload.Block, peer.Address) }()
 }
@@ -161,7 +161,7 @@ func handleRequestPeers(server *Server, msg *Message, peer *Peer, conn net.Conn)
 		server.logf("Failed to parse peer request: %v", err)
 		return
 	}
-	
+
 	// Get list of connected peers (excluding the requester)
 	server.peerManager.mu.RLock()
 	var peerAddresses []string
@@ -171,7 +171,7 @@ func handleRequestPeers(server *Server, msg *Message, peer *Peer, conn net.Conn)
 		}
 	}
 	server.peerManager.mu.RUnlock()
-	
+
 	// Send response
 	sharePayload := SharePeersPayload{Peers: peerAddresses}
 	shareMsg, err := NewMessage(MessageTypeSharePeers, sharePayload)
@@ -179,7 +179,7 @@ func handleRequestPeers(server *Server, msg *Message, peer *Peer, conn net.Conn)
 		server.logf("Failed to create share peers message: %v", err)
 		return
 	}
-	
+
 	// Set reply correlation if this was a request
 	if msg.GetRequestID() != "" {
 		shareMsg.SetReplyTo(msg.GetRequestID())
@@ -195,7 +195,7 @@ func handleSharePeers(server *Server, msg *Message, peer *Peer) {
 		server.logf("Failed to parse shared peers: %v", err)
 		return
 	}
-	
+
 	server.logf("Received %d peers from %s", len(sharePayload.Peers), peer.Address)
 	// The discovery component handles adding these peers
 }
@@ -207,23 +207,23 @@ func handleRequestBlock(server *Server, msg *Message, peer *Peer, conn net.Conn)
 		server.logf("Failed to parse block request: %v", err)
 		return
 	}
-	
+
 	// Get block from chain store
 	chainStore := server.config.Store
-	
+
 	// Convert string hash to Hash32
 	var blockHash blockchain.Hash32
 	if err := blockHash.UnmarshalJSON([]byte(`"` + requestBlockPayload.BlockHash + `"`)); err != nil {
 		server.logf("Invalid block hash format in request: %v", err)
 		return
 	}
-	
+
 	block, err := chainStore.GetBlockByHash(blockHash)
 	if err != nil {
 		server.logf("Failed to get requested block %s: %v", requestBlockPayload.BlockHash, err)
 		return
 	}
-	
+
 	// Send the block as response
 	blockPayload := NewBlockPayload{Block: block}
 	response, err := NewMessage(MessageTypeNewBlock, blockPayload)
@@ -231,12 +231,12 @@ func handleRequestBlock(server *Server, msg *Message, peer *Peer, conn net.Conn)
 		server.logf("Failed to create block response: %v", err)
 		return
 	}
-	
+
 	// Set reply correlation if this was a request
 	if msg.GetRequestID() != "" {
 		response.SetReplyTo(msg.GetRequestID())
 	}
-	
+
 	if err := server.sendMessage(conn, response); err != nil {
 		server.logf("Failed to send requested block to %s: %v", peer.Address, err)
 	} else {
@@ -251,9 +251,9 @@ func handleNewTransaction(server *Server, msg *Message, peer *Peer) {
 		server.logf("Failed to parse transaction payload: %v", err)
 		return
 	}
-	
+
 	server.logf("Received new transaction from peer %s", peer.Address)
-	
+
 	// TODO: Add transaction to mempool and validate
 	// For now, just relay to other peers
 	go func() { <-broadcastTransactionToAllExcept(server, txPayload.Transaction, peer.Address) }()

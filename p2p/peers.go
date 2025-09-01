@@ -84,10 +84,10 @@ func (pm *PeerManager) GetConnectedPeers() []*Peer {
 func (pm *PeerManager) CleanupDeadPeers() int {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	removed := 0
 	cutoffTime := time.Now().Add(-5 * time.Minute)
-	
+
 	for addr, peer := range pm.peers {
 		// Remove peers that have been disconnected/failed for > 5 minutes
 		if (peer.Status == PeerDisconnected || peer.Status == PeerFailed) &&
@@ -97,7 +97,7 @@ func (pm *PeerManager) CleanupDeadPeers() int {
 			removed++
 		}
 	}
-	
+
 	return removed
 }
 
@@ -106,7 +106,7 @@ func (pm *PeerManager) CleanupDeadPeers() int {
 func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	// Deduplicate against existing discovered peers and current peers
 	seen := make(map[string]bool)
 	for _, addr := range pm.discoveredPeers {
@@ -115,7 +115,7 @@ func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 	for addr := range pm.peers {
 		seen[addr] = true
 	}
-	
+
 	newPeers := 0
 	for _, addr := range addresses {
 		if !seen[addr] {
@@ -124,7 +124,7 @@ func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 			newPeers++
 		}
 	}
-	
+
 	return newPeers
 }
 
@@ -132,7 +132,7 @@ func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 func (pm *PeerManager) GetDiscoveredPeers() []string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	peers := make([]string, len(pm.discoveredPeers))
 	copy(peers, pm.discoveredPeers)
 	return peers

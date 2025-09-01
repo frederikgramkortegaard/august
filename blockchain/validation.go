@@ -102,9 +102,9 @@ func validateTransactionSignature(tsx *Transaction) bool {
 
 // validateAndApplyTransaction validates a single transaction against current state and applies it
 func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
-	log.Printf("VALIDATION\tValidating transaction: %x -> %x, amount=%d, nonce=%d", 
+	log.Printf("VALIDATION\tValidating transaction: %x -> %x, amount=%d, nonce=%d",
 		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
-	
+
 	// Coinbase transactions - just apply
 	if tsx.From == (PublicKey{}) {
 		log.Printf("VALIDATION\tProcessing coinbase transaction")

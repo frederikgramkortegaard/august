@@ -1,11 +1,11 @@
 package tests
 
 import (
+	"gocuria/blockchain"
+	"gocuria/node"
+	"gocuria/p2p"
 	"testing"
 	"time"
-	"gocuria/node"
-	"gocuria/blockchain"
-	"gocuria/p2p"
 )
 
 // TestRecentBlocksDeduplication tests that duplicate blocks are ignored
@@ -78,29 +78,29 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 	// Test P2P deduplication by having Node A send the same block again
 	// This tests the actual P2P message deduplication mechanism
 	t.Logf("=== Testing P2P deduplication - Node A relays same block again ===")
-	
+
 	// Get initial block count in Node B
 	chainB, err := nodeB.GetP2PServer().GetChainStore().GetChain()
 	if err != nil {
 		t.Fatalf("Failed to get chain from Node B: %v", err)
 	}
 	initialBlockCount := len(chainB.Blocks)
-	
+
 	// Have Node A relay the same block again - this should be deduplicated by Node B
 	p2pServerA = nodeA.GetP2PServer()
 	<-p2p.RelayBlock(p2pServerA, &newBlock, "")
-	
+
 	// Wait for any potential processing
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Check that Node B didn't add the block again
 	chainB, err = nodeB.GetP2PServer().GetChainStore().GetChain()
 	if err != nil {
 		t.Fatalf("Failed to get updated chain from Node B: %v", err)
 	}
-	
+
 	if len(chainB.Blocks) != initialBlockCount {
-		t.Errorf("Node B added duplicate block! Block count changed from %d to %d", 
+		t.Errorf("Node B added duplicate block! Block count changed from %d to %d",
 			initialBlockCount, len(chainB.Blocks))
 	} else {
 		t.Logf("P2P deduplication working: Node B ignored duplicate block message")
@@ -191,16 +191,16 @@ func TestRecentBlocksCleanup(t *testing.T) {
 	// Manually trigger cleanup - this should not remove the block yet (it's fresh)
 	// We'll need to access the cleanup method, but since it's not exported,
 	// we can test the behavior indirectly by trying to process the same block again
-	
+
 	t.Logf("=== Testing that recent block is still remembered ===")
-	
+
 	// Try to process the same block again - should be ignored
 	<-p2p.ProcessBlock(p2pServer, &testBlock)
 	t.Logf("Second processing completed (duplicate should be handled properly)")
 
 	t.Logf("=== Recent blocks deduplication test completed ===")
 	// For a full cleanup test, we'd need to either:
-	// 1. Export the cleanup method, or 
+	// 1. Export the cleanup method, or
 	// 2. Create a test with a very short TTL, or
 	// 3. Wait 5+ minutes (not practical for unit tests)
 }

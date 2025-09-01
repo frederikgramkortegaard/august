@@ -37,7 +37,7 @@ func (c *Client) SendRequest(peerAddress string, msg RequestResponse) (RequestRe
 	// Generate request ID and create response channel
 	requestID := c.generateRequestID()
 	responseChan := make(chan RequestResponse, 1)
-	
+
 	// Register the pending request
 	c.pendingMutex.Lock()
 	if len(c.pendingRequests) >= c.config.MaxPendingRequests {
@@ -46,22 +46,22 @@ func (c *Client) SendRequest(peerAddress string, msg RequestResponse) (RequestRe
 	}
 	c.pendingRequests[requestID] = responseChan
 	c.pendingMutex.Unlock()
-	
+
 	// Clean up the pending request when done
 	defer func() {
 		c.pendingMutex.Lock()
 		delete(c.pendingRequests, requestID)
 		c.pendingMutex.Unlock()
 	}()
-	
+
 	// Set request ID on the message
 	msg.SetRequestID(requestID)
-	
+
 	// Send the message
 	if err := c.sender.SendMessage(peerAddress, msg); err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	
+
 	// Wait for response with timeout
 	select {
 	case response := <-responseChan:
@@ -77,15 +77,15 @@ func (c *Client) HandleResponse(msg RequestResponse) bool {
 	if replyTo == "" {
 		return false // Not a response
 	}
-	
+
 	c.pendingMutex.RLock()
 	responseChan, exists := c.pendingRequests[replyTo]
 	c.pendingMutex.RUnlock()
-	
+
 	if !exists {
 		return false // No pending request for this response
 	}
-	
+
 	// Send the response to the waiting goroutine
 	select {
 	case responseChan <- msg:
@@ -108,7 +108,7 @@ func (c *Client) SendNotification(peerAddress string, msg RequestResponse) error
 	// Clear any existing request ID to indicate this is a notification
 	msg.SetRequestID("")
 	msg.SetReplyTo("")
-	
+
 	// Just send the message and return
 	return c.sender.SendMessage(peerAddress, msg)
 }
