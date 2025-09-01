@@ -11,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +28,29 @@ func DefaultReqRespConfig() reqresp.Config {
 	return reqresp.DefaultConfig()
 }
 
+// CandidateChain represents a potential blockchain candidate for adoption
+type CandidateChain struct {
+	ID              string
+	PeerSource      string
+	ChainStore      store.ChainStore
+	Headers         []blockchain.BlockHeader
+	StartedAt       time.Time
+	ExpectedWork    string
+	
+	// Atomic progress tracking
+	expectedHeight  atomic.Uint64
+	currentHeight   atomic.Uint64
+	downloadStatus  atomic.Uint32  // 0=downloading, 1=complete, 2=failed
+}
+
+// CandidateBlock represents a single block waiting for context or validation
+type CandidateBlock struct {
+	Block        *blockchain.Block
+	Source       string
+	ReceivedAt   time.Time
+	ParentNeeded blockchain.Hash32
+}
+
 // Server handles P2P networking and message passing
 type Server struct {
 	config            Config
@@ -40,8 +64,14 @@ type Server struct {
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
-	orphanPool        map[blockchain.Hash32]*blockchain.Block // Orphan blocks waiting for parents
-	orphanPoolMu      sync.RWMutex                            // Protects orphan pool
+	
+	// New candidate chain system (lock-free)
+	candidateChains   sync.Map  // map[string]*CandidateChain
+	candidateBlocks   sync.Map  // map[blockchain.Hash32]*CandidateBlock
+	
+	// Unified cleanup system
+	cleanupTicker     *time.Ticker
+	cleanupInterval   time.Duration
 }
 
 // logf logs with node ID prefix
@@ -60,7 +90,8 @@ func NewServer(config Config) *Server {
 		shutdownComplete: make(chan bool),
 		recentBlocks:     make(map[blockchain.Hash32]time.Time),
 		recentBlocksTTL:  5 * time.Minute,
-		orphanPool:       make(map[blockchain.Hash32]*blockchain.Block),
+		cleanupInterval:  30 * time.Second,
+		// candidateChains and candidateBlocks are sync.Maps - no initialization needed
 	}
 
 	// Create request-response client with this server as the sender
@@ -102,32 +133,159 @@ func (s *Server) Start() error {
 	// Accept connections in background
 	go s.acceptConnections()
 
-	go s.periodicRecentBlocksCleanup()
+	// Start unified periodic cleanup system
+	s.cleanupTicker = time.NewTicker(s.cleanupInterval)
+	go s.unifiedPeriodicCleanup()
+	
+	go s.periodicChainSync()
 
 	return nil
 }
 
-func (s *Server) cleanupRecentBlocks() {
-	now := time.Now()
-	s.recentBlocksMu.Lock()
-	defer s.recentBlocksMu.Unlock()
-	for hash, addedTime := range s.recentBlocks {
-		if now.Sub(addedTime) > s.recentBlocksTTL {
-			delete(s.recentBlocks, hash)
+// unifiedPeriodicCleanup handles all periodic cleanup tasks in one place
+func (s *Server) unifiedPeriodicCleanup() {
+	for {
+		select {
+		case <-s.cleanupTicker.C:
+			s.performCleanupTasks()
+		case <-s.shutdown:
+			if s.cleanupTicker != nil {
+				s.cleanupTicker.Stop()
+			}
+			return
 		}
 	}
 }
-func (s *Server) periodicRecentBlocksCleanup() {
-	ticker := time.NewTicker(5 * time.Minute)
+
+func (s *Server) performCleanupTasks() {
+	now := time.Now()
+	
+	// 1. Clean up recent blocks (existing logic)
+	s.cleanRecentBlocks(now)
+	
+	// 2. Clean up failed/old candidate chains
+	s.cleanCandidateChains(now)
+	
+	// 3. Clean up candidate blocks (replaces orphan pool)
+	s.cleanCandidateBlocks(now)
+	
+	s.logf("Periodic cleanup completed")
+}
+
+func (s *Server) cleanRecentBlocks(now time.Time) {
+	s.recentBlocksMu.Lock()
+	defer s.recentBlocksMu.Unlock()
+	
+	cleaned := 0
+	for hash, addedTime := range s.recentBlocks {
+		if now.Sub(addedTime) > s.recentBlocksTTL {
+			delete(s.recentBlocks, hash)
+			cleaned++
+		}
+	}
+	
+	if cleaned > 0 {
+		s.logf("Cleaned up %d old recent blocks", cleaned)
+	}
+}
+
+func (s *Server) cleanCandidateChains(now time.Time) {
+	var toDelete []string
+	
+	s.candidateChains.Range(func(key, value interface{}) bool {
+		candidate := value.(*CandidateChain)
+		candidateID := key.(string)
+		
+		shouldDelete := false
+		
+		// Delete if failed
+		if candidate.downloadStatus.Load() == 2 {
+			shouldDelete = true
+		}
+		
+		// Delete if too old (prevent memory leaks)
+		if now.Sub(candidate.StartedAt) > 10*time.Minute {
+			shouldDelete = true
+		}
+		
+		if shouldDelete {
+			toDelete = append(toDelete, candidateID)
+		}
+		
+		return true
+	})
+	
+	for _, id := range toDelete {
+		s.candidateChains.Delete(id)
+	}
+	
+	if len(toDelete) > 0 {
+		s.logf("Cleaned up %d old candidate chains", len(toDelete))
+	}
+}
+
+func (s *Server) cleanCandidateBlocks(now time.Time) {
+	var toDelete []blockchain.Hash32
+	
+	s.candidateBlocks.Range(func(key, value interface{}) bool {
+		blockHash := key.(blockchain.Hash32)
+		candidateBlock := value.(*CandidateBlock)
+		
+		// Delete blocks older than 5 minutes
+		if now.Sub(candidateBlock.ReceivedAt) > 5*time.Minute {
+			toDelete = append(toDelete, blockHash)
+		}
+		
+		return true
+	})
+	
+	for _, hash := range toDelete {
+		s.candidateBlocks.Delete(hash)
+	}
+	
+	if len(toDelete) > 0 {
+		s.logf("Cleaned up %d old candidate blocks", len(toDelete))
+	}
+}
+
+// periodicChainSync periodically requests chain heads from peers to detect if we need to sync
+func (s *Server) periodicChainSync() {
+	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			s.cleanupRecentBlocks()
+			s.checkPeerChains()
 		case <-s.shutdown:
 			return
 		}
+	}
+}
+
+// checkPeerChains requests chain heads from all connected peers to see if we need to sync
+func (s *Server) checkPeerChains() {
+	connectedPeers := s.peerManager.GetConnectedPeers()
+	if len(connectedPeers) == 0 {
+		return // No peers to sync with
+	}
+
+	s.logf("Checking chain heads from %d peers", len(connectedPeers))
+
+	for _, peer := range connectedPeers {
+		go func(peerAddr string) {
+			// Request chain head from peer
+			msg, err := NewMessage(MessageTypeRequestChainHead, RequestChainHeadPayload{})
+			if err != nil {
+				s.logf("Failed to create chain head request for %s: %v", peerAddr, err)
+				return
+			}
+
+			// Use SendNotification since we'll handle the response in handleChainHead
+			if err := s.reqRespClient.SendNotification(peerAddr, msg); err != nil {
+				s.logf("Failed to request chain head from %s: %v", peerAddr, err)
+			}
+		}(peer.Address)
 	}
 }
 

@@ -10,7 +10,8 @@ type MessageType string
 
 const (
 	MessageTypeHandshake         MessageType = "handshake"
-	MessageTypeNewBlock          MessageType = "new_block"
+	MessageTypeNewBlockHeader    MessageType = "new_block_header"  // Headers-first gossip
+	MessageTypeNewBlock          MessageType = "new_block"         // Full block (for requests only)
 	MessageTypeRequestBlock      MessageType = "request_block"
 	MessageTypeNewTx             MessageType = "new_transaction"
 	MessageTypePing              MessageType = "ping"
@@ -43,7 +44,12 @@ type HandshakePayload struct {
 	ListenPort  string `json:"listen_port"` // The port this node is listening on
 }
 
-// NewBlockPayload broadcasts a new block to peers
+// NewBlockHeaderPayload broadcasts a new block header to peers (headers-first)
+type NewBlockHeaderPayload struct {
+	Header blockchain.BlockHeader `json:"header"`
+}
+
+// NewBlockPayload broadcasts a new block to peers (full block, used for responses)
 type NewBlockPayload struct {
 	Block *blockchain.Block `json:"block"`
 }

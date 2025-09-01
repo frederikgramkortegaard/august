@@ -20,6 +20,8 @@ func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 	switch msg.Type {
 	case MessageTypeHandshake:
 		handleHandshake(server, msg, peer, conn)
+	case MessageTypeNewBlockHeader:
+		handleNewBlockHeader(server, msg, peer)
 	case MessageTypeNewBlock:
 		handleNewBlock(server, msg, peer)
 	case MessageTypePing:
@@ -124,6 +126,95 @@ func handleHandshake(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 	server.peerManager.mu.Unlock()
 
 	server.logf("Received handshake from %s (height: %d)", handshake.NodeID, handshake.ChainHeight)
+}
+
+// handleNewBlockHeader processes incoming block header announcements (headers-first)
+func handleNewBlockHeader(server *Server, msg *Message, peer *Peer) {
+	var headerPayload NewBlockHeaderPayload
+	if err := msg.ParsePayload(&headerPayload); err != nil {
+		server.logf("Failed to parse block header payload: %v", err)
+		return
+	}
+
+	header := &headerPayload.Header
+	blockHash := blockchain.HashBlockHeader(header)
+
+	// Check if we already have this block header in our recent blocks (deduplication)
+	server.recentBlocksMu.Lock()
+	if addedTime, seen := server.recentBlocks[blockHash]; seen {
+		if time.Now().Sub(addedTime) <= server.recentBlocksTTL {
+			server.recentBlocksMu.Unlock()
+			server.logf("Ignoring duplicate block header: %x", blockHash[:8])
+			return
+		}
+	}
+	server.recentBlocks[blockHash] = time.Now()
+	server.recentBlocksMu.Unlock()
+
+	server.logf("Received new block header %x (height %d) from peer %s",
+		blockHash[:8], header.Height, peer.Address)
+
+	// Check if we want this block based on our current chain
+	ourChain, err := server.config.Store.GetChain()
+	if err != nil {
+		server.logf("Failed to get our chain: %v", err)
+		return
+	}
+
+	ourHeight := uint64(0)
+	if len(ourChain.Blocks) > 0 {
+		ourHeight = ourChain.Blocks[len(ourChain.Blocks)-1].Header.Height
+	}
+
+	// Determine if we should request the full block
+	shouldRequest := false
+	reason := ""
+
+	if header.Height == ourHeight+1 {
+		// This might be the next block in sequence
+		if len(ourChain.Blocks) > 0 {
+			ourTip := ourChain.Blocks[len(ourChain.Blocks)-1]
+			if blockchain.HashBlockHeader(&ourTip.Header) == header.PreviousHash {
+				shouldRequest = true
+				reason = "next block in sequence"
+			}
+		}
+	} else if header.Height > ourHeight+1 {
+		// This block is ahead of us - we might need to sync
+		shouldRequest = true
+		reason = "block ahead of us, might need sync"
+	} else if header.Height <= ourHeight {
+		// Check if this could be a fork with more work
+		if len(ourChain.Blocks) > 0 {
+			ourTip := ourChain.Blocks[len(ourChain.Blocks)-1]
+			if blockchain.CompareWork(header.TotalWork, ourTip.Header.TotalWork) > 0 {
+				shouldRequest = true
+				reason = "potential fork with more work"
+			}
+		}
+	}
+
+	if shouldRequest {
+		server.logf("Requesting full block %x: %s", blockHash[:8], reason)
+
+		// Request the full block
+		hashString := base64.StdEncoding.EncodeToString(blockHash[:])
+		go func() {
+			block, err := RequestBlockFromPeer(server, peer.Address, hashString)
+			if err != nil {
+				server.logf("Failed to request block %x from %s: %v", blockHash[:8], peer.Address, err)
+				return
+			}
+
+			// Process the full block
+			<-ProcessBlock(server, block, peer.Address)
+		}()
+	} else {
+		server.logf("Ignoring block header %x (height %d, not needed)", blockHash[:8], header.Height)
+	}
+
+	// Always relay the header to other peers (except sender)
+	go func() { <-RelayBlockHeader(server, header, peer.Address) }()
 }
 
 // handleNewBlock processes incoming block announcements
@@ -330,11 +421,52 @@ func handleChainHead(server *Server, msg *Message, peer *Peer) {
 		return
 	}
 
-	server.logf("Received chain head from %s: height=%d, hash=%s", 
+	server.logf("Received chain head from %s: height=%d, hash=%s",
 		peer.Address, headPayload.Height, headPayload.HeadHash[:16])
-	
-	// TODO: Compare with our chain and initiate sync if needed
-	// This is where IBD logic would go
+
+	// Compare with our chain and initiate IBD if needed
+	ourChain, err := server.config.Store.GetChain()
+	if err != nil {
+		server.logf("Failed to get our chain for comparison: %v", err)
+		return
+	}
+
+	ourHeight := uint64(0)
+	if len(ourChain.Blocks) > 0 {
+		ourHeight = ourChain.Blocks[len(ourChain.Blocks)-1].Header.Height
+	}
+
+	// If peer is significantly ahead (more than 1 block), initiate IBD
+	if headPayload.Height > ourHeight+1 {
+		server.logf("Peer %s is ahead by %d blocks, initiating IBD",
+			peer.Address, headPayload.Height-ourHeight)
+
+		// Start IBD in background
+		go func() {
+			if err := InitiateBlockDownload(server, peer.Address, &headPayload); err != nil {
+				server.logf("IBD failed from %s: %v", peer.Address, err)
+			} else {
+				server.logf("IBD completed successfully from %s", peer.Address)
+			}
+		}()
+	} else if headPayload.Height == ourHeight+1 {
+		// Peer is just 1 block ahead, request that specific block
+		_, err := base64.StdEncoding.DecodeString(headPayload.HeadHash)
+		if err != nil {
+			server.logf("Failed to decode peer head hash: %v", err)
+			return
+		}
+
+		server.logf("Peer %s has next block, requesting it", peer.Address)
+		go func() {
+			_, err := RequestBlockFromPeer(server, peer.Address, headPayload.HeadHash)
+			if err != nil {
+				server.logf("Failed to request next block from %s: %v", peer.Address, err)
+			}
+		}()
+	} else {
+		server.logf("Peer %s is not ahead (height %d vs our %d)", peer.Address, headPayload.Height, ourHeight)
+	}
 }
 
 // handleRequestHeaders processes requests for block headers in a range
@@ -365,7 +497,7 @@ func handleRequestHeaders(server *Server, msg *Message, peer *Peer, conn net.Con
 			if endIdx > len(chain.Blocks) {
 				endIdx = len(chain.Blocks)
 			}
-			
+
 			for i := startIdx; i < endIdx; i++ {
 				headers = append(headers, chain.Blocks[i].Header)
 			}
@@ -400,7 +532,7 @@ func handleHeaders(server *Server, msg *Message, peer *Peer) {
 	}
 
 	server.logf("Received %d headers from %s", len(headersPayload.Headers), peer.Address)
-	
+
 	// TODO: Validate headers and request missing blocks
 	// This is where headers-first sync logic would go
 }
@@ -433,7 +565,7 @@ func handleRequestBlocks(server *Server, msg *Message, peer *Peer, conn net.Conn
 			if endIdx > len(chain.Blocks) {
 				endIdx = len(chain.Blocks)
 			}
-			
+
 			for i := startIdx; i < endIdx; i++ {
 				blocks = append(blocks, chain.Blocks[i])
 			}
@@ -447,16 +579,16 @@ func handleRequestBlocks(server *Server, msg *Message, peer *Peer, conn net.Conn
 			if len(blocks) >= maxBlocks {
 				break
 			}
-			
+
 			hashBytes, err := base64.StdEncoding.DecodeString(hashStr)
 			if err != nil {
 				continue
 			}
-			
+
 			var blockHash blockchain.Hash32
 			copy(blockHash[:], hashBytes)
-			
-			// Linear search through blocks (could be optimized with a map)
+
+			// Linear search through blocks (could be optimized with a map) @TODO
 			for _, block := range chain.Blocks {
 				if blockchain.HashBlockHeader(&block.Header) == blockHash {
 					blocks = append(blocks, block)
@@ -494,12 +626,12 @@ func handleBlocks(server *Server, msg *Message, peer *Peer) {
 	}
 
 	server.logf("Received %d blocks from %s", len(blocksPayload.Blocks), peer.Address)
-	
+
 	// Process each block sequentially
 	for _, block := range blocksPayload.Blocks {
 		blockHash := blockchain.HashBlockHeader(&block.Header)
 		server.logf("Processing batch block %x from %s", blockHash[:8], peer.Address)
-		
+
 		// Process block through the normal pipeline
 		go func(b *blockchain.Block) {
 			<-ProcessBlock(server, b, peer.Address)

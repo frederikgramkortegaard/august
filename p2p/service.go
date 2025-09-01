@@ -57,6 +57,55 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddr string)
 	return complete
 }
 
+// RelayBlockHeader broadcasts a block header to all connected peers (headers-first), optionally excluding a specific peer
+// Returns a completion channel that will be closed when the relay operation completes
+func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePeerAddr string) <-chan struct{} {
+	complete := make(chan struct{})
+
+	go func() {
+		defer close(complete)
+
+		blockHash := blockchain.HashBlockHeader(header)
+
+		// Add to recent blocks to prevent duplication when we receive it back from peers
+		// (only when not excluding anyone, meaning this is a local header)
+		if excludePeerAddr == "" {
+			server.recentBlocksMu.Lock()
+			server.recentBlocks[blockHash] = time.Now()
+			server.recentBlocksMu.Unlock()
+		}
+
+		server.logf("Relaying block header %x (height %d) to other peers (excluding %s)", 
+			blockHash[:8], header.Height, excludePeerAddr)
+
+		// Create the header payload
+		headerPayload := NewBlockHeaderPayload{Header: *header}
+		msg, err := NewMessage(MessageTypeNewBlockHeader, headerPayload)
+		if err != nil {
+			server.logf("Failed to create relay message for header %x: %v", blockHash[:8], err)
+			return
+		}
+
+		// Send to all connected peers except the sender
+		relayCount := 0
+		for _, peer := range server.peerManager.GetConnectedPeers() {
+			if peer.Address != excludePeerAddr && peer.Status == PeerConnected {
+				// Use SendNotification for fire-and-forget broadcast
+				if err := server.reqRespClient.SendNotification(peer.Address, msg); err != nil {
+					server.logf("Failed to relay header %x to peer %s: %v", blockHash[:8], peer.Address, err)
+				} else {
+					server.logf("Relayed header %x to peer %s", blockHash[:8], peer.Address)
+					relayCount++
+				}
+			}
+		}
+
+		server.logf("Successfully relayed header %x to %d peers", blockHash[:8], relayCount)
+	}()
+
+	return complete
+}
+
 // BroadcastTransaction broadcasts a transaction to all connected peers
 // Returns a completion channel that will be closed when the broadcast operation completes
 func BroadcastTransaction(server *Server, tx *blockchain.Transaction) <-chan struct{} {
@@ -284,6 +333,95 @@ func RequestBlocksByHashesFromPeer(server *Server, peerAddress string, blockHash
 	return blocksPayload.Blocks, nil
 }
 
+// EvaluateChainHead performs headers-first evaluation of a peer's chain
+func EvaluateChainHead(server *Server, peerAddress string, peerChainHead *ChainHeadPayload) error {
+	// Get our current chain
+	ourChain, err := server.config.Store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get our chain: %w", err)
+	}
+
+	ourHeight := uint64(0)
+	if len(ourChain.Blocks) > 0 {
+		ourHeight = ourChain.Blocks[len(ourChain.Blocks)-1].Header.Height
+	}
+
+	server.logf("Starting IBD from %s: our height=%d, peer height=%d", 
+		peerAddress, ourHeight, peerChainHead.Height)
+
+	// If peer is not ahead, nothing to download
+	if peerChainHead.Height <= ourHeight {
+		server.logf("Peer %s is not ahead of us, skipping IBD", peerAddress)
+		return nil
+	}
+
+	// Download blocks in batches from where we left off
+	batchSize := uint64(100) // Download 100 blocks at a time
+	startHeight := ourHeight + 1
+
+	for startHeight <= peerChainHead.Height {
+		count := batchSize
+		if startHeight+count-1 > peerChainHead.Height {
+			count = peerChainHead.Height - startHeight + 1
+		}
+
+		server.logf("Requesting blocks %d-%d from %s", startHeight, startHeight+count-1, peerAddress)
+
+		blocks, err := RequestBlocksFromPeer(server, peerAddress, startHeight, count)
+		if err != nil {
+			return fmt.Errorf("failed to download blocks from height %d: %w", startHeight, err)
+		}
+
+		if len(blocks) == 0 {
+			return fmt.Errorf("peer %s returned no blocks for height range %d-%d", peerAddress, startHeight, startHeight+count-1)
+		}
+
+		server.logf("Downloaded %d blocks from %s, processing...", len(blocks), peerAddress)
+
+		// Process each block in order
+		for _, block := range blocks {
+			blockHash := blockchain.HashBlockHeader(&block.Header)
+			server.logf("Processing IBD block %x (height %d)", blockHash[:8], block.Header.Height)
+			
+			// Use ProcessBlock but exclude the peer to prevent relay back
+			complete := ProcessBlock(server, block, peerAddress)
+			<-complete // Wait for processing to complete
+
+			// Verify the block was actually added to our chain
+			updatedChain, err := server.config.Store.GetChain()
+			if err != nil {
+				return fmt.Errorf("failed to verify block addition: %w", err)
+			}
+
+			expectedHeight := block.Header.Height
+			if len(updatedChain.Blocks) == 0 || updatedChain.Blocks[len(updatedChain.Blocks)-1].Header.Height < expectedHeight {
+				return fmt.Errorf("block at height %d was not successfully added to chain", expectedHeight)
+			}
+		}
+
+		startHeight += count
+	}
+
+	// Verify final state
+	finalChain, err := server.config.Store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get final chain state: %w", err)
+	}
+
+	finalHeight := uint64(0)
+	if len(finalChain.Blocks) > 0 {
+		finalHeight = finalChain.Blocks[len(finalChain.Blocks)-1].Header.Height
+	}
+
+	server.logf("IBD completed: final height=%d, target height=%d", finalHeight, peerChainHead.Height)
+
+	if finalHeight < peerChainHead.Height {
+		return fmt.Errorf("IBD incomplete: reached height %d but target was %d", finalHeight, peerChainHead.Height)
+	}
+
+	return nil
+}
+
 // ProcessBlock attempts to add a block to the main chain, handling orphans
 // Returns a completion channel that will be closed when processing completes
 // excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
@@ -380,12 +518,12 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 		// Block successfully added to main chain
 		log.Printf("Block %x added to main chain", blockHash[:8])
 
-		// Relay the block to connected peers (exclude sender if provided)
+		// Relay the block header to connected peers (headers-first approach)
 		var excludeAddr string
 		if len(excludePeerAddr) > 0 {
 			excludeAddr = excludePeerAddr[0]
 		}
-		go func() { <-RelayBlock(server, block, excludeAddr) }()
+		go func() { <-RelayBlockHeader(server, &block.Header, excludeAddr) }()
 
 		// Try to connect any orphan blocks that might now be connectible
 		tryConnectOrphans(server)
