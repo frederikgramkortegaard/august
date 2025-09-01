@@ -224,10 +224,24 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 				}
 
 				// Perform Chain Switch - fork has more work
+				// Build new chain up to the fork point
 				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
 				newBlocks = append(newBlocks, details.Block)
-				chainCopy = blockchain.ValidateAndBuildChain(newBlocks)
-
+				
+				// Create new chain and rebuild account states from genesis
+				newChain := &blockchain.Chain{
+					Blocks:        newBlocks,
+					AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+				}
+				
+				// Rebuild account states by processing all transactions
+				for _, block := range newBlocks {
+					for _, tx := range block.Transactions {
+						blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
+					}
+				}
+				
+				chainCopy = newChain
 				server.logf("Reorganized Chain")
 
 			} else {

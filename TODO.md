@@ -38,7 +38,10 @@ Core functionality required for a working blockchain:
 - [ ] Chain reorganization (switch to longer chain)
 - [ ] Fork detection and resolution
 - [ ] Proper longest chain rule (total work)
-- [ ] Chain sync for new nodes (initial block download)
+- [ ] Initial Block Download (IBD) for syncing new/behind nodes
+- [ ] Batch block requests ("give me blocks 4-8")
+- [ ] Headers-first synchronization
+- [ ] Chain sync for new nodes (proper sequential sync)
 - [ ] Fix division by zero in difficulty calculation during orphan tests
 
 ## Priority 2: Storage & State Management

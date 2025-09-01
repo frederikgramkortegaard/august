@@ -108,8 +108,8 @@ func validateTransactionSignature(tsx *Transaction) bool {
 	return valid
 }
 
-// validateAndApplyTransaction validates a single transaction against current state and applies it
-func validateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
+// ValidateAndApplyTransaction validates and applies a single transaction to account states
+func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
 	log.Printf("VALIDATION\tValidating transaction: %x -> %x, amount=%d, nonce=%d",
 		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
 
@@ -233,7 +233,7 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 
 	// Then validate and apply each transaction incrementally
 	for i, tsx := range block.Transactions {
-		if !validateAndApplyTransaction(&tsx, chain.AccountStates) {
+		if !ValidateAndApplyTransaction(&tsx, chain.AccountStates) {
 			return fmt.Errorf("transaction %d failed validation", i)
 		}
 	}
@@ -265,7 +265,7 @@ func ValidateAndBuildChain(blocks []*Block) *Chain {
 
 	// Process genesis block transactions (usually just coinbase)
 	for _, tsx := range blocks[0].Transactions {
-		if !validateAndApplyTransaction(&tsx, chain.AccountStates) {
+		if !ValidateAndApplyTransaction(&tsx, chain.AccountStates) {
 			fmt.Println("Genesis block transaction failed")
 			return nil
 		}
