@@ -441,12 +441,12 @@ func handleChainHead(server *Server, msg *Message, peer *Peer) {
 		server.logf("Peer %s is ahead by %d blocks, initiating IBD",
 			peer.Address, headPayload.Height-ourHeight)
 
-		// Start IBD in background
+		// Start headers-first evaluation in background
 		go func() {
-			if err := InitiateBlockDownload(server, peer.Address, &headPayload); err != nil {
-				server.logf("IBD failed from %s: %v", peer.Address, err)
+			if err := EvaluateChainHead(server, peer.Address, &headPayload); err != nil {
+				server.logf("Chain evaluation failed from %s: %v", peer.Address, err)
 			} else {
-				server.logf("IBD completed successfully from %s", peer.Address)
+				server.logf("Chain evaluation completed from %s", peer.Address)
 			}
 		}()
 	} else if headPayload.Height == ourHeight+1 {

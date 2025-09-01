@@ -3,7 +3,7 @@ package blockchain
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
-
+	"encoding/base64"
 	"encoding/binary"
 )
 
@@ -92,4 +92,9 @@ func MerkleTransactions(transactions []Transaction) Hash32 {
 	var root Hash32
 	copy(root[:], hashes[0])
 	return root
+}
+
+// EncodeHash encodes a Hash32 to base64 string for network transmission
+func EncodeHash(hash Hash32) string {
+	return base64.StdEncoding.EncodeToString(hash[:])
 }

@@ -43,6 +43,11 @@ type CandidateChain struct {
 	downloadStatus  atomic.Uint32  // 0=downloading, 1=complete, 2=failed
 }
 
+// DownloadStatus returns the current download status (for testing)
+func (c *CandidateChain) DownloadStatus() *atomic.Uint32 {
+	return &c.downloadStatus
+}
+
 // CandidateBlock represents a single block waiting for context or validation
 type CandidateBlock struct {
 	Block        *blockchain.Block
@@ -437,6 +442,16 @@ func (s *Server) GetListener() net.Listener {
 // GetPeerManager returns the peer manager (for testing)
 func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
+}
+
+// GetCandidateChains returns the candidate chains map (for testing)
+func (s *Server) GetCandidateChains() *sync.Map {
+	return &s.candidateChains
+}
+
+// GetCandidateBlocks returns the candidate blocks map (for testing)
+func (s *Server) GetCandidateBlocks() *sync.Map {
+	return &s.candidateBlocks
 }
 
 // GetChainStore returns the chain store for testing purposes
