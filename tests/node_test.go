@@ -5,6 +5,7 @@ import (
 	"testing"
 	"gocuria/node"
 	"gocuria/blockchain"
+	"gocuria/p2p"
 )
 
 // TestSingleNodeStartup tests that a single node can start and stop cleanly
@@ -88,7 +89,7 @@ func TestRequestBlock(t *testing.T) {
 	}
 	
 	// Request the genesis block from node B (now synchronous)
-	block, err := p2pServerA.RequestBlockFromPeer("127.0.0.1:19002", genesisHashString)
+	block, err := p2p.RequestBlockFromPeer(p2pServerA, "127.0.0.1:19002", genesisHashString)
 	if err != nil {
 		t.Errorf("Failed to request block from peer: %v", err)
 	}

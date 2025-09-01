@@ -160,7 +160,7 @@ func (d *Discovery) requestPeerSharing() {
 	for _, peer := range connectedPeers {
 		if peer.Status == PeerConnected {
 			// Use the new synchronous method to get immediate response
-			peers, err := d.config.P2PServer.RequestPeersFromPeer(peer.Address, 50)
+			peers, err := RequestPeersFromPeer(d.config.P2PServer, peer.Address, 50)
 			if err != nil {
 				d.logf("Failed to request peers from %s: %v", peer.Address, err)
 			} else {

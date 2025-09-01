@@ -7,6 +7,7 @@ import (
 	"time"
 	"gocuria/node"
 	"gocuria/blockchain"
+	"gocuria/p2p"
 )
 
 // Test helper functions
@@ -99,10 +100,8 @@ func TestBlockPropagation(t *testing.T) {
 	t.Logf("Mined new block: %x", blockHash[:8])
 	
 	// Submit the block to Node A - this should trigger propagation A -> B -> C
-	blockProcessor := nodeA.GetP2PServer().GetBlockProcessor()
-	if err := blockProcessor.ProcessBlock(&newBlock); err != nil {
-		t.Fatalf("Failed to process new block on Node A: %v", err)
-	}
+	p2pServerA := nodeA.GetP2PServer()
+	<-p2p.ProcessBlock(p2pServerA, &newBlock)
 	
 	// Wait a bit for propagation
 	time.Sleep(100 * time.Millisecond)

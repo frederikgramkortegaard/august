@@ -3,7 +3,6 @@ package node
 import (
 	"fmt"
 	"gocuria/blockchain"
-	"gocuria/blockchain/processing"
 	"gocuria/blockchain/store"
 	"gocuria/p2p"
 	"log"
@@ -24,10 +23,6 @@ type FullNode struct {
 	// Configuration
 	config Config
 
-	// Block processing (handles validation, orphans, etc.)
-	// We have this because BlockProcessing will also make P2P requests
-	// e.g. to request missing blocks
-	blockProcessor *processing.BlockProcessor
 
 	// Components (each package handles its own concern)
 	p2pServer *p2p.Server    // P2P message handling
@@ -39,13 +34,9 @@ func NewFullNode(config Config) *FullNode {
 	// Create shared store
 	chainStore := store.NewMemoryChainStore()
 
-	// Create block processor
-	blockProcessor := processing.NewBlockProcessor(chainStore)
-
 	return &FullNode{
-		store:          chainStore,
-		config:         config,
-		blockProcessor: blockProcessor,
+		store:  chainStore,
+		config: config,
 		// Components will be initialized in Start()
 	}
 }
@@ -96,15 +87,12 @@ func (n *FullNode) startP2P() {
 	// The p2p package handles all P2P messaging
 	p2pConfig := p2p.Config{
 		Port:           n.config.P2PPort,
-		NodeID:         n.config.NodeID,
-		Store:          n.store,
-		BlockProcessor: n.blockProcessor, // Use the dedicated block processor
-		ReqRespConfig:  p2p.DefaultReqRespConfig(), // Use default request-response configuration
+		NodeID:        n.config.NodeID,
+		Store:         n.store,
+		ReqRespConfig: p2p.DefaultReqRespConfig(), // Use default request-response configuration
 	}
 	n.p2pServer = p2p.NewServer(p2pConfig)
 
-	// Link the block processor with the P2P server for relaying
-	n.blockProcessor.SetP2PServer(n.p2pServer)
 
 	err := n.p2pServer.Start()
 	if err != nil {
@@ -120,14 +108,12 @@ func (n *FullNode) startP2PWithCompletion() <-chan bool {
 		log.Printf("%s\tStarting P2P server on port %s", n.config.NodeID, n.config.P2PPort)
 		
 		p2pConfig := p2p.Config{
-			Port:           n.config.P2PPort,
-			NodeID:         n.config.NodeID,
-			Store:          n.store,
-			BlockProcessor: n.blockProcessor,
-			ReqRespConfig:  p2p.DefaultReqRespConfig(),
+			Port:          n.config.P2PPort,
+			NodeID:        n.config.NodeID,
+			Store:         n.store,
+			ReqRespConfig: p2p.DefaultReqRespConfig(),
 		}
 		n.p2pServer = p2p.NewServer(p2pConfig)
-		n.blockProcessor.SetP2PServer(n.p2pServer)
 
 		err := n.p2pServer.Start()
 		if err != nil {
@@ -211,5 +197,6 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	}
 	
 	// Broadcast the transaction to all connected peers
-	return n.p2pServer.BroadcastTransaction(tx)
+	go func() { <-p2p.BroadcastTransaction(n.p2pServer, tx) }()
+	return nil
 }

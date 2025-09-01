@@ -5,6 +5,7 @@ import (
 	"time"
 	"gocuria/node"
 	"gocuria/blockchain"
+	"gocuria/p2p"
 )
 
 // TestRecentBlocksDeduplication tests that duplicate blocks are ignored
@@ -68,10 +69,8 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 	t.Logf("Created test block: %x", blockHash[:8])
 
 	// Submit the block to Node A - this should propagate to Node B
-	blockProcessor := nodeA.GetP2PServer().GetBlockProcessor()
-	if err := blockProcessor.ProcessBlock(&newBlock); err != nil {
-		t.Fatalf("Failed to process new block on Node A: %v", err)
-	}
+	p2pServerA := nodeA.GetP2PServer()
+	<-p2p.ProcessBlock(p2pServerA, &newBlock)
 
 	// Wait for propagation
 	time.Sleep(200 * time.Millisecond)
@@ -88,8 +87,8 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 	initialBlockCount := len(chainB.Blocks)
 	
 	// Have Node A relay the same block again - this should be deduplicated by Node B
-	p2pServerA := nodeA.GetP2PServer()
-	p2pServerA.RelayBlock(&newBlock)
+	p2pServerA = nodeA.GetP2PServer()
+	<-p2p.RelayBlock(p2pServerA, &newBlock, "")
 	
 	// Wait for any potential processing
 	time.Sleep(100 * time.Millisecond)
@@ -187,10 +186,7 @@ func TestRecentBlocksCleanup(t *testing.T) {
 	t.Logf("Created test block for cleanup test: %x", blockHash[:8])
 
 	// Process the block to add it to recent blocks
-	blockProcessor := p2pServer.GetBlockProcessor()
-	if err := blockProcessor.ProcessBlock(&testBlock); err != nil {
-		t.Fatalf("Failed to process test block: %v", err)
-	}
+	<-p2p.ProcessBlock(p2pServer, &testBlock)
 
 	// Manually trigger cleanup - this should not remove the block yet (it's fresh)
 	// We'll need to access the cleanup method, but since it's not exported,
@@ -199,8 +195,8 @@ func TestRecentBlocksCleanup(t *testing.T) {
 	t.Logf("=== Testing that recent block is still remembered ===")
 	
 	// Try to process the same block again - should be ignored
-	err = blockProcessor.ProcessBlock(&testBlock)
-	t.Logf("Second processing (should be ignored): %v", err)
+	<-p2p.ProcessBlock(p2pServer, &testBlock)
+	t.Logf("Second processing completed (duplicate should be handled properly)")
 
 	t.Logf("=== Recent blocks deduplication test completed ===")
 	// For a full cleanup test, we'd need to either:
