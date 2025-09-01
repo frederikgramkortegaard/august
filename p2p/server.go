@@ -515,7 +515,7 @@ func (s *Server) SendPeerRequest(peerAddress string, maxPeers int) error {
 	return nil
 }
 
-func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) {
+func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) error {
 
 	s.peerConnectionsMu.RLock()
 	conn, exists := s.peerConnections[peerAddress]
@@ -525,17 +525,17 @@ func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) {
 		return fmt.Errorf("no connection to peer %s", peerAddress)
 	}
 	
-	requestPayload := RequestBlockPayload{BlockHash: bockHash}
-	msh, err := NewMessage(MessageTypeRequestBlock, requestPayload)
+	requestPayload := RequestBlockPayload{BlockHash: blockHash}
+	msg, err := NewMessage(MessageTypeRequestBlock, requestPayload)
 	if err != nil {
-		return fmt.Errorf("failed to create request message: %w" ,err)
+		return fmt.Errorf("failed to create request message: %w", err)
 	}
 
 	if err := s.sendMessage(conn, msg); err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	
-	s.logf("Sent peer request to %s (max: %d)", peerAddress, maxPeers)
+	s.logf("Sent block request to %s (hash: %s)", peerAddress, blockHash)
 	return nil
 
 }

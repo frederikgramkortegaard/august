@@ -59,7 +59,7 @@ func (bp *BlockProcessor) ProcessBlock(block *blockchain.Block) error {
 
 			//@TODO : @NOTE : in the future maybe we should just random subsample peers
 			pm.mu.RLock()
-			for address, peer := pm.peers {
+			for address, peer := range pm.peers {
 				go bp.p2pServer.RequestBlockFromPeer(address, missingParentErr.Hash)
 			}
 			pm.mu.RUnlock()
