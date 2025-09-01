@@ -129,3 +129,8 @@ func (n *FullNode) Stop() error {
 func (n *FullNode) GetP2PServer() *p2p.Server {
 	return n.p2pServer
 }
+
+// GetDiscovery returns the discovery instance for testing purposes
+func (n *FullNode) GetDiscovery() *p2p.Discovery {
+	return n.discovery
+}

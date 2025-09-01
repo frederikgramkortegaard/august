@@ -170,10 +170,23 @@ func (d *Discovery) periodicDiscovery() {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		// Just trigger a manual discovery round
+		<-d.RunDiscoveryRound()
+	}
+}
+
+// RunDiscoveryRound manually triggers one round of peer discovery
+// Returns a channel that signals when the discovery round is complete
+func (d *Discovery) RunDiscoveryRound() <-chan bool {
+	done := make(chan bool, 1)
+	
+	go func() {
+		defer func() { done <- true }()
+		
 		// Check if P2P server is available
 		if d.config.P2PServer == nil {
-			d.logf("P2P server not available, skipping periodic discovery")
-			continue
+			d.logf("P2P server not available, skipping discovery")
+			return
 		}
 
 		pm := d.config.P2PServer.GetPeerManager()
@@ -182,28 +195,29 @@ func (d *Discovery) periodicDiscovery() {
 		for _, peer := range connected {
 			connectedAddrs = append(connectedAddrs, peer.Address)
 		}
-		d.logf("Periodic discovery check: %d connected peers: %v", len(connected), connectedAddrs)
+		d.logf("Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
 
 		// Clean up dead peers
 		removed := pm.CleanupDeadPeers()
 		if removed > 0 {
 			d.logf("Cleaned up %d dead peers", removed)
 		}
+		
 		// Different strategies based on connection count
 		if len(connected) == 0 {
 			// No connections, try seed peers
 			d.logf("No connected peers, attempting to connect to seed peers")
-			go d.connectToSeeds()
-			// @TODO : If len(pm.discoveredPeers) > 0 we could also try to connect to them, becuase otherwise we reply on full uptime for seed nodes...
+			d.connectToSeeds() // Run synchronously for testing
 		} else if len(connected) < 5 {
 			// Few connections, try to get more
-			// First try to connect to any peers we already know about
-			go d.connectToDiscoveredPeers()
-			// Request more peers and schedule connection attempts
-			go d.requestPeerSharingAndConnect()
-			// Good number of connections, just maintain
+			d.connectToDiscoveredPeers()
+			d.requestPeerSharingAndConnect()
 		} else if len(connected) < 10 {
-				go d.connectToDiscoveredPeers()
+			d.connectToDiscoveredPeers()
 		}
-	}
+		
+		d.logf("Discovery round completed")
+	}()
+	
+	return done
 }

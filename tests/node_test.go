@@ -114,3 +114,46 @@ func TestRequestBlock(t *testing.T) {
 		t.Errorf("Failed to stop node B: %v", err)
 	}
 }
+
+// TestPeerSharing tests that nodes can request and share peer lists
+func TestPeerSharing(t *testing.T) {
+	// Create three nodes: A connects to B, C connects to B
+	// Then A should be able to discover C through B's peer sharing
+	
+	// Node B (seed node)
+	nodeB := node.NewFullNode(node.Config{
+		P2PPort: "19010", NodeID: "node-B", SeedPeers: []string{},
+	})
+	go nodeB.Start()
+	time.Sleep(100 * time.Millisecond)
+	
+	// Node C connects to B
+	nodeC := node.NewFullNode(node.Config{
+		P2PPort: "19011", NodeID: "node-C", SeedPeers: []string{"127.0.0.1:19010"},
+	})
+	go nodeC.Start()
+	time.Sleep(150 * time.Millisecond)
+	
+	// Node A connects to B
+	nodeA := node.NewFullNode(node.Config{
+		P2PPort: "19012", NodeID: "node-A", SeedPeers: []string{"127.0.0.1:19010"},
+	})
+	go nodeA.Start()
+	time.Sleep(200 * time.Millisecond) // Allow nodes to connect
+	
+	// Manually trigger discovery on node A
+	<-nodeA.GetDiscovery().RunDiscoveryRound()
+	
+	// Check that A has discovered C through B's peer sharing
+	peerManager := nodeA.GetP2PServer().GetPeerManager()
+	connectedPeers := peerManager.GetConnectedPeers()
+	
+	if len(connectedPeers) < 2 {
+		t.Errorf("Expected at least 2 peers (B and C), got %d", len(connectedPeers))
+	}
+	
+	// Cleanup
+	nodeA.Stop()
+	nodeB.Stop() 
+	nodeC.Stop()
+}
