@@ -376,11 +376,34 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 			s.logf("Failed to parse request block payload: %v", err)
 			return
 		}
-
 		
-
+		// Convert string hash to Hash32
+		var blockHash blockchain.Hash32
+		if err := blockHash.UnmarshalJSON([]byte(`"` + requestBlockPayload.BlockHash + `"`)); err != nil {
+			s.logf("Invalid block hash format in request: %v", err)
+			return
+		}
 		
-
+		// Look up the block in our chain store
+		block, err := s.config.Store.GetBlockByHash(blockHash)
+		if err != nil {
+			s.logf("Block %s not found in our chain", requestBlockPayload.BlockHash)
+			return
+		}
+		
+		// Send the block back as a NewBlock message
+		blockPayload := NewBlockPayload{Block: block}
+		response, err := NewMessage(MessageTypeNewBlock, blockPayload)
+		if err != nil {
+			s.logf("Failed to create block response message: %v", err)
+			return
+		}
+		
+		if err := s.sendMessage(conn, response); err != nil {
+			s.logf("Failed to send requested block to %s: %v", peer.Address, err)
+		} else {
+			s.logf("Sent requested block %s to %s", requestBlockPayload.BlockHash, peer.Address)
+		}
 
 
 	default:
@@ -495,7 +518,7 @@ func (s *Server) SendPeerRequest(peerAddress string, maxPeers int) error {
 func (s *Server) RequestBlockFromPeer(peerAddress string, blockHash string) {
 
 	s.peerConnectionsMu.RLock()
-	conn, exist s:= s.peerConnections[peerAddress]
+	conn, exists := s.peerConnections[peerAddress]
 	s.peerConnectionsMu.RUnlock()
 
 	if !exists {
