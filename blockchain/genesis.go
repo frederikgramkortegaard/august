@@ -31,7 +31,7 @@ func init() {
 		Height:       0,        // Genesis is height 0
 		Timestamp:    0,
 		Nonce:        0,
-		MerkleRoot:   merkleRoot, // Merkle root of genesis transaction
+		MerkleRoot:   merkleRoot,           // Merkle root of genesis transaction
 		TotalWork:    genesisWork.String(), // Proper work calculation
 	}
 

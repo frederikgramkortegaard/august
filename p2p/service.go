@@ -212,20 +212,29 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 					}(peer.Address)
 				}
 				return
-			}
-
+			
 			// Check if this is a chain switch request (fork detected)
-			if _, ok := err.(blockchain.ErrSwitchChain); ok {
+			} else if details, ok := err.(blockchain.ErrSwitchChain); ok {
 				server.logf("Block %x detected fork, need to check for chain reorganization", blockHash[:8])
-				// TODO: Implement chain reorganization logic here
-				// For now, just log and ignore the block
-				server.logf("Chain reorganization not implemented yet, ignoring block %x", blockHash[:8])
+
+				// Check if current chain has more work
+				if blockchain.CompareWork(details.Block.Header.TotalWork, chainCopy.Blocks[len(chainCopy.Blocks)-1].Header.TotalWork) <= 0 {
+					server.logf("Current chain has more total work, ignoring block %x", blockHash[:8])
+					return
+				}
+
+				// Perform Chain Switch - fork has more work
+				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
+				newBlocks = append(newBlocks, details.Block)
+				chainCopy = blockchain.ValidateAndBuildChain(newBlocks)
+
+				server.logf("Reorganized Chain")
+
+			} else {
+				// Other validation errors
+				server.logf("Block %x validation failed: %v", blockHash[:8], err)
 				return
 			}
-
-			// Other validation errors
-			server.logf("Block %x validation failed: %v", blockHash[:8], err)
-			return
 		}
 
 		// Block validation succeeded and was added to the copy, now atomically replace the chain

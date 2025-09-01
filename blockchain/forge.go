@@ -32,7 +32,7 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 
 	// Calculate work for this block
 	blockWork := CalculateBlockWork(params.Difficulty)
-	
+
 	// Calculate total work (previous work + this block's work)
 	totalWork := AddWork(params.PreviousWork, blockWork.String())
 

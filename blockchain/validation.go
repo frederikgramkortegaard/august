@@ -17,8 +17,8 @@ func (e ErrMissingParent) Error() string {
 
 // ErrSwitchChain is returned when a block triggers a chain reorganization
 type ErrSwitchChain struct {
-	Block           *Block
-	CommonAncestor  *Block
+	Block          *Block
+	CommonAncestor *Block
 }
 
 func (e ErrSwitchChain) Error() string {
