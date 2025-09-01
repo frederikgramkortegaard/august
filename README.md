@@ -1,52 +1,91 @@
 # gocuria
 
-A simple blockchain implementation in Go.
+A blockchain implementation in Go.
 
-## What works
+## Status
 
+Working:
 - [x] Basic blockchain data structures (blocks, transactions, accounts)
 - [x] Ed25519 digital signatures
-- [x] Proof of work mining (configurable difficulty)
-- [x] Transaction validation (nonces, balances, signatures)  
+- [x] Proof of work mining with difficulty adjustment
+- [x] Transaction validation (nonces, balances, signatures)
 - [x] Chain validation and state management
 - [x] Genesis block with initial coin supply
-- [x] In-memory storage interface
-- [x] HTTP API server
-- [x] Block submission and retrieval via REST
+- [x] In-memory storage with ChainStore interface
+- [x] Peer-to-peer networking
+- [x] Block broadcasting and propagation
+- [x] Peer discovery and management
+- [x] Message protocol (handshake, blocks, transactions)
+- [x] Orphan block handling
 
-## Planned
-
-- [ ] Peer-to-peer networking between nodes
-- [ ] Block broadcasting and synchronization
-- [ ] Persistent storage (database)
+Not implemented:
+- [ ] Persistent storage (database backend)
 - [ ] Transaction mempool
 - [ ] Chain reorganization (longest chain rule)
+- [ ] Fork resolution
+- [ ] Comprehensive test coverage
 
-## Usage
+## Building
 
-Start a node:
-```bash
-go run cmd/node/main.go
+```
+go build ./cmd/main.go
 ```
 
-Test the API:
-```bash
-curl http://localhost:8372/api/chain/height
-curl http://localhost:8372/api/chain/head
+## Running
+
+Single node:
+```
+./main --p2p=9372
 ```
 
-Generate test data:
-```bash
-go run cmd/generate-curl/main.go
-./curl/test_basic_endpoints.sh
+Multiple nodes:
+```
+# Node 1
+./main --p2p=9001 --id=node1
+
+# Node 2
+./main --p2p=9002 --id=node2 --seeds=localhost:9001
+
+# Node 3
+./main --p2p=9003 --id=node3 --seeds=localhost:9001,localhost:9002
 ```
 
-## Architecture
+## Structure
 
-- `blockchain/` - Core blockchain logic and types
-- `blockchain/store/` - Storage interface and implementations
-- `api/` - HTTP server and handlers  
-- `testing/` - Test data generation
-- `curl/` - API testing scripts
+```
+blockchain/           Core blockchain logic
+  types.go           Block, Transaction, Account structures
+  validation.go      Block and transaction validation
+  mining.go          Proof of work implementation
+  difficulty.go      Difficulty adjustment algorithm
+  processing/        Block processing and orphan handling
+  store/             Storage interface and memory implementation
 
-That's it. Just a learning project to understand how blockchains work.
+p2p/                 Peer-to-peer networking
+  server.go          P2P server and message handling
+  discovery.go       Peer discovery mechanism
+  messages.go        Protocol message types
+  peers.go           Peer management
+
+node/                Full node implementation
+  node.go            FullNode orchestration
+
+cmd/                 Command-line entry point
+```
+
+## Protocol
+
+The P2P protocol uses TCP with JSON-encoded messages. Message types:
+
+- HANDSHAKE: Initial peer identification
+- NEW_BLOCK: Block announcement
+- NEW_TX: Transaction broadcast
+- REQUEST_BLOCK: Block request by hash
+- PING/PONG: Connection keepalive
+
+Nodes maintain an orphan pool for blocks received out of order. When a block's
+parent arrives, orphaned children are automatically connected to the chain.
+
+## Development
+
+See TODO.md for development roadmap.
