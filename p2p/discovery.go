@@ -189,6 +189,9 @@ func (d *Discovery) periodicDiscovery() {
 		if removed > 0 {
 			d.logf("Cleaned up %d dead peers", removed)
 		}
+		
+		// Simple peer count summary
+		d.logf("Network status: %d peers connected", len(connected))
 
 		// Different strategies based on connection count
 		if len(connected) == 0 {

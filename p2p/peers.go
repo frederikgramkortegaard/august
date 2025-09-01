@@ -102,7 +102,8 @@ func (pm *PeerManager) CleanupDeadPeers() int {
 }
 
 // AddDiscoveredPeers adds newly discovered peer addresses to the discovered list
-func (pm *PeerManager) AddDiscoveredPeers(addresses []string) {
+// Returns the count of newly added unique peers
+func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	
@@ -115,12 +116,16 @@ func (pm *PeerManager) AddDiscoveredPeers(addresses []string) {
 		seen[addr] = true
 	}
 	
+	newPeers := 0
 	for _, addr := range addresses {
 		if !seen[addr] {
 			pm.discoveredPeers = append(pm.discoveredPeers, addr)
 			seen[addr] = true
+			newPeers++
 		}
 	}
+	
+	return newPeers
 }
 
 // GetDiscoveredPeers returns a copy of discovered peer addresses

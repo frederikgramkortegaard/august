@@ -361,11 +361,12 @@ func (s *Server) processMessage(msg *Message, peer *Peer, conn net.Conn) {
 			return
 		}
 		
-		s.logf("Received %d peers from %s", len(sharePayload.Peers), peer.Address)
-		
 		// Store these peers for the next discovery cycle to connect to
 		if len(sharePayload.Peers) > 0 {
-			s.peerManager.AddDiscoveredPeers(sharePayload.Peers)
+			newPeerCount := s.peerManager.AddDiscoveredPeers(sharePayload.Peers)
+			if newPeerCount > 0 {
+				s.logf("Received %d new peers from %s", newPeerCount, peer.Address)
+			}
 		}
 
 	default:
