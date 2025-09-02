@@ -179,9 +179,9 @@ $ go mod tidy
 $ go build ./cmd/main.go
 ```
 
-For verbose debugging output:
+For debugging with a specific node ID:
 ```bash
-$ go run ./cmd/main.go --p2p=9001 --id=debug --verbose
+$ go run ./cmd/main.go --p2p=9001 --id=debug
 ```
 
 ## Development Status
