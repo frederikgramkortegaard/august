@@ -1,63 +1,75 @@
-# gocuria
+# August - Educational Blockchain Implementation
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A blockchain implementation in Go.
+August is an educational blockchain implementation written from scratch in Go, designed to explore and demonstrate various peer-to-peer networking concepts and blockchain technologies. This is a learning project that integrates proof-of-work consensus, Bitcoin-style chain synchronization, and advanced P2P networking patterns.
 
-## Status
+**Note**: This is not intended as production software or a commercial blockchain platform. Rather, it serves as a comprehensive study of blockchain architecture, P2P protocols, and distributed systems concepts through practical implementation.
 
-Working:
-- [x] Basic blockchain data structures (blocks, transactions, accounts)
-- [x] Ed25519 digital signatures
-- [x] Proof of work mining with difficulty adjustment
-- [x] Transaction validation (nonces, balances, signatures)
-- [x] Chain validation and state management
-- [x] Genesis block with initial coin supply
-- [x] In-memory storage with ChainStore interface
-- [x] Peer-to-peer networking
-- [x] Block broadcasting and propagation
-- [x] Peer discovery and management
-- [x] Message protocol (handshake, blocks, transactions, peer sharing)
-- [x] Headers-first chain synchronization protocol
-- [x] Candidate chain system with lock-free concurrent evaluation
-- [x] Chain reorganization (longest chain rule based on total work)
-- [x] Fork detection and resolution
-- [x] Initial Block Download (IBD) for syncing new/behind nodes
-- [x] Request-response correlation with timeout handling
-- [x] Broadcast storm mitigation (block deduplication)
-- [x] Channel-based asynchronous coordination
+:pushpin: [Design Decisions](https://github.com/user/gocuria/blob/master/DESIGN_DECISIONS.md)
 
-Not implemented:
-- [ ] Persistent storage (database backend)
-- [ ] Transaction mempool
-- [ ] Duplicate connection prevention
-- [ ] Comprehensive test coverage
+:pushpin: [Development Roadmap](https://github.com/user/gocuria/blob/master/TODO.md)
 
-## Building
+:speech_balloon: This project demonstrates various distributed systems concepts including headers-first synchronization, concurrent chain evaluation, dynamic peer discovery, and network resilience testing. The fuzzybot framework showcases how to test P2P networks under realistic conditions with continuous node churn.
 
-```
-go build ./cmd/main.go
+---
+
+## Hosting a Full Node
+To host a single full node, use the following command:
+```bash
+$ go build ./cmd/main.go
+$ ./main --p2p=9372
 ```
 
-## Running
+For hosting a multi-node network:
+```bash
+# Node 1 (Bootstrap)
+$ ./main --p2p=9001 --id=node1
 
-Single node:
-```
-./main --p2p=9372
-```
-
-Multiple nodes:
-```
-# Node 1
-./main --p2p=9001 --id=node1
-
-# Node 2
-./main --p2p=9002 --id=node2 --seeds=localhost:9001
+# Node 2 
+$ ./main --p2p=9002 --id=node2 --seeds=localhost:9001
 
 # Node 3
-./main --p2p=9003 --id=node3 --seeds=localhost:9001,localhost:9002
+$ ./main --p2p=9003 --id=node3 --seeds=localhost:9001,localhost:9002
 ```
 
-## Structure
+This creates a multi-node network for studying distributed consensus, P2P networking behaviors, and blockchain synchronization patterns.
 
+## Hosting a Lightweight Node
+*[Work in Progress]*
+
+Lightweight nodes will provide blockchain verification without storing the full chain history:
+```bash
+# Coming soon
+$ ./main --light --p2p=9372 --trusted-peers=node1,node2
+```
+
+## Using the Wallet
+*[Work in Progress]*
+
+Command-line wallet interface for transaction management:
+```bash
+# Wallet operations (planned)
+$ ./wallet create --name=mywallet
+$ ./wallet balance --address=1A2B3C...
+$ ./wallet send --to=1X2Y3Z... --amount=10.5
+$ ./wallet history --address=1A2B3C...
+```
+
+## Implementation Overview
+
+August implements a Bitcoin-inspired blockchain with the following characteristics:
+
+```
+• Consensus Mechanism: Proof-of-Work with SHA-256 hashing and dynamic difficulty adjustment targeting 10-minute block intervals
+• Chain Selection: Longest chain rule based on cumulative proof-of-work (total work), not just block count
+• Network Protocol: Headers-first synchronization following Bitcoin's Initial Block Download (IBD) design with candidate chain evaluation
+• Transaction Model: UTXO-style account model with Ed25519 digital signatures and sequential nonce-based replay protection
+• Mining: CPU-based proof-of-work with configurable difficulty and coinbase rewards (currently 50 coins per block)
+• P2P Architecture: Fully decentralized peer discovery without permanent seed nodes, using TCP with JSON message encoding
+```
+
+## Code Structure
+### Core Blockchain Components
 ```
 blockchain/           Core blockchain logic
   types.go           Block, Transaction, Account structures
@@ -65,86 +77,125 @@ blockchain/           Core blockchain logic
   mining.go          Proof of work implementation
   difficulty.go      Difficulty adjustment algorithm
   forge.go           Block creation and mining
-  processing/        Block processing and orphan handling
   store/             Storage interface and memory implementation
+```
 
+### P2P Networking
+```
 p2p/                 Peer-to-peer networking
   server.go          P2P server and message handling
   discovery.go       Peer discovery mechanism
+  service.go         Headers-first chain synchronization
   messages.go        Protocol message types
-  peers.go           Peer management
   reqresp/           Request-response correlation layer
-
-node/                Full node implementation
-  node.go            FullNode orchestration
-
-tests/               Integration tests
-  node_test.go       Basic node operations
-  block_propagation_test.go  Block propagation testing
-  recent_blocks_test.go      Deduplication testing
-  header_first_discovery_test.go  Headers-first protocol testing
-  longest_chain_resolution_test.go  Chain competition and resolution testing
-
-cmd/                 Command-line entry point
 ```
 
-## Protocol
+### Node Architecture
+```
+node/                Full node implementation
+  node.go            FullNode orchestration and lifecycle management
+```
 
-The P2P protocol uses TCP with JSON-encoded messages. Message types:
+## Testing Framework
 
-- HANDSHAKE: Initial peer identification with height and node info
-- NEW_BLOCK: Block announcement and propagation
-- NEW_BLOCK_HEADER: Headers-first gossip protocol
-- NEW_TX: Transaction broadcast
-- REQUEST_BLOCK: Block request by hash
-- REQUEST_BLOCKS: Batch block requests for range syncing
-- REQUEST_HEADERS: Headers-only requests for validation
-- REQUEST_CHAIN_HEAD: Chain head requests for sync detection
-- REQUEST_PEERS/SHARE_PEERS: Peer discovery protocol
-- PING/PONG: Connection keepalive
+August includes comprehensive testing infrastructure across multiple levels:
 
-Features:
-- Headers-first chain synchronization following Bitcoin's IBD design
-- Candidate chain system for concurrent evaluation of competing chains
-- Lock-free operations using sync.Map for high-performance P2P
-- Atomic chain switching based on total work comparison
-- Request-response correlation with unique message IDs
-- Timeout handling for pending requests (default 30s)
-- Broadcast storm mitigation via block deduplication
-- Recent blocks tracking with 5-minute TTL
-- Automatic cleanup of expired resources
+### Unit Testing
+Core component testing with isolated validation:
+```bash
+# Run all unit tests
+$ go test ./blockchain/...
+$ go test ./p2p/...
 
-Chain Synchronization:
-The system implements Bitcoin-style Initial Block Download (IBD) with a three-phase
-approach: 1) Header evaluation and validation, 2) Candidate chain creation with
-isolated storage, 3) Atomic promotion of the best chain. Multiple chains can be
-evaluated concurrently without blocking, and the system always chooses the chain
-with the most cumulative work (longest chain rule).
+# With coverage reporting
+$ go test -cover ./...
+```
 
-## Testing
+Coverage includes:
+- Block and transaction validation logic
+- Cryptographic signature verification
+- Difficulty adjustment algorithms
+- Message serialization/deserialization
+- Chain storage operations
 
-The project includes comprehensive testing infrastructure:
+### Integration Testing
+Multi-component interaction testing:
+```bash
+# Run integration test suite
+$ go test ./tests/...
 
-**Integration Tests** (`tests/`):
+# Specific test scenarios
+$ go test ./tests/block_propagation_test.go
+$ go test ./tests/longest_chain_resolution_test.go
+```
+
+Test scenarios include:
 - Multi-node blockchain networks with real P2P communication
-- Block propagation and chain synchronization testing
+- Block propagation and chain synchronization
 - Headers-first discovery protocol validation
 - Longest chain resolution with competing chains
-- Deduplication and broadcast storm mitigation
+- P2P message deduplication and broadcast storm mitigation
 
-**Fuzzybot Testing Framework** (`testing/bot.go`):
-- Continuous multi-node simulation with randomized mining intervals
-- Automated transaction generation and block creation
-- Real-time chain status monitoring and validation
-- Mock helper functions for test data generation
-
-Run fuzzybot simulation:
+### Fuzzybot / Live Network Testing
+Continuous multi-node simulation under realistic network conditions:
 ```bash
-go run testing/bot.go
+# Run live network simulation
+$ go run testing/bot.go
+
+# Monitor network behavior
+$ tail -f log.txt | grep "CHAIN STATUS"
 ```
 
-The fuzzybot framework creates 7 nodes (1 seed + 6 peers) that continuously mine blocks with random intervals between 10-120 seconds, creating realistic network conditions for testing chain synchronization, transaction validation, and network resilience.
+The fuzzybot framework provides:
+- **Dynamic Node Management**: Nodes join and leave every 2 minutes
+- **Randomized Mining**: Mining intervals between 10-120 seconds per node
+- **Transaction Generation**: Automatic transaction creation with proper nonce handling
+- **Chain Synchronization**: Real-time testing of Initial Block Download (IBD)
+- **Network Resilience**: Tests network survival without permanent seed nodes
+- **Consensus Testing**: Validates longest chain rule under competing mining scenarios
 
-## Development
+## Protocol Features
+The P2P protocol uses TCP with JSON-encoded messages implementing:
 
-See TODO.md for development roadmap.
+- **Headers-First Synchronization**: Bitcoin-style Initial Block Download
+- **Candidate Chain System**: Concurrent evaluation of competing chains
+- **Dynamic Peer Discovery**: Decentralized bootstrap without permanent seeds
+- **Request-Response Correlation**: Timeout handling with unique message IDs
+- **Broadcast Storm Mitigation**: Block deduplication with TTL management
+
+### Message Types
+- `HANDSHAKE`: Peer identification and height exchange
+- `NEW_BLOCK_HEADER`: Headers-first gossip protocol
+- `NEW_BLOCK`: Full block propagation
+- `REQUEST_BLOCK`: Block requests by hash
+- `REQUEST_CHAIN_HEAD`: Chain synchronization detection
+- `REQUEST_PEERS/SHARE_PEERS`: Dynamic peer discovery
+- `PING/PONG`: Connection keepalive
+
+## Building from Source
+Navigate to the project directory and build:
+```bash
+$ go mod tidy
+$ go build ./cmd/main.go
+```
+
+For verbose debugging output:
+```bash
+$ go run ./cmd/main.go --p2p=9001 --id=debug --verbose
+```
+
+## Development Status
+**Implemented Features**:
+- [x] Core blockchain (blocks, transactions, mining, validation)
+- [x] Peer-to-peer networking with full protocol suite
+- [x] Headers-first chain synchronization
+- [x] Dynamic peer discovery without permanent seeds
+- [x] Comprehensive testing with fuzzybot framework
+- [x] Concurrent chain evaluation and fork resolution
+
+**In Progress**:
+- [ ] Transaction mempool and relay protocol
+- [ ] JSON-RPC API layer
+- [ ] Persistent storage backend
+- [ ] Client/wallet infrastructure
+- [ ] Standalone mining processes
