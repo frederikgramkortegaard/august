@@ -159,3 +159,24 @@ func (m *MemoryChainStore) ReplaceChain(newChain *blockchain.Chain) error {
 	m.chain = newChain
 	return nil
 }
+
+// Locking methods for atomic operations
+func (m *MemoryChainStore) Lock() {
+	m.mu.Lock()
+}
+
+func (m *MemoryChainStore) Unlock() {
+	m.mu.Unlock()
+}
+
+func (m *MemoryChainStore) GetChainUnsafe() (*blockchain.Chain, error) {
+	return m.getChainUnsafe()
+}
+
+func (m *MemoryChainStore) ReplaceChainUnsafe(newChain *blockchain.Chain) error {
+	if newChain == nil {
+		return errors.New("cannot replace with nil chain")
+	}
+	m.chain = newChain
+	return nil
+}

@@ -516,8 +516,13 @@ func ShouldAbortDownload(server *Server, candidate *CandidateChain) bool {
 
 // EvaluateCandidateForPromotion checks if candidate should become active chain
 func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
-	// Get current active chain work
-	currentChain, err := server.config.Store.GetChain()
+	// CRITICAL: Lock the chain for the entire validation and switch process
+	// This prevents race conditions where the chain changes while we're validating
+	server.config.Store.Lock()
+	defer server.config.Store.Unlock()
+
+	// Get current active chain work (now thread-safe under lock)
+	currentChain, err := server.config.Store.GetChainUnsafe()
 	if err != nil {
 		server.logf("Failed to get current chain for comparison: %v", err)
 		return
@@ -575,8 +580,8 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 		
 		server.logf("Candidate %s passed full validation, promoting to active chain", candidate.ID)
 
-		// Atomic switch to new chain (now fully validated)
-		if err := server.config.Store.ReplaceChain(candidateChain); err != nil {
+		// Atomic switch to new chain (fully validated, no race condition possible under lock)
+		if err := server.config.Store.ReplaceChainUnsafe(candidateChain); err != nil {
 			server.logf("Failed to replace active chain: %v", err)
 			return
 		}
