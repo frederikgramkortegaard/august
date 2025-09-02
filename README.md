@@ -121,6 +121,30 @@ isolated storage, 3) Atomic promotion of the best chain. Multiple chains can be
 evaluated concurrently without blocking, and the system always chooses the chain
 with the most cumulative work (longest chain rule).
 
+## Testing
+
+The project includes comprehensive testing infrastructure:
+
+**Integration Tests** (`tests/`):
+- Multi-node blockchain networks with real P2P communication
+- Block propagation and chain synchronization testing
+- Headers-first discovery protocol validation
+- Longest chain resolution with competing chains
+- Deduplication and broadcast storm mitigation
+
+**Fuzzybot Testing Framework** (`testing/bot.go`):
+- Continuous multi-node simulation with randomized mining intervals
+- Automated transaction generation and block creation
+- Real-time chain status monitoring and validation
+- Mock helper functions for test data generation
+
+Run fuzzybot simulation:
+```bash
+go run testing/bot.go
+```
+
+The fuzzybot framework creates 7 nodes (1 seed + 6 peers) that continuously mine blocks with random intervals between 10-120 seconds, creating realistic network conditions for testing chain synchronization, transaction validation, and network resilience.
+
 ## Development
 
 See TODO.md for development roadmap.
