@@ -21,7 +21,7 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 	})
 
 	nodeB := node.NewFullNode(node.Config{
-		P2PPort:   "19081", 
+		P2PPort:   "19081",
 		NodeID:    "node-B",
 		SeedPeers: []string{"127.0.0.1:19080"},
 	})
@@ -44,7 +44,7 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 
 	// Phase 1: Create a longer chain on Node A (but don't broadcast blocks yet)
 	t.Log("=== Phase 1: Node A builds longer chain privately ===")
-	
+
 	chainA, _ := nodeA.GetP2PServer().GetChainStore().GetChain()
 
 	// Mine 5 blocks privately on Node A
@@ -53,13 +53,13 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		block := createTestBlockWithDifficulty(t, currentChain, pubKey, 5, i)
 		blocksA = append(blocksA, block)
-		
+
 		// Add to Node A's chain directly (simulate private mining)
 		err := nodeA.GetP2PServer().GetChainStore().AddBlock(block)
 		if err != nil {
 			t.Fatalf("Failed to add block %d to Node A: %v", i, err)
 		}
-		
+
 		// Update current chain for next block
 		currentChain, _ = nodeA.GetP2PServer().GetChainStore().GetChain()
 		t.Logf("Node A mined block %d at height %d", i, block.Header.Height)
@@ -76,11 +76,11 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 
 	// Phase 2: Trigger headers-first discovery
 	t.Log("=== Phase 2: Testing Headers-First Protocol ===")
-	
+
 	// Create chain head payload representing Node A's better chain
 	headBlock := finalChainA.Blocks[len(finalChainA.Blocks)-1]
 	headHash := blockchain.HashBlockHeader(&headBlock.Header)
-	
+
 	chainHead := &p2p.ChainHeadPayload{
 		Height:    headBlock.Header.Height,
 		HeadHash:  blockchain.EncodeHash(headHash),
@@ -91,9 +91,9 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 	// Node B evaluates Node A's chain (this should trigger headers-first download)
 	t.Log("Node B starting headers-first evaluation of Node A's chain")
 	serverB := nodeB.GetP2PServer()
-	
+
 	// This should:
-	// 1. Download headers first 
+	// 1. Download headers first
 	// 2. Validate header chain
 	// 3. Start candidate chain download
 	err := p2p.EvaluateChainHead(serverB, "127.0.0.1:19080", chainHead)
@@ -103,26 +103,26 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 
 	// Phase 3: Verify headers-first behavior
 	t.Log("=== Phase 3: Verifying Headers-First Behavior ===")
-	
+
 	// Wait for headers download and candidate creation
 	time.Sleep(300 * time.Millisecond)
-	
+
 	// Check that Node B created a candidate chain
 	candidateFound := false
 	serverB.GetCandidateChains().Range(func(key, value interface{}) bool {
 		candidate := value.(*p2p.CandidateChain)
 		t.Logf("Found candidate chain: %s from %s", candidate.ID, candidate.PeerSource)
-		
+
 		// Verify the candidate has headers
 		if len(candidate.Headers) != 5 {
 			t.Errorf("Expected 5 headers in candidate, got %d", len(candidate.Headers))
 		}
-		
+
 		// Verify expected work matches
 		if candidate.ExpectedWork != chainHead.TotalWork {
 			t.Errorf("Expected work mismatch: got %s, want %s", candidate.ExpectedWork, chainHead.TotalWork)
 		}
-		
+
 		candidateFound = true
 		return false // stop iteration
 	})
@@ -131,13 +131,13 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 		t.Fatal("No candidate chain found - headers-first discovery failed")
 	}
 
-	// Phase 4: Wait for full synchronization 
+	// Phase 4: Wait for full synchronization
 	t.Log("=== Phase 4: Waiting for Full Block Download ===")
-	
+
 	// Wait for block download to complete
 	maxWait := 30 * time.Second
 	startWait := time.Now()
-	
+
 	for time.Since(startWait) < maxWait {
 		chainB, _ = nodeB.GetP2PServer().GetChainStore().GetChain()
 		if len(chainB.Blocks) == len(finalChainA.Blocks) {
@@ -148,17 +148,17 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 
 	// Phase 5: Verify final synchronization
 	t.Log("=== Phase 5: Verifying Final Synchronization ===")
-	
+
 	chainB, _ = nodeB.GetP2PServer().GetChainStore().GetChain()
 	if len(chainB.Blocks) != len(finalChainA.Blocks) {
-		t.Fatalf("Synchronization incomplete: Node B has %d blocks, Node A has %d", 
+		t.Fatalf("Synchronization incomplete: Node B has %d blocks, Node A has %d",
 			len(chainB.Blocks), len(finalChainA.Blocks))
 	}
 
 	// Verify both chains have same head hash
 	headA := blockchain.HashBlockHeader(&finalChainA.Blocks[len(finalChainA.Blocks)-1].Header)
 	headB := blockchain.HashBlockHeader(&chainB.Blocks[len(chainB.Blocks)-1].Header)
-	
+
 	if headA != headB {
 		t.Fatalf("Chain heads don't match after sync: A=%x, B=%x", headA[:8], headB[:8])
 	}
@@ -166,14 +166,14 @@ func TestHeaderFirstDiscovery(t *testing.T) {
 	// Verify both chains have same total work
 	workA := finalChainA.Blocks[len(finalChainA.Blocks)-1].Header.TotalWork
 	workB := chainB.Blocks[len(chainB.Blocks)-1].Header.TotalWork
-	
+
 	if workA != workB {
 		t.Fatalf("Total work doesn't match: A=%s, B=%s", workA, workB)
 	}
 
 	// Phase 6: Verify cleanup
 	t.Log("=== Phase 6: Verifying Candidate Cleanup ===")
-	
+
 	// After successful sync, candidate chains should be cleaned up
 	candidateCount := 0
 	serverB.GetCandidateChains().Range(func(key, value interface{}) bool {
@@ -213,14 +213,14 @@ func TestHeaderFirstRejectsBadChains(t *testing.T) {
 	}
 
 	server := node.GetP2PServer()
-	
+
 	// This should fail during header validation
 	_ = p2p.EvaluateChainHead(server, "127.0.0.1:19999", fakeChainHead)
-	
+
 	// The function might return an error or handle it internally
 	// Check that no candidate chains were created
 	time.Sleep(100 * time.Millisecond)
-	
+
 	candidateCount := 0
 	server.GetCandidateChains().Range(func(key, value interface{}) bool {
 		candidateCount++

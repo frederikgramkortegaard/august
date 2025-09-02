@@ -76,7 +76,7 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 			server.recentBlocksMu.Unlock()
 		}
 
-		server.logf("Relaying block header %x (height %d) to other peers (excluding %s)", 
+		server.logf("Relaying block header %x (height %d) to other peers (excluding %s)",
 			blockHash[:8], header.Height, excludePeerAddr)
 
 		// Create the header payload
@@ -273,7 +273,7 @@ func RequestHeadersFromPeer(server *Server, peerAddress string, startHeight uint
 	return headersPayload.Headers, nil
 }
 
-// RequestBlocksFromPeer requests full blocks in a range from a peer  
+// RequestBlocksFromPeer requests full blocks in a range from a peer
 func RequestBlocksFromPeer(server *Server, peerAddress string, startHeight uint64, count uint64) ([]*blockchain.Block, error) {
 	requestPayload := RequestBlocksPayload{
 		StartHeight: startHeight,
@@ -349,7 +349,7 @@ func EvaluateChainHead(server *Server, peerAddress string, peerChainHead *ChainH
 		ourWork = ourChain.Blocks[len(ourChain.Blocks)-1].Header.TotalWork
 	}
 
-	server.logf("Evaluating chain from %s: our height=%d work=%s, peer height=%d work=%s", 
+	server.logf("Evaluating chain from %s: our height=%d work=%s, peer height=%d work=%s",
 		peerAddress, ourHeight, ourWork, peerChainHead.Height, peerChainHead.TotalWork)
 
 	// Quick work comparison - if peer is not better, skip everything
@@ -395,12 +395,12 @@ func ValidateHeaderChain(headers []blockchain.BlockHeader) bool {
 		if headers[i].PreviousHash != prevHash {
 			return false
 		}
-		
+
 		// Height should increment by 1
 		if headers[i].Height != headers[i-1].Height+1 {
 			return false
 		}
-		
+
 		// TODO: Add PoW validation, difficulty checks, etc.
 	}
 
@@ -411,10 +411,10 @@ func ValidateHeaderChain(headers []blockchain.BlockHeader) bool {
 func StartCandidateChainDownload(server *Server, peerAddress string, headers []blockchain.BlockHeader, chainHead *ChainHeadPayload) error {
 	// Generate candidate ID
 	candidateID := fmt.Sprintf("%s-%d-%s", peerAddress, chainHead.Height, chainHead.HeadHash[:16])
-	
+
 	// Create candidate chain with isolated storage
 	candidateStore := store.NewMemoryChainStore()
-	
+
 	candidate := &CandidateChain{
 		ID:           candidateID,
 		PeerSource:   peerAddress,
@@ -447,7 +447,7 @@ func DownloadCandidateChain(server *Server, candidate *CandidateChain) {
 	}()
 
 	server.logf("Starting block download for candidate %s", candidate.ID)
-	
+
 	// Download blocks in batches
 	batchSize := uint64(100)
 	startHeight := uint64(1)
@@ -484,14 +484,14 @@ func DownloadCandidateChain(server *Server, candidate *CandidateChain) {
 			candidate.currentHeight.Store(block.Header.Height)
 		}
 
-		server.logf("Candidate %s: added %d blocks, now at height %d", 
+		server.logf("Candidate %s: added %d blocks, now at height %d",
 			candidate.ID, len(blocks), candidate.currentHeight.Load())
 
 		startHeight += count
 	}
 
 	server.logf("Candidate %s: download complete, evaluating for promotion", candidate.ID)
-	
+
 	// Download complete - evaluate for promotion
 	EvaluateCandidateForPromotion(server, candidate)
 }
@@ -499,7 +499,7 @@ func DownloadCandidateChain(server *Server, candidate *CandidateChain) {
 // ShouldAbortDownload checks if we should abort this download for a better option
 func ShouldAbortDownload(server *Server, candidate *CandidateChain) bool {
 	bestOtherWork := "0"
-	
+
 	server.candidateChains.Range(func(key, value interface{}) bool {
 		other := value.(*CandidateChain)
 		if other.ID != candidate.ID && other.downloadStatus.Load() == 1 { // complete
@@ -536,7 +536,7 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 	// Compare work
 	if blockchain.CompareWork(candidate.ExpectedWork, currentWork) > 0 {
 		server.logf("Candidate %s has better work, validating before promotion", candidate.ID)
-		
+
 		// Get the candidate's complete chain
 		candidateChain, err := candidate.ChainStore.GetChain()
 		if err != nil {
@@ -546,38 +546,38 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 
 		// CRITICAL: Validate all blocks and transactions before switching
 		server.logf("Validating candidate chain %s blocks and transactions", candidate.ID)
-		
+
 		// Create a fresh chain starting with genesis and rebuild state from scratch
 		validationChain := &blockchain.Chain{
 			Blocks:        []*blockchain.Block{candidateChain.Blocks[0]}, // Start with genesis
 			AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
 		}
-		
+
 		// Initialize with genesis account (FirstUser gets 10M coins)
 		validationChain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 			Address: blockchain.FirstUser,
 			Balance: 10_000_000,
 			Nonce:   0,
 		}
-		
+
 		// Validate each block sequentially
 		validationFailed := false
 		for i := 1; i < len(candidateChain.Blocks); i++ {
 			block := candidateChain.Blocks[i]
 			if err := blockchain.ValidateAndApplyBlock(block, validationChain); err != nil {
-				server.logf("Candidate chain %s validation failed at block %d: %v", 
+				server.logf("Candidate chain %s validation failed at block %d: %v",
 					candidate.ID, block.Header.Height, err)
 				validationFailed = true
 				break
 			}
 		}
-		
+
 		if validationFailed {
 			server.logf("Candidate %s failed validation, discarding despite better work", candidate.ID)
 			server.candidateChains.Delete(candidate.ID)
 			return
 		}
-		
+
 		server.logf("Candidate %s passed full validation, promoting to active chain", candidate.ID)
 
 		// Atomic switch to new chain (fully validated, no race condition possible under lock)
@@ -586,9 +586,9 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 			return
 		}
 
-		server.logf("Successfully promoted candidate %s to active chain (height %d)", 
+		server.logf("Successfully promoted candidate %s to active chain (height %d)",
 			candidate.ID, len(candidateChain.Blocks)-1)
-		
+
 		// Clean up this candidate
 		server.candidateChains.Delete(candidate.ID)
 	} else {
@@ -606,7 +606,7 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 		defer close(complete)
 
 		blockHash := blockchain.HashBlockHeader(&block.Header)
-		
+
 		// Determine exclude address for relay
 		var excludeAddr string
 		if len(excludePeerAddr) > 0 {
@@ -654,8 +654,8 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 					}(peer.Address)
 				}
 				return
-			
-			// Check if this is a chain switch request (fork detected)
+
+				// Check if this is a chain switch request (fork detected)
 			} else if details, ok := err.(blockchain.ErrSwitchChain); ok {
 				server.logf("Block %x detected fork, need to check for chain reorganization", blockHash[:8])
 
@@ -669,20 +669,20 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 				// Build new chain up to the fork point
 				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
 				newBlocks = append(newBlocks, details.Block)
-				
+
 				// Create new chain and rebuild account states from genesis
 				newChain := &blockchain.Chain{
 					Blocks:        newBlocks,
 					AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
 				}
-				
+
 				// Rebuild account states by processing all transactions
 				for _, block := range newBlocks {
 					for _, tx := range block.Transactions {
 						blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
 					}
 				}
-				
+
 				chainCopy = newChain
 				server.logf("Reorganized Chain")
 
@@ -742,7 +742,7 @@ func tryConnectCandidateBlocks(server *Server) {
 		// Try each candidate block
 		for i, candidateBlock := range blocksToProcess {
 			blockHash := toProcess[i]
-			
+
 			// Make a deep copy to validate on without affecting the original
 			chainCopy := originalChain.DeepCopy()
 			if chainCopy == nil {

@@ -28,7 +28,7 @@ func TestLongestChainResolution(t *testing.T) {
 	}
 	defer nodeA.Stop()
 
-	// Create Node B that will have Chain B (4 blocks, medium difficulty)  
+	// Create Node B that will have Chain B (4 blocks, medium difficulty)
 	nodeB := node.NewFullNode(node.Config{
 		P2PPort: "19091", NodeID: "node-B", SeedPeers: []string{},
 	})
@@ -48,7 +48,7 @@ func TestLongestChainResolution(t *testing.T) {
 
 	// Create evaluator node that will receive all chains and choose the best
 	evaluator := node.NewFullNode(node.Config{
-		P2PPort: "19093", NodeID: "evaluator", 
+		P2PPort: "19093", NodeID: "evaluator",
 		SeedPeers: []string{"127.0.0.1:19090", "127.0.0.1:19091", "127.0.0.1:19092"},
 	})
 	if !<-evaluator.Start() {
@@ -69,8 +69,8 @@ func TestLongestChainResolution(t *testing.T) {
 		}
 		chainA, _ = serverA.GetChainStore().GetChain()
 	}
-	
-	// Build Chain B on Node B: 4 blocks with difficulty 3 each (total work = 13) 
+
+	// Build Chain B on Node B: 4 blocks with difficulty 3 each (total work = 13)
 	serverB := nodeB.GetP2PServer()
 	chainB, _ := serverB.GetChainStore().GetChain()
 	for i := 0; i < 4; i++ {
@@ -98,7 +98,7 @@ func TestLongestChainResolution(t *testing.T) {
 	finalChainA, _ := serverA.GetChainStore().GetChain()
 	finalChainB, _ := serverB.GetChainStore().GetChain()
 	finalChainC, _ := serverC.GetChainStore().GetChain()
-	
+
 	workA := finalChainA.Blocks[len(finalChainA.Blocks)-1].Header.TotalWork
 	workB := finalChainB.Blocks[len(finalChainB.Blocks)-1].Header.TotalWork
 	workC := finalChainC.Blocks[len(finalChainC.Blocks)-1].Header.TotalWork
@@ -116,7 +116,7 @@ func TestLongestChainResolution(t *testing.T) {
 	}
 
 	t.Log("=== Phase 2: Connecting Evaluator to Other Nodes ===")
-	
+
 	// Connect evaluator to all other nodes
 	<-evaluator.GetDiscovery().RunDiscoveryRound()
 	time.Sleep(500 * time.Millisecond) // Let connections establish
@@ -125,10 +125,10 @@ func TestLongestChainResolution(t *testing.T) {
 	evaluatorServer := evaluator.GetP2PServer()
 
 	t.Log("=== Phase 3: Sending Chain Head Announcements ===")
-	
+
 	// Create chain head payloads to announce better chains
 	headA := createChainHeadPayload(finalChainA, "127.0.0.1:19090")
-	headB := createChainHeadPayload(finalChainB, "127.0.0.1:19091") 
+	headB := createChainHeadPayload(finalChainB, "127.0.0.1:19091")
 	headC := createChainHeadPayload(finalChainC, "127.0.0.1:19092")
 
 	// Send chain heads to evaluator in worst-to-best order
@@ -139,7 +139,7 @@ func TestLongestChainResolution(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 
-	t.Log("Sending Chain B head to evaluator") 
+	t.Log("Sending Chain B head to evaluator")
 	err = p2p.EvaluateChainHead(evaluatorServer, "127.0.0.1:19091", headB)
 	if err != nil {
 		t.Logf("Chain B evaluation: %v", err)
@@ -153,7 +153,7 @@ func TestLongestChainResolution(t *testing.T) {
 	}
 
 	t.Log("=== Phase 4: Monitoring Chain Resolution ===")
-	
+
 	// Wait for chain synchronization and candidate evaluation
 	maxWait := 30 * time.Second
 	startWait := time.Now()
@@ -161,7 +161,7 @@ func TestLongestChainResolution(t *testing.T) {
 
 	for time.Since(startWait) < maxWait {
 		currentChain, _ := evaluatorServer.GetChainStore().GetChain()
-		
+
 		// Check if evaluator has adopted the best chain (Chain C)
 		if len(currentChain.Blocks) > 1 {
 			finalWork := currentChain.Blocks[len(currentChain.Blocks)-1].Header.TotalWork
@@ -171,7 +171,7 @@ func TestLongestChainResolution(t *testing.T) {
 				break
 			}
 		}
-		
+
 		// Log candidates periodically
 		candidateCount := 0
 		evaluatorServer.GetCandidateChains().Range(func(key, value interface{}) bool {
@@ -181,7 +181,7 @@ func TestLongestChainResolution(t *testing.T) {
 		if candidateCount > 0 {
 			t.Logf("Active candidates: %d", candidateCount)
 		}
-		
+
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -190,37 +190,37 @@ func TestLongestChainResolution(t *testing.T) {
 	}
 
 	t.Log("=== Phase 5: Verifying Optimal Chain Selection ===")
-	
+
 	finalChain, _ := evaluatorServer.GetChainStore().GetChain()
-	
+
 	// Debug information
 	t.Logf("Chain C original length: %d blocks", len(finalChainC.Blocks))
 	t.Logf("Evaluator final length: %d blocks", len(finalChain.Blocks))
 	t.Logf("Chain C work: %s", workC)
 	t.Logf("Evaluator final work: %s", finalChain.Blocks[len(finalChain.Blocks)-1].Header.TotalWork)
-	
+
 	// The key test: does the evaluator have Chain C's work? (That's what matters for longest chain)
 	finalWork := finalChain.Blocks[len(finalChain.Blocks)-1].Header.TotalWork
 	if finalWork != workC {
 		t.Fatalf("Expected Chain C work %s, got %s", workC, finalWork)
 	}
-	
+
 	t.Logf("Correct work achieved - longest chain rule working!")
 
 	// Verify block content matches Chain C (compare the head block hash)
 	finalHead := blockchain.HashBlockHeader(&finalChain.Blocks[len(finalChain.Blocks)-1].Header)
 	chainCExpectedHead := blockchain.HashBlockHeader(&finalChainC.Blocks[len(finalChainC.Blocks)-1].Header)
-	
+
 	if finalHead != chainCExpectedHead {
-		t.Fatalf("Final chain head doesn't match Chain C: got %x, expected %x", 
+		t.Fatalf("Final chain head doesn't match Chain C: got %x, expected %x",
 			finalHead[:8], chainCExpectedHead[:8])
 	}
 
 	t.Log("=== Phase 6: Verifying Cleanup of Losing Candidates ===")
-	
+
 	// After resolution, losing candidates should be cleaned up
 	time.Sleep(200 * time.Millisecond)
-	
+
 	remainingCandidates := 0
 	evaluatorServer.GetCandidateChains().Range(func(key, value interface{}) bool {
 		remainingCandidates++
@@ -238,7 +238,7 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 	t.Log("=== Testing Concurrent Chain Evaluation (No Blocking) ===")
 
 	evaluatorNode := node.NewFullNode(node.Config{
-		P2PPort:   "19091", 
+		P2PPort:   "19091",
 		NodeID:    "concurrent-evaluator",
 		SeedPeers: []string{},
 	})
@@ -248,7 +248,7 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 
 	_, privKey, _ := ed25519.GenerateKey(rand.Reader)
 	pubKey := blockchain.PublicKey{}
-	edPubKey := privKey.Public().(ed25519.PublicKey) 
+	edPubKey := privKey.Public().(ed25519.PublicKey)
 	copy(pubKey[:], edPubKey)
 
 	server := evaluatorNode.GetP2PServer()
@@ -259,14 +259,14 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 	// Create 5 different chains with varying characteristics
 	chains := []*blockchain.Chain{}
 	chainHeads := []*p2p.ChainHeadPayload{}
-	
-	chainConfigs := []struct{
-		name string
+
+	chainConfigs := []struct {
+		name         string
 		difficulties []uint64
-		peer string
+		peer         string
 	}{
 		{"fast-chain", []uint64{1, 1, 1, 1, 1, 1}, "peer-fast"},
-		{"medium-chain", []uint64{3, 3, 3, 3}, "peer-medium"}, 
+		{"medium-chain", []uint64{3, 3, 3, 3}, "peer-medium"},
 		{"slow-chain", []uint64{10, 10}, "peer-slow"},
 		{"uneven-chain", []uint64{1, 5, 1, 5}, "peer-uneven"},
 		{"winner-chain", []uint64{15, 15}, "peer-winner"}, // Should win
@@ -281,7 +281,7 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 	}
 
 	t.Log("Starting concurrent evaluations (should not block each other)")
-	
+
 	// Start all evaluations simultaneously
 	startTime := time.Now()
 	for i, chainHead := range chainHeads {
@@ -292,7 +292,7 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 			}
 		}(i, chainHead, chainConfigs[i].peer)
 	}
-	
+
 	// All evaluations should start quickly (no blocking)
 	evalStartTime := time.Since(startTime)
 	if evalStartTime > 500*time.Millisecond {
@@ -300,11 +300,11 @@ func TestConcurrentChainEvaluation(t *testing.T) {
 	}
 
 	t.Log("Waiting for resolution with multiple concurrent downloads")
-	
+
 	// Wait for resolution
 	maxWait := 45 * time.Second
 	startWait := time.Now()
-	
+
 	for time.Since(startWait) < maxWait {
 		currentChain, _ := server.GetChainStore().GetChain()
 		if len(currentChain.Blocks) > 1 {
@@ -329,12 +329,12 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 		Blocks:        make([]*blockchain.Block, len(baseChain.Blocks)),
 		AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
 	}
-	
+
 	// Deep copy blocks
 	for i, block := range baseChain.Blocks {
 		chain.Blocks[i] = block
 	}
-	
+
 	// Deep copy account states
 	for k, v := range baseChain.AccountStates {
 		chain.AccountStates[k] = &blockchain.AccountState{
@@ -374,7 +374,7 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 
 		// Add to chain
 		chain.Blocks = append(chain.Blocks, &newBlock)
-		
+
 		// Update account states (add coinbase)
 		if toState, ok := chain.AccountStates[minerPubKey]; ok {
 			toState.Balance += 50

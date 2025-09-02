@@ -62,17 +62,17 @@ func TestChainSwitching(t *testing.T) {
 
 	// Mine Block 1 on Node A (lower difficulty)
 	block1 := createTestBlock(t, chainA, pubKey, 2, "1") // Difficulty 2
-	
+
 	// Process block 1 on Node A
 	<-p2p.ProcessBlock(nodeA.GetP2PServer(), block1)
-	
+
 	// Wait for propagation
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify both nodes have block 1
 	chainA, _ = nodeA.GetP2PServer().GetChainStore().GetChain()
 	chainB, _ = nodeB.GetP2PServer().GetChainStore().GetChain()
-	
+
 	if len(chainA.Blocks) != 2 || len(chainB.Blocks) != 2 {
 		t.Fatalf("Both chains should have 2 blocks after block 1")
 	}

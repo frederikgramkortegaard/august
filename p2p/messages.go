@@ -9,23 +9,23 @@ import (
 type MessageType string
 
 const (
-	MessageTypeHandshake         MessageType = "handshake"
-	MessageTypeNewBlockHeader    MessageType = "new_block_header"  // Headers-first gossip
-	MessageTypeNewBlock          MessageType = "new_block"         // Full block (for requests only)
-	MessageTypeRequestBlock      MessageType = "request_block"
-	MessageTypeNewTx             MessageType = "new_transaction"
-	MessageTypePing              MessageType = "ping"
-	MessageTypePong              MessageType = "pong"
-	MessageTypeRequestPeers      MessageType = "request_peers"
-	MessageTypeSharePeers        MessageType = "share_peers"
-	
+	MessageTypeHandshake      MessageType = "handshake"
+	MessageTypeNewBlockHeader MessageType = "new_block_header" // Headers-first gossip
+	MessageTypeNewBlock       MessageType = "new_block"        // Full block (for requests only)
+	MessageTypeRequestBlock   MessageType = "request_block"
+	MessageTypeNewTx          MessageType = "new_transaction"
+	MessageTypePing           MessageType = "ping"
+	MessageTypePong           MessageType = "pong"
+	MessageTypeRequestPeers   MessageType = "request_peers"
+	MessageTypeSharePeers     MessageType = "share_peers"
+
 	// Chain synchronization messages
-	MessageTypeRequestChainHead  MessageType = "request_chain_head"
-	MessageTypeChainHead         MessageType = "chain_head"
-	MessageTypeRequestHeaders    MessageType = "request_headers"
-	MessageTypeHeaders           MessageType = "headers"
-	MessageTypeRequestBlocks     MessageType = "request_blocks"  // Batch blocks request
-	MessageTypeBlocks            MessageType = "blocks"          // Batch blocks response
+	MessageTypeRequestChainHead MessageType = "request_chain_head"
+	MessageTypeChainHead        MessageType = "chain_head"
+	MessageTypeRequestHeaders   MessageType = "request_headers"
+	MessageTypeHeaders          MessageType = "headers"
+	MessageTypeRequestBlocks    MessageType = "request_blocks" // Batch blocks request
+	MessageTypeBlocks           MessageType = "blocks"         // Batch blocks response
 )
 
 // Message represents a P2P message between nodes
@@ -91,17 +91,17 @@ type RequestChainHeadPayload struct {
 
 // ChainHeadPayload contains information about the current chain head
 type ChainHeadPayload struct {
-	Height     uint64                 `json:"height"`
-	HeadHash   string                 `json:"head_hash"`   // Base64 encoded
-	TotalWork  string                 `json:"total_work"`  // Big.Int as string
-	Header     blockchain.BlockHeader `json:"header"`      // Full header for validation
+	Height    uint64                 `json:"height"`
+	HeadHash  string                 `json:"head_hash"`  // Base64 encoded
+	TotalWork string                 `json:"total_work"` // Big.Int as string
+	Header    blockchain.BlockHeader `json:"header"`     // Full header for validation
 }
 
 // RequestHeadersPayload requests block headers in a range
 type RequestHeadersPayload struct {
 	StartHeight uint64 `json:"start_height"`
-	Count       uint64 `json:"count"`        // Max number of headers to return
-	StartHash   string `json:"start_hash"`   // Alternative: start from hash (base64)
+	Count       uint64 `json:"count"`      // Max number of headers to return
+	StartHash   string `json:"start_hash"` // Alternative: start from hash (base64)
 }
 
 // HeadersPayload contains a batch of block headers
@@ -112,8 +112,8 @@ type HeadersPayload struct {
 // RequestBlocksPayload requests full blocks in a range or by hashes
 type RequestBlocksPayload struct {
 	StartHeight uint64   `json:"start_height,omitempty"`
-	Count       uint64   `json:"count,omitempty"`        // Max number of blocks
-	Hashes      []string `json:"hashes,omitempty"`        // Alternative: specific block hashes (base64)
+	Count       uint64   `json:"count,omitempty"`  // Max number of blocks
+	Hashes      []string `json:"hashes,omitempty"` // Alternative: specific block hashes (base64)
 }
 
 // BlocksPayload contains a batch of full blocks

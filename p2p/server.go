@@ -30,17 +30,17 @@ func DefaultReqRespConfig() reqresp.Config {
 
 // CandidateChain represents a potential blockchain candidate for adoption
 type CandidateChain struct {
-	ID              string
-	PeerSource      string
-	ChainStore      store.ChainStore
-	Headers         []blockchain.BlockHeader
-	StartedAt       time.Time
-	ExpectedWork    string
-	
+	ID           string
+	PeerSource   string
+	ChainStore   store.ChainStore
+	Headers      []blockchain.BlockHeader
+	StartedAt    time.Time
+	ExpectedWork string
+
 	// Atomic progress tracking
-	expectedHeight  atomic.Uint64
-	currentHeight   atomic.Uint64
-	downloadStatus  atomic.Uint32  // 0=downloading, 1=complete, 2=failed
+	expectedHeight atomic.Uint64
+	currentHeight  atomic.Uint64
+	downloadStatus atomic.Uint32 // 0=downloading, 1=complete, 2=failed
 }
 
 // DownloadStatus returns the current download status (for testing)
@@ -69,14 +69,14 @@ type Server struct {
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
-	
+
 	// New candidate chain system (lock-free)
-	candidateChains   sync.Map  // map[string]*CandidateChain
-	candidateBlocks   sync.Map  // map[blockchain.Hash32]*CandidateBlock
-	
+	candidateChains sync.Map // map[string]*CandidateChain
+	candidateBlocks sync.Map // map[blockchain.Hash32]*CandidateBlock
+
 	// Unified cleanup system
-	cleanupTicker     *time.Ticker
-	cleanupInterval   time.Duration
+	cleanupTicker   *time.Ticker
+	cleanupInterval time.Duration
 }
 
 // logf logs with node ID prefix
@@ -141,7 +141,7 @@ func (s *Server) Start() error {
 	// Start unified periodic cleanup system
 	s.cleanupTicker = time.NewTicker(s.cleanupInterval)
 	go s.unifiedPeriodicCleanup()
-	
+
 	go s.periodicChainSync()
 
 	return nil
@@ -164,23 +164,23 @@ func (s *Server) unifiedPeriodicCleanup() {
 
 func (s *Server) performCleanupTasks() {
 	now := time.Now()
-	
+
 	// 1. Clean up recent blocks (existing logic)
 	s.cleanRecentBlocks(now)
-	
+
 	// 2. Clean up failed/old candidate chains
 	s.cleanCandidateChains(now)
-	
+
 	// 3. Clean up candidate blocks (replaces orphan pool)
 	s.cleanCandidateBlocks(now)
-	
+
 	s.logf("Periodic cleanup completed")
 }
 
 func (s *Server) cleanRecentBlocks(now time.Time) {
 	s.recentBlocksMu.Lock()
 	defer s.recentBlocksMu.Unlock()
-	
+
 	cleaned := 0
 	for hash, addedTime := range s.recentBlocks {
 		if now.Sub(addedTime) > s.recentBlocksTTL {
@@ -188,7 +188,7 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 			cleaned++
 		}
 	}
-	
+
 	if cleaned > 0 {
 		s.logf("Cleaned up %d old recent blocks", cleaned)
 	}
@@ -196,34 +196,34 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 
 func (s *Server) cleanCandidateChains(now time.Time) {
 	var toDelete []string
-	
+
 	s.candidateChains.Range(func(key, value interface{}) bool {
 		candidate := value.(*CandidateChain)
 		candidateID := key.(string)
-		
+
 		shouldDelete := false
-		
+
 		// Delete if failed
 		if candidate.downloadStatus.Load() == 2 {
 			shouldDelete = true
 		}
-		
+
 		// Delete if too old (prevent memory leaks)
 		if now.Sub(candidate.StartedAt) > 10*time.Minute {
 			shouldDelete = true
 		}
-		
+
 		if shouldDelete {
 			toDelete = append(toDelete, candidateID)
 		}
-		
+
 		return true
 	})
-	
+
 	for _, id := range toDelete {
 		s.candidateChains.Delete(id)
 	}
-	
+
 	if len(toDelete) > 0 {
 		s.logf("Cleaned up %d old candidate chains", len(toDelete))
 	}
@@ -231,23 +231,23 @@ func (s *Server) cleanCandidateChains(now time.Time) {
 
 func (s *Server) cleanCandidateBlocks(now time.Time) {
 	var toDelete []blockchain.Hash32
-	
+
 	s.candidateBlocks.Range(func(key, value interface{}) bool {
 		blockHash := key.(blockchain.Hash32)
 		candidateBlock := value.(*CandidateBlock)
-		
+
 		// Delete blocks older than 5 minutes
 		if now.Sub(candidateBlock.ReceivedAt) > 5*time.Minute {
 			toDelete = append(toDelete, blockHash)
 		}
-		
+
 		return true
 	})
-	
+
 	for _, hash := range toDelete {
 		s.candidateBlocks.Delete(hash)
 	}
-	
+
 	if len(toDelete) > 0 {
 		s.logf("Cleaned up %d old candidate blocks", len(toDelete))
 	}
