@@ -42,8 +42,12 @@ func main() {
 		log.Printf("%s\tSeed peers: %v", *nodeID, seedPeers)
 	}
 
-	// This blocks forever
-	if err := fullNode.Start(); err != nil {
-		log.Fatalf("%s\tFailed to start node: %v", *nodeID, err)
-	}
+	// Start the node and wait for it to be ready
+	ready := fullNode.Start()
+	<-ready // Wait for node to be ready
+	
+	log.Printf("%s\tNode is ready", *nodeID)
+	
+	// Keep the node running
+	select {} // Block forever
 }
