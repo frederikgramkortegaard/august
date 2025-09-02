@@ -605,6 +605,10 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 	go func() {
 		defer close(complete)
 
+		if block == nil {
+			return
+		}
+
 		blockHash := blockchain.HashBlockHeader(&block.Header)
 
 		// Determine exclude address for relay

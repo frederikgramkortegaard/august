@@ -174,7 +174,30 @@ func (s *Server) performCleanupTasks() {
 	// 3. Clean up candidate blocks (replaces orphan pool)
 	s.cleanCandidateBlocks(now)
 
+	// 4. Log current chain status
+	s.logChainStatus()
+
 	s.logf("Periodic cleanup completed")
+}
+
+func (s *Server) logChainStatus() {
+	chain, err := s.config.Store.GetChain()
+	if err != nil {
+		s.logf("Failed to get chain for status: %v", err)
+		return
+	}
+
+	if len(chain.Blocks) == 0 {
+		s.logf("CHAIN STATUS: No blocks")
+		return
+	}
+
+	latestBlock := chain.Blocks[len(chain.Blocks)-1]
+	blockHash := blockchain.HashBlockHeader(&latestBlock.Header)
+	s.logf("CHAIN STATUS: Height %d, Head %x, TxCount %d", 
+		latestBlock.Header.Height, 
+		blockHash[:8], 
+		len(latestBlock.Transactions))
 }
 
 func (s *Server) cleanRecentBlocks(now time.Time) {

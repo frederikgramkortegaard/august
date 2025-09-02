@@ -60,6 +60,7 @@ Foundation for persistent blockchain state:
 
 Complete transaction lifecycle management:
 
+- [ ] Transaction fees (fee field in Transaction struct)
 - [ ] Transaction mempool data structure
 - [ ] Transaction validation and deduplication
 - [ ] Fee-based priority ordering
