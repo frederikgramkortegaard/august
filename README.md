@@ -5,9 +5,9 @@ August is an educational blockchain implementation written from scratch in Go, d
 
 **Note**: This is not intended as production software or a commercial blockchain platform. Rather, it serves as a comprehensive study of blockchain architecture, P2P protocols, and distributed systems concepts through practical implementation.
 
-:pushpin: [Design Decisions](https://github.com/user/gocuria/blob/master/DESIGN_DECISIONS.md)
+:pushpin: [Design Decisions](https://github.com/user/august/blob/master/DESIGN_DECISIONS.md)
 
-:pushpin: [Development Roadmap](https://github.com/user/gocuria/blob/master/TODO.md)
+:pushpin: [Development Roadmap](https://github.com/user/august/blob/master/TODO.md)
 
 :speech_balloon: This project demonstrates various distributed systems concepts including headers-first synchronization, concurrent chain evaluation, dynamic peer discovery, and network resilience testing. The fuzzybot framework showcases how to test P2P networks under realistic conditions with continuous node churn.
 

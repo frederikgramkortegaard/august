@@ -2,9 +2,9 @@ package tests
 
 import (
 	"encoding/base64"
-	"gocuria/blockchain"
-	"gocuria/node"
-	"gocuria/p2p"
+	"august/blockchain"
+	"august/node"
+	"august/p2p"
 	"testing"
 )
 

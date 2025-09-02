@@ -2,9 +2,9 @@ package node
 
 import (
 	"fmt"
-	"gocuria/blockchain"
-	"gocuria/blockchain/store"
-	"gocuria/p2p"
+	"august/blockchain"
+	"august/blockchain/store"
+	"august/p2p"
 	"log"
 )
 

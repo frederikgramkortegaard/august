@@ -3,9 +3,9 @@ package p2p
 import (
 	"encoding/json"
 	"fmt"
-	"gocuria/blockchain"
-	"gocuria/blockchain/store"
-	"gocuria/p2p/reqresp"
+	"august/blockchain"
+	"august/blockchain/store"
+	"august/p2p/reqresp"
 	"io"
 	"log"
 	"net"

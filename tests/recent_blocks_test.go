@@ -1,9 +1,9 @@
 package tests
 
 import (
-	"gocuria/blockchain"
-	"gocuria/node"
-	"gocuria/p2p"
+	"august/blockchain"
+	"august/node"
+	"august/p2p"
 	"testing"
 	"time"
 )

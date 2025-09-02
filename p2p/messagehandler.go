@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"gocuria/blockchain"
+	"august/blockchain"
 )
 
 // ProcessMessage handles different types of P2P messages

@@ -3,7 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
-	"gocuria/blockchain"
+	"august/blockchain"
 	"sync"
 )
 

@@ -4,7 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
-	"gocuria/blockchain"
+	"august/blockchain"
 	"time"
 )
 

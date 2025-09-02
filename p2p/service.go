@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"gocuria/blockchain"
-	"gocuria/blockchain/store"
+	"august/blockchain"
+	"august/blockchain/store"
 )
 
 // RelayBlock broadcasts a block to all connected peers, optionally excluding a specific peer

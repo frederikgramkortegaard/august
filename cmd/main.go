@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gocuria/node"
+	"august/node"
 	"log"
 	"strings"
 	"time"

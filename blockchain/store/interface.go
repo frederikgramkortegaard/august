@@ -1,7 +1,7 @@
 package store
 
 import (
-	"gocuria/blockchain"
+	"august/blockchain"
 )
 
 type ChainStore interface {

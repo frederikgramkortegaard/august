@@ -3,9 +3,9 @@ package tests
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"gocuria/blockchain"
-	"gocuria/node"
-	"gocuria/p2p"
+	"august/blockchain"
+	"august/node"
+	"august/p2p"
 	"testing"
 	"time"
 )

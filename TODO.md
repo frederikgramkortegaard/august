@@ -1,179 +1,103 @@
 # TODO
 
-## Completed
+## Phase 1: Transaction Lifecycle
+**Goal**: Complete transaction system with mempool and fees
 
-Core blockchain:
-- [x] Basic data structures (blocks, transactions)
-- [x] Ed25519 signatures
-- [x] Proof of work mining with difficulty adjustment
-- [x] Transaction and block validation
-- [x] Genesis block
-- [x] In-memory chain storage
-
-P2P networking:
-- [x] TCP-based peer communication
-- [x] Peer discovery with seed nodes
-- [x] Message protocol (handshake, blocks, transactions, ping/pong)
-- [x] Block broadcasting and relay
-- [x] Candidate block system (replaced orphan block pool)
-- [x] Concurrent connection management
-- [x] Request-response correlation with timeout handling
-- [x] Broadcast storm mitigation via block deduplication
-- [x] Headers-first gossip protocol
-- [x] Peer sharing protocol
-
-Architecture:
-- [x] Separation of processing logic from node orchestration
-- [x] Thread-safe peer management
-- [x] Modular component design
-- [x] Channel-based asynchronous coordination
-- [x] Request-response abstraction layer (reqresp package)
-- [x] Service layer pattern for business logic
-- [x] Function-based approach over OOP methods
-
-## Priority 1: Chain Resolution & Consensus
-
-Core functionality required for a working blockchain:
-
-- [x] Chain reorganization (switch to longer chain)
-- [x] Fork detection and resolution
-- [x] Proper longest chain rule (total work)
-- [x] Initial Block Download (IBD) for syncing new/behind nodes
-- [x] Batch block requests ("give me blocks 4-8")
-- [x] Headers-first synchronization
-- [x] Chain sync for new nodes (proper sequential sync)
-- [x] Candidate chain system with lock-free concurrent evaluation
-- [ ] Fix division by zero in difficulty calculation during orphan tests
-
-## Priority 2: Storage & State Management
-
-Foundation for persistent blockchain state:
-
-- [ ] Database backend (replace in-memory storage)
-- [ ] SQLite or BoltDB backend
-- [ ] Block index for fast lookups
-- [ ] State persistence across restarts
-- [ ] State snapshots for fast sync
-- [ ] Chain pruning options
-
-## Priority 3: Transaction Processing
-
-Complete transaction lifecycle management:
-
-- [ ] Transaction fees (fee field in Transaction struct)
-- [ ] Transaction mempool data structure
-- [ ] Transaction validation and deduplication
-- [ ] Fee-based priority ordering
-- [ ] Transaction broadcasting and relay protocol
+- [ ] Add fee field to Transaction struct
+- [ ] Implement mempool with fee-based priority
+- [ ] Transaction validation and relay protocol
+- [ ] Pending transaction handling
+- [ ] Fee estimation and minimum fees
+- [ ] Transaction replacement policies
 - [ ] Mempool synchronization between peers
-- [ ] Block validation caching
 
-## Priority 4: Testing & Quality Assurance
+## Phase 2: Test Coverage
+**Goal**: Comprehensive testing for reliability
 
-Comprehensive testing before production use:
-
-- [ ] Network partition tests
-- [ ] Fork scenario tests
+- [ ] Unit tests for all blockchain validation logic
+- [ ] Unit tests for P2P message handling
+- [ ] Integration tests for multi-node scenarios
+- [ ] Transaction propagation tests
+- [ ] Fork resolution and reorg tests
+- [ ] Expand fuzzybot with adversarial behaviors
 - [ ] Performance benchmarks
-- [ ] Missing comprehensive test coverage
-- [x] Basic multi-node integration tests
-- [x] Block propagation tests
-- [x] P2P deduplication tests
-- [x] Headers-first discovery protocol tests
-- [x] Longest chain resolution tests with multiple competing chains
-- [x] Fuzzybot testing framework for continuous multi-node simulation
-- [x] Random transaction generation and mining simulation
-- [x] Mock helper functions for test data generation
 
-## Priority 5: Networking Robustness
+## Phase 3: Storage & Persistence
+**Goal**: Move from in-memory to persistent storage
 
-Network resilience features (not blocking core functionality):
+- [ ] Database backend (BoltDB or similar)
+- [ ] Block and transaction indexing
+- [ ] Account state persistence
+- [ ] Node restart recovery
+- [ ] Pruning and archival modes
 
-- [ ] Fix duplicate connection detection (prevent double connections)
-- [ ] Connection state machine improvements
-- [ ] Handshake timeout handling
-- [ ] Peer quality scoring and reputation
-- [ ] Anti-DDoS protection mechanisms
-- [ ] Connection retry logic with backoff
-- [ ] Bandwidth throttling
-- [ ] Peer blacklisting
+## Phase 4: API & Wallet
+**Goal**: External interfaces for using the blockchain
 
-## Priority 6: Performance Optimization
+- [ ] JSON-RPC API server
+- [ ] Basic wallet functionality
+- [ ] Transaction creation and signing
+- [ ] Balance and history queries
+- [ ] CLI interface for wallet operations
 
-Performance improvements for scalability:
+## Phase 5: Mining Infrastructure
+**Goal**: Decentralized mining
 
-- [ ] Parallel block validation
-- [ ] Compact blocks
-- [ ] Transaction batching
-- [ ] Message compression
-- [ ] Connection pooling
+- [ ] Standalone miner process
+- [ ] Mining work protocol
+- [ ] Basic mining pool implementation
+- [ ] Share validation and rewards
 
-## Priority 7: API & RPC Layer
+## Phase 6: Monitoring & Observability
+**Goal**: Production-grade monitoring and insights
 
-Node interface for external applications:
+- [ ] Prometheus metrics exporter
+- [ ] Grafana dashboards for visualization
+- [ ] Chain metrics (height, hash rate, tx/s)
+- [ ] Network metrics (peers, bandwidth, latency)
+- [ ] Node health and performance metrics
+- [ ] Alert rules for critical events
 
-- [ ] JSON-RPC server implementation
-- [ ] REST API endpoints
-- [ ] WebSocket real-time event streaming
-- [ ] API authentication and rate limiting
-- [ ] Transaction submission endpoint
-- [ ] Balance and account state queries
-- [ ] Block and chain information endpoints
-- [ ] Network status and peer information
-- [ ] Mining control and status APIs
+## Phase 7: Production Deployment
+**Goal**: Ready for real-world use
 
-## Priority 8: Advanced Features
+- [ ] Network robustness improvements
+- [ ] Peer reputation and banning
+- [ ] Configuration file support
+- [ ] Documentation and deployment guides
 
-Extended functionality (future enhancements):
+## Completed Features
 
-- [ ] Basic scripting
-- [ ] Multi-signature support
-- [ ] Time-locked transactions
-- [ ] Smart contract support
+### Core Blockchain
+- [x] Block and transaction structures
+- [x] Ed25519 cryptographic signatures
+- [x] Proof-of-work consensus with difficulty adjustment
+- [x] Genesis block initialization
+- [x] Chain validation and reorganization
+- [x] Longest chain rule (cumulative work)
+- [x] In-memory chain storage (to be replaced)
 
-## Priority 9: Client & Wallet Infrastructure
+### P2P Networking
+- [x] TCP-based peer connections
+- [x] Dynamic peer discovery
+- [x] Headers-first synchronization (Bitcoin-style IBD)
+- [x] Message protocol implementation
+- [x] Request-response correlation layer
+- [x] Broadcast storm mitigation
+- [x] Candidate chain evaluation system
+- [x] Lock-free concurrent operations
 
-User-facing tools for blockchain interaction:
+### Testing Infrastructure
+- [x] Fuzzybot testing framework
+- [x] Multi-node integration tests
+- [x] Mock data generators
+- [x] Basic unit test coverage
+- [x] Network simulation with node churn
 
-- [ ] Wallet data structure and key management
-- [ ] Transaction creation and signing utilities
-- [ ] Balance queries and account state tracking
-- [ ] Command-line wallet interface
-- [ ] RPC client for node communication
-- [ ] Transaction history and receipt tracking
-- [ ] Multi-signature wallet support
-- [ ] Wallet backup and recovery
+## Architecture Principles
 
-## Priority 10: Mining Infrastructure
-
-Standalone mining components:
-
-- [ ] Separate miner process that connects to nodes
-- [ ] Mining pool protocol and coordination
-- [ ] Configurable mining difficulty and target adjustment
-- [ ] Mining performance metrics and monitoring
-- [ ] CPU mining optimization
-- [ ] Mining reward distribution logic
-- [ ] Remote mining via RPC/API
-- [ ] Mining pool server implementation
-
-## Priority 11: Infrastructure & Operations
-
-Deployment and monitoring capabilities:
-
-- [ ] Docker containerization
-- [ ] Metrics and monitoring
-- [ ] Configuration management
-- [ ] Logging improvements
-- [ ] Health check endpoints
-- [ ] Administrative APIs
-
-## Design Decisions
-
-The system uses a simple architecture prioritizing correctness over performance:
-- In-memory storage (temporary - will be replaced with persistent storage)
-- JSON message encoding (simple but not optimal)
-- TCP for P2P (reliable but could add UDP for some messages)
-- Single-threaded validation (could parallelize later)
-- Function-based service layer (not OOP methods)
-- Service functions return completion channels for async tracking
+- **Correctness over performance**: Get it working right first, optimize later
+- **Clean separation of concerns**: Node, P2P, Blockchain layers
+- **Testability**: Comprehensive testing at all levels
+- **Real-world compatibility**: Follow Bitcoin's proven patterns where applicable
+- **Educational value**: Code should be readable and well-documented

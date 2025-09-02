@@ -2,7 +2,7 @@ package p2p
 
 import (
 	"encoding/json"
-	"gocuria/blockchain"
+	"august/blockchain"
 )
 
 // MessageType defines the type of P2P message
