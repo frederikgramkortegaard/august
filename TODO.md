@@ -15,11 +15,11 @@ P2P networking:
 - [x] Peer discovery with seed nodes
 - [x] Message protocol (handshake, blocks, transactions, ping/pong)
 - [x] Block broadcasting and relay
-- [x] Orphan block pool
+- [x] Candidate block system (replaced orphan block pool)
 - [x] Concurrent connection management
 - [x] Request-response correlation with timeout handling
 - [x] Broadcast storm mitigation via block deduplication
-- [x] Automatic orphan parent block requests
+- [x] Headers-first gossip protocol
 - [x] Peer sharing protocol
 
 Architecture:
@@ -35,13 +35,14 @@ Architecture:
 
 Core functionality required for a working blockchain:
 
-- [ ] Chain reorganization (switch to longer chain)
-- [ ] Fork detection and resolution
-- [ ] Proper longest chain rule (total work)
-- [ ] Initial Block Download (IBD) for syncing new/behind nodes
-- [ ] Batch block requests ("give me blocks 4-8")
-- [ ] Headers-first synchronization
-- [ ] Chain sync for new nodes (proper sequential sync)
+- [x] Chain reorganization (switch to longer chain)
+- [x] Fork detection and resolution
+- [x] Proper longest chain rule (total work)
+- [x] Initial Block Download (IBD) for syncing new/behind nodes
+- [x] Batch block requests ("give me blocks 4-8")
+- [x] Headers-first synchronization
+- [x] Chain sync for new nodes (proper sequential sync)
+- [x] Candidate chain system with lock-free concurrent evaluation
 - [ ] Fix division by zero in difficulty calculation during orphan tests
 
 ## Priority 2: Storage & State Management
@@ -76,6 +77,8 @@ Comprehensive testing before production use:
 - [x] Basic multi-node integration tests
 - [x] Block propagation tests
 - [x] P2P deduplication tests
+- [x] Headers-first discovery protocol tests
+- [x] Longest chain resolution tests with multiple competing chains
 
 ## Priority 5: Networking Robustness
 
@@ -95,7 +98,6 @@ Network resilience features (not blocking core functionality):
 Performance improvements for scalability:
 
 - [ ] Parallel block validation
-- [ ] Headers-first synchronization
 - [ ] Compact blocks
 - [ ] Transaction batching
 - [ ] Message compression

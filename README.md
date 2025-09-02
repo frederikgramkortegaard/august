@@ -16,7 +16,11 @@ Working:
 - [x] Block broadcasting and propagation
 - [x] Peer discovery and management
 - [x] Message protocol (handshake, blocks, transactions, peer sharing)
-- [x] Orphan block handling with automatic parent requests
+- [x] Headers-first chain synchronization protocol
+- [x] Candidate chain system with lock-free concurrent evaluation
+- [x] Chain reorganization (longest chain rule based on total work)
+- [x] Fork detection and resolution
+- [x] Initial Block Download (IBD) for syncing new/behind nodes
 - [x] Request-response correlation with timeout handling
 - [x] Broadcast storm mitigation (block deduplication)
 - [x] Channel-based asynchronous coordination
@@ -24,8 +28,6 @@ Working:
 Not implemented:
 - [ ] Persistent storage (database backend)
 - [ ] Transaction mempool
-- [ ] Chain reorganization (longest chain rule)
-- [ ] Fork resolution
 - [ ] Duplicate connection prevention
 - [ ] Comprehensive test coverage
 
@@ -80,6 +82,8 @@ tests/               Integration tests
   node_test.go       Basic node operations
   block_propagation_test.go  Block propagation testing
   recent_blocks_test.go      Deduplication testing
+  header_first_discovery_test.go  Headers-first protocol testing
+  longest_chain_resolution_test.go  Chain competition and resolution testing
 
 cmd/                 Command-line entry point
 ```
@@ -90,21 +94,32 @@ The P2P protocol uses TCP with JSON-encoded messages. Message types:
 
 - HANDSHAKE: Initial peer identification with height and node info
 - NEW_BLOCK: Block announcement and propagation
+- NEW_BLOCK_HEADER: Headers-first gossip protocol
 - NEW_TX: Transaction broadcast
 - REQUEST_BLOCK: Block request by hash
+- REQUEST_BLOCKS: Batch block requests for range syncing
+- REQUEST_HEADERS: Headers-only requests for validation
+- REQUEST_CHAIN_HEAD: Chain head requests for sync detection
 - REQUEST_PEERS/SHARE_PEERS: Peer discovery protocol
 - PING/PONG: Connection keepalive
 
 Features:
+- Headers-first chain synchronization following Bitcoin's IBD design
+- Candidate chain system for concurrent evaluation of competing chains
+- Lock-free operations using sync.Map for high-performance P2P
+- Atomic chain switching based on total work comparison
 - Request-response correlation with unique message IDs
 - Timeout handling for pending requests (default 30s)
 - Broadcast storm mitigation via block deduplication
 - Recent blocks tracking with 5-minute TTL
-- Automatic cleanup of expired block hashes
+- Automatic cleanup of expired resources
 
-Nodes maintain an orphan pool for blocks received out of order. When a block's
-parent arrives, orphaned children are automatically connected to the chain.
-Missing parent blocks are automatically requested from connected peers.
+Chain Synchronization:
+The system implements Bitcoin-style Initial Block Download (IBD) with a three-phase
+approach: 1) Header evaluation and validation, 2) Candidate chain creation with
+isolated storage, 3) Atomic promotion of the best chain. Multiple chains can be
+evaluated concurrently without blocking, and the system always chooses the chain
+with the most cumulative work (longest chain rule).
 
 ## Development
 

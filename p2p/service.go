@@ -530,7 +530,7 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 
 	// Compare work
 	if blockchain.CompareWork(candidate.ExpectedWork, currentWork) > 0 {
-		server.logf("Candidate %s has better work, promoting to active chain", candidate.ID)
+		server.logf("Candidate %s has better work, validating before promotion", candidate.ID)
 		
 		// Get the candidate's complete chain
 		candidateChain, err := candidate.ChainStore.GetChain()
@@ -539,7 +539,43 @@ func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
 			return
 		}
 
-		// Atomic switch to new chain
+		// CRITICAL: Validate all blocks and transactions before switching
+		server.logf("Validating candidate chain %s blocks and transactions", candidate.ID)
+		
+		// Create a fresh chain starting with genesis and rebuild state from scratch
+		validationChain := &blockchain.Chain{
+			Blocks:        []*blockchain.Block{candidateChain.Blocks[0]}, // Start with genesis
+			AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+		}
+		
+		// Initialize with genesis account (FirstUser gets 10M coins)
+		validationChain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
+			Address: blockchain.FirstUser,
+			Balance: 10_000_000,
+			Nonce:   0,
+		}
+		
+		// Validate each block sequentially
+		validationFailed := false
+		for i := 1; i < len(candidateChain.Blocks); i++ {
+			block := candidateChain.Blocks[i]
+			if err := blockchain.ValidateAndApplyBlock(block, validationChain); err != nil {
+				server.logf("Candidate chain %s validation failed at block %d: %v", 
+					candidate.ID, block.Header.Height, err)
+				validationFailed = true
+				break
+			}
+		}
+		
+		if validationFailed {
+			server.logf("Candidate %s failed validation, discarding despite better work", candidate.ID)
+			server.candidateChains.Delete(candidate.ID)
+			return
+		}
+		
+		server.logf("Candidate %s passed full validation, promoting to active chain", candidate.ID)
+
+		// Atomic switch to new chain (now fully validated)
 		if err := server.config.Store.ReplaceChain(candidateChain); err != nil {
 			server.logf("Failed to replace active chain: %v", err)
 			return
