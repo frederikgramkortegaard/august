@@ -64,6 +64,7 @@ Complete transaction lifecycle management:
 - [ ] Transaction mempool data structure
 - [ ] Transaction validation and deduplication
 - [ ] Fee-based priority ordering
+- [ ] Transaction broadcasting and relay protocol
 - [ ] Mempool synchronization between peers
 - [ ] Block validation caching
 
@@ -107,7 +108,21 @@ Performance improvements for scalability:
 - [ ] Message compression
 - [ ] Connection pooling
 
-## Priority 7: Advanced Features
+## Priority 7: API & RPC Layer
+
+Node interface for external applications:
+
+- [ ] JSON-RPC server implementation
+- [ ] REST API endpoints
+- [ ] WebSocket real-time event streaming
+- [ ] API authentication and rate limiting
+- [ ] Transaction submission endpoint
+- [ ] Balance and account state queries
+- [ ] Block and chain information endpoints
+- [ ] Network status and peer information
+- [ ] Mining control and status APIs
+
+## Priority 8: Advanced Features
 
 Extended functionality (future enhancements):
 
@@ -116,7 +131,33 @@ Extended functionality (future enhancements):
 - [ ] Time-locked transactions
 - [ ] Smart contract support
 
-## Priority 8: Infrastructure & Operations
+## Priority 9: Client & Wallet Infrastructure
+
+User-facing tools for blockchain interaction:
+
+- [ ] Wallet data structure and key management
+- [ ] Transaction creation and signing utilities
+- [ ] Balance queries and account state tracking
+- [ ] Command-line wallet interface
+- [ ] RPC client for node communication
+- [ ] Transaction history and receipt tracking
+- [ ] Multi-signature wallet support
+- [ ] Wallet backup and recovery
+
+## Priority 10: Mining Infrastructure
+
+Standalone mining components:
+
+- [ ] Separate miner process that connects to nodes
+- [ ] Mining pool protocol and coordination
+- [ ] Configurable mining difficulty and target adjustment
+- [ ] Mining performance metrics and monitoring
+- [ ] CPU mining optimization
+- [ ] Mining reward distribution logic
+- [ ] Remote mining via RPC/API
+- [ ] Mining pool server implementation
+
+## Priority 11: Infrastructure & Operations
 
 Deployment and monitoring capabilities:
 
