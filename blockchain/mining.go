@@ -91,7 +91,7 @@ func MineCorrectNonce(header *BlockHeader, targetBits uint32) (NonceType, error)
 			return header.Nonce, nil
 		}
 		header.Nonce++
-		
+
 		// Prevent infinite loop in case of error
 		if header.Nonce == ^uint64(0) {
 			return 0, errors.New("nonce overflow")

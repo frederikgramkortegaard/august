@@ -140,7 +140,7 @@ func createTestBlock(t *testing.T, chain *blockchain.Chain, minerPubKey blockcha
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{}, // Empty for coinbase
 		To:     minerPubKey,
-		Amount: 50,
+		Amount: blockchain.BlockReward,
 		Nonce:  0,
 	}
 

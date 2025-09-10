@@ -152,7 +152,7 @@ func GenerateValidMinedBlock(chain *blockchain.Chain, minerPub ed25519.PublicKey
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{}, // Empty for coinbase
 		To:     minerKey,
-		Amount: 50, // Standard reward
+		Amount: blockchain.BlockReward, // Standard reward
 		Nonce:  0,
 	}
 	

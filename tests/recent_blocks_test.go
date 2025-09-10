@@ -47,7 +47,7 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{},
 		To:     pubKey,
-		Amount: 50,
+		Amount: blockchain.BlockReward,
 		Nonce:  0,
 	}
 
@@ -169,7 +169,7 @@ func TestRecentBlocksCleanup(t *testing.T) {
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{},
 		To:     pubKey,
-		Amount: 50,
+		Amount: blockchain.BlockReward,
 		Nonce:  0,
 	}
 

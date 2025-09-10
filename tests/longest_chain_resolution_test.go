@@ -352,7 +352,7 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 		coinbase := blockchain.Transaction{
 			From:   blockchain.PublicKey{},
 			To:     minerPubKey,
-			Amount: 50,
+			Amount: blockchain.BlockReward,
 			Nonce:  0,
 		}
 
