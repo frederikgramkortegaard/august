@@ -18,6 +18,7 @@ func HashTransaction(tsx *Transaction) Hash32 {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
+	h.Write(uint64ToBytes(tsx.Fee))
 	h.Write(uint64ToBytes(tsx.Amount))
 	h.Write(uint64ToBytes(tsx.Nonce))
 	var hash Hash32
@@ -29,6 +30,7 @@ func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	h := sha256.New()
 	h.Write(tsx.From[:])
 	h.Write(tsx.To[:])
+	h.Write(uint64ToBytes(tsx.Fee))
 	h.Write(uint64ToBytes(tsx.Amount))
 	h.Write(uint64ToBytes(tsx.Nonce))
 	return h.Sum(nil)

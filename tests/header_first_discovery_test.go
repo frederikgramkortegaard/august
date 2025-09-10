@@ -242,7 +242,7 @@ func createTestBlockWithDifficulty(t *testing.T, chain *blockchain.Chain, minerP
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{}, // Empty for coinbase
 		To:     minerPubKey,
-		Amount: 50,
+		Amount: blockchain.BlockReward,
 		Nonce:  0,
 	}
 

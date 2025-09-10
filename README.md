@@ -74,9 +74,8 @@ August implements a Bitcoin-inspired blockchain with the following characteristi
 blockchain/           Core blockchain logic
   types.go           Block, Transaction, Account structures
   validation.go      Block and transaction validation
-  mining.go          Proof of work implementation
-  difficulty.go      Difficulty adjustment algorithm
-  forge.go           Block creation and mining
+  mining.go          Block creation and proof of work implementation
+  difficulty.go      Difficulty adjustment and validation
   store/             Storage interface and memory implementation
 ```
 

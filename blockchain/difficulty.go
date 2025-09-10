@@ -13,6 +13,27 @@ type DifficultyAdjustment struct {
 	AdjustmentPeriod int
 }
 
+func BlockHashMeetsDifficulty(hash Hash32, difficulty uint64) bool {
+	// Convert hash to big integer for comparison
+	// For simplicity, check if hash starts with enough zero bytes
+	leadingZeros := 0
+	for _, b := range hash {
+		if b == 0 {
+			leadingZeros += 8
+		} else {
+			for i := 7; i >= 0; i-- {
+				if (b >> i) == 0 {
+					leadingZeros++
+				} else {
+					break
+				}
+			}
+			break
+		}
+	}
+	return uint64(leadingZeros) >= difficulty
+}
+
 func GetTargetDifficulty(height int, blocks []*Block) uint64 {
 
 	// Base Case, Genesis Difficulty

@@ -148,8 +148,8 @@ func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 
 	log.Printf("VALIDATION\tSender %x has balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
 
-	if fromState.Balance < tsx.Amount {
-		log.Printf("VALIDATION\tTRANSACTION REJECTED: Insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount)
+	if fromState.Balance < tsx.Amount+tsx.Fee {
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: Insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount+tsx.Fee)
 		return false
 	}
 
@@ -162,8 +162,8 @@ func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 	// 4. All validation passed - apply the transaction
 	log.Printf("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
 
-	// Deduct from sender
-	fromState.Balance -= tsx.Amount
+	// Deduct from sender (amount + fee)
+	fromState.Balance -= (tsx.Amount + tsx.Fee)
 	fromState.Nonce += 1
 	log.Printf("VALIDATION\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
 
@@ -203,8 +203,8 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 		return fmt.Errorf("sender account does not exist: %x", tsx.From[:8])
 	}
 
-	if fromState.Balance < tsx.Amount {
-		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount)
+	if fromState.Balance < tsx.Amount+tsx.Fee {
+		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount+tsx.Fee)
 	}
 
 	// 3. Nonce validation (prevent double-spend)
@@ -231,11 +231,18 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 		return fmt.Errorf("block structure validation failed: %w", err)
 	}
 
+	var tsxfeesum uint64 = 0
 	// Then validate and apply each transaction incrementally
 	for i, tsx := range block.Transactions {
+		tsxfeesum += tsx.Fee
 		if !ValidateAndApplyTransaction(&tsx, chain.AccountStates) {
 			return fmt.Errorf("transaction %d failed validation", i)
 		}
+	}
+
+	// Validate Coinbase tsx amount is Fee's + Block Reward
+	if block.Transactions[0].Amount != tsxfeesum+BlockReward {
+		return fmt.Errorf("Coinbase transaction is not Transaction Fee's + BlockReward")
 	}
 
 	// Add the validated block to the chain

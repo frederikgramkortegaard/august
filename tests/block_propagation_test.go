@@ -75,7 +75,7 @@ func TestBlockPropagation(t *testing.T) {
 	coinbase := blockchain.Transaction{
 		From:   blockchain.PublicKey{}, // Empty for coinbase
 		To:     pubKey,
-		Amount: 50,
+		Amount: blockchain.BlockReward,
 		Nonce:  0,
 	}
 
