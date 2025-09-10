@@ -16,7 +16,12 @@ const (
 // This is stored in compact format as 0x1d00ffff
 const MaxTargetCompact uint32 = 0x1d00ffff
 
-var MaxTarget = CompactToBig(MaxTargetCompact)
+// Test target - much easier for testing, allows mining in milliseconds rather than minutes  
+// This uses the same exponent as MaxTarget but with a larger mantissa
+// Target will be much larger (easier) than MaxTarget
+const TestTargetCompact uint32 = 0x1e0fffff
+
+// MaxTarget is calculated on demand to avoid initialization loops
 
 // CompactToBig converts a compact representation (bits) to a big.Int target
 // Bitcoin's "bits" format: 0xAABBCCDD where AA is the exponent and BBCCDD is the mantissa
@@ -100,7 +105,8 @@ func BigToCompact(target *big.Int) uint32 {
 func CalculateDifficulty(targetBits uint32) *big.Float {
 	target := CompactToBig(targetBits)
 	// Difficulty = MaxTarget / Target
-	difficulty := new(big.Float).SetInt(MaxTarget)
+	maxTarget := CompactToBig(MaxTargetCompact)
+	difficulty := new(big.Float).SetInt(maxTarget)
 	targetFloat := new(big.Float).SetInt(target)
 	difficulty.Quo(difficulty, targetFloat)
 	return difficulty
@@ -144,8 +150,9 @@ func GetTargetBits(height int, blocks []*Block) uint32 {
 	newTarget.Div(newTarget, big.NewInt(TargetTimespan))
 
 	// Ensure new target doesn't exceed max target (minimum difficulty)
-	if newTarget.Cmp(MaxTarget) > 0 {
-		newTarget = MaxTarget
+	maxTarget := CompactToBig(MaxTargetCompact)
+	if newTarget.Cmp(maxTarget) > 0 {
+		newTarget = maxTarget
 	}
 
 	// Convert back to compact format

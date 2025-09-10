@@ -41,7 +41,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 		Coinbase:     setupCoinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    blockchain.GenesisBlock.Header.Timestamp + 1,
-		Difficulty:   1,
+		TargetBits:   blockchain.TestTargetCompact,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create setup block: %v", err)
@@ -77,7 +77,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{tx1, tx2},
 			Timestamp:    chain.Blocks[len(chain.Blocks)-1].Header.Timestamp + 1,
-			Difficulty:   1,
+			TargetBits:   blockchain.TestTargetCompact,
 		})
 
 		if err != nil {
@@ -125,7 +125,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{tx},
 			Timestamp:    chain.Blocks[len(chain.Blocks)-1].Header.Timestamp + 1,
-			Difficulty:   1,
+			TargetBits:   blockchain.TestTargetCompact,
 		})
 
 		if err == nil {
@@ -154,7 +154,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{tx},
 			Timestamp:    chain.Blocks[len(chain.Blocks)-1].Header.Timestamp + 1,
-			Difficulty:   1,
+			TargetBits:   blockchain.TestTargetCompact,
 		})
 
 		if err == nil {
@@ -183,7 +183,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{tx},
 			Timestamp:    chain.Blocks[len(chain.Blocks)-1].Header.Timestamp + 1,
-			Difficulty:   1,
+			TargetBits:   blockchain.TestTargetCompact,
 		})
 
 		if err != nil {
@@ -215,7 +215,7 @@ func TestTransactionFeesValidation(t *testing.T) {
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{}, // No other transactions
 			Timestamp:    chain.Blocks[len(chain.Blocks)-1].Header.Timestamp + 1,
-			Difficulty:   1,
+			TargetBits:   blockchain.TestTargetCompact,
 		})
 
 		if err != nil {

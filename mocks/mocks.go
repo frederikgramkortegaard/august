@@ -67,6 +67,7 @@ func GenerateValidTransaction(chain *blockchain.Chain, senderPub ed25519.PublicK
 		From:   fromKey,
 		To:     toKey,
 		Amount: finalAmount,
+		Fee:    0, // No fee for test transactions
 		Nonce:  senderState.Nonce + 1,
 	}
 	
@@ -129,6 +130,7 @@ func GenerateValidTransactionWithNonce(chain *blockchain.Chain, senderPub ed2551
 		From:   fromKey,
 		To:     toKey,
 		Amount: finalAmount,
+		Fee:    0, // No fee for test transactions
 		Nonce:  nonce,
 	}
 	
@@ -153,6 +155,7 @@ func GenerateValidMinedBlock(chain *blockchain.Chain, minerPub ed25519.PublicKey
 		From:   blockchain.PublicKey{}, // Empty for coinbase
 		To:     minerKey,
 		Amount: blockchain.BlockReward, // Standard reward
+		Fee:    0, // No fee for coinbase
 		Nonce:  0,
 	}
 	
@@ -165,7 +168,7 @@ func GenerateValidMinedBlock(chain *blockchain.Chain, minerPub ed25519.PublicKey
 		Coinbase:     coinbase,
 		Transactions: transactions,
 		Timestamp:    uint64(time.Now().Unix()),
-		Difficulty:   blockchain.GetTargetDifficulty(len(chain.Blocks), chain.Blocks),
+		TargetBits:   blockchain.TestTargetCompact,
 	}
 	
 	// Mine the block (this will find valid nonce)
@@ -188,6 +191,7 @@ func GenerateInvalidBlock(chain *blockchain.Chain) *blockchain.Block {
 			Timestamp:    uint64(time.Now().Unix()),
 			MerkleRoot:   blockchain.Hash32{},
 			TotalWork:    "0", // Invalid work
+			Bits:         blockchain.TestTargetCompact,
 			Nonce:        0,
 		},
 		Transactions: []blockchain.Transaction{},

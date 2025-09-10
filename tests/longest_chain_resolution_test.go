@@ -364,7 +364,7 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{},
 			Timestamp:    uint64(time.Now().Unix()) + uint64(i*1000), // Unique timestamps
-			TargetBits: blockchain.MaxTargetCompact,
+			TargetBits: blockchain.TestTargetCompact,
 		}
 
 		newBlock, err := blockchain.NewBlock(blockParams)

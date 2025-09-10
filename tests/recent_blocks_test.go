@@ -62,7 +62,7 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,
-		TargetBits: blockchain.MaxTargetCompact,
+		TargetBits: blockchain.TestTargetCompact,
 	}
 
 	newBlock, err := blockchain.NewBlock(blockParams)
@@ -184,7 +184,7 @@ func TestRecentBlocksCleanup(t *testing.T) {
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,
-		TargetBits: blockchain.MaxTargetCompact,
+		TargetBits: blockchain.TestTargetCompact,
 	}
 
 	testBlock, err := blockchain.NewBlock(blockParams)

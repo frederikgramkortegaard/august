@@ -4,8 +4,12 @@ import (
 	"math/big"
 )
 
-// Maximum target (2^256 - 1)
-var maxTarget = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+// getMaxTarget returns the maximum target (2^256 - 1) on demand
+func getMaxTarget() *big.Int {
+	// Calculate 2^256 - 1
+	maxTarget := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	return maxTarget
+}
 
 // CalculateBlockWork calculates the amount of work represented by a given difficulty
 // Work = 2^256 / difficulty_target
@@ -16,6 +20,7 @@ func CalculateBlockWork(difficulty uint64) *big.Int {
 
 	// Calculate target from difficulty
 	// target = max_target / difficulty
+	maxTarget := getMaxTarget()
 	target := new(big.Int).Div(maxTarget, big.NewInt(int64(difficulty)))
 
 	// Work = 2^256 / target
