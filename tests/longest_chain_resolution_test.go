@@ -345,7 +345,7 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 	}
 
 	// Add blocks with specified difficulties
-	for i, difficulty := range difficulties {
+	for i, _ := range difficulties {
 		latestBlock := chain.Blocks[len(chain.Blocks)-1]
 		previousHash := blockchain.HashBlockHeader(&latestBlock.Header)
 
@@ -364,7 +364,7 @@ func buildTestChain(t *testing.T, baseChain *blockchain.Chain, minerPubKey block
 			Coinbase:     coinbase,
 			Transactions: []blockchain.Transaction{},
 			Timestamp:    uint64(time.Now().Unix()) + uint64(i*1000), // Unique timestamps
-			Difficulty:   difficulty,
+			TargetBits: blockchain.MaxTargetCompact,
 		}
 
 		newBlock, err := blockchain.NewBlock(blockParams)

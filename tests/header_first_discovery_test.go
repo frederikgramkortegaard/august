@@ -255,7 +255,7 @@ func createTestBlockWithDifficulty(t *testing.T, chain *blockchain.Chain, minerP
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    uint64(time.Now().Unix()) + uint64(nonce*1000), // Unique timestamp
-		Difficulty:   difficulty,
+		TargetBits: blockchain.MaxTargetCompact,
 	}
 
 	// Mine the block

@@ -72,6 +72,7 @@ func (sig *Signature) UnmarshalJSON(data []byte) error {
 type Transaction struct {
 	From      PublicKey `json:"from"`
 	To        PublicKey `json:"to"`
+	Fee       uint64    `json:"fee"`
 	Amount    uint64    `json:"amount"`
 	Signature Signature `json:"signature"`
 	Nonce     uint64    `json:"nonce"`
@@ -109,6 +110,7 @@ type BlockHeader struct {
 	Timestamp    uint64 `json:"timestamp"`
 	Nonce        uint64 `json:"nonce"`
 	MerkleRoot   Hash32 `json:"merkle_root"`
+	Bits         uint32 `json:"bits"`       // Target in compact format (Bitcoin-style)
 	TotalWork    string `json:"total_work"` // Cumulative work from genesis to this block (big.Int as string)
 }
 

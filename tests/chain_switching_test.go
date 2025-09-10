@@ -3,6 +3,7 @@ package tests
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"math/big"
 	"august/blockchain"
 	"august/node"
 	"august/p2p"
@@ -153,7 +154,7 @@ func createTestBlock(t *testing.T, chain *blockchain.Chain, minerPubKey blockcha
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    uint64(time.Now().Unix()) + uint64(len(nonce)), // Unique timestamp before mining
-		Difficulty:   difficulty,
+		TargetBits:   blockchain.BigToCompact(big.NewInt(1).Lsh(big.NewInt(1), uint(256-difficulty))),
 	}
 
 	// Mine the new block

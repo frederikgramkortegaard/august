@@ -79,19 +79,28 @@ func TestBlockPropagation(t *testing.T) {
 		Nonce:  0,
 	}
 
+	// Get the latest block to get previous work
+	latestBlock = chainA.Blocks[len(chainA.Blocks)-1]
+	
+	// Get target bits for this height
+	targetBits := blockchain.GetTargetBits(len(chainA.Blocks), chainA.Blocks)
+	
 	// Create new block parameters
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
 		Height:       uint64(len(chainA.Blocks)), // Next block height
+		PreviousWork: latestBlock.Header.TotalWork,
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{}, // No additional transactions
 		Timestamp:    0,                          // Will use current time
-		Difficulty:   blockchain.GetTargetDifficulty(len(chainA.Blocks), chainA.Blocks),
+		TargetBits:   targetBits,
 	}
 
 	// Mine the new block
-	t.Logf("Mining new block with difficulty %d...", blockParams.Difficulty)
+	difficulty := blockchain.CalculateDifficulty(targetBits)
+	diffFloat, _ := difficulty.Float64()
+	t.Logf("Mining new block with difficulty %.2f...", diffFloat)
 	newBlock, err := blockchain.NewBlock(blockParams)
 	if err != nil {
 		t.Fatalf("Failed to create new block: %v", err)

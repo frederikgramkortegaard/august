@@ -51,14 +51,18 @@ func TestRecentBlocksDeduplication(t *testing.T) {
 		Nonce:  0,
 	}
 
+	// Get latest block for previous work
+	latestBlock = chainA.Blocks[len(chainA.Blocks)-1]
+	
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
 		Height:       uint64(len(chainA.Blocks)), // Next block height
+		PreviousWork: latestBlock.Header.TotalWork,
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,
-		Difficulty:   blockchain.GetTargetDifficulty(len(chainA.Blocks), chainA.Blocks),
+		TargetBits: blockchain.MaxTargetCompact,
 	}
 
 	newBlock, err := blockchain.NewBlock(blockParams)
@@ -169,14 +173,18 @@ func TestRecentBlocksCleanup(t *testing.T) {
 		Nonce:  0,
 	}
 
+	// Get latest block for previous work
+	latestBlock = chain.Blocks[len(chain.Blocks)-1]
+	
 	blockParams := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: previousHash,
 		Height:       uint64(len(chain.Blocks)), // Next block height
+		PreviousWork: latestBlock.Header.TotalWork,
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{},
 		Timestamp:    0,
-		Difficulty:   blockchain.GetTargetDifficulty(len(chain.Blocks), chain.Blocks),
+		TargetBits: blockchain.MaxTargetCompact,
 	}
 
 	testBlock, err := blockchain.NewBlock(blockParams)

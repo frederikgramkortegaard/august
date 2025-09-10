@@ -21,8 +21,11 @@ func init() {
 	// Calculate merkle root for the single transaction
 	merkleRoot := MerkleTransactions([]Transaction{genesisCoinbase})
 
-	// Calculate work for genesis block (difficulty = 1)
-	genesisWork := CalculateBlockWork(1)
+	// Use max target (easiest difficulty) for genesis
+	genesisBits := MaxTargetCompact
+	
+	// Calculate work for genesis block
+	genesisWork := GetBlockWork(genesisBits)
 
 	// Create genesis block header
 	header := BlockHeader{
@@ -32,11 +35,12 @@ func init() {
 		Timestamp:    0,
 		Nonce:        0,
 		MerkleRoot:   merkleRoot,           // Merkle root of genesis transaction
+		Bits:         genesisBits,          // Target in compact format
 		TotalWork:    genesisWork.String(), // Proper work calculation
 	}
 
 	// Mine the genesis block
-	nonce, err := MineCorrectNonce(&header, 1)
+	nonce, err := MineCorrectNonce(&header, genesisBits)
 	if err != nil {
 		log.Fatal("Failed to mine genesis block:", err)
 	}

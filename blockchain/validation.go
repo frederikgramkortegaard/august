@@ -72,11 +72,18 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		}
 	}
 
-	// 2. Proof Of Work - calculate expected difficulty for this height
-	expectedDifficulty := GetTargetDifficulty(currentHeight, chain.Blocks)
+	// 2. Proof Of Work - check if hash meets the target specified in block header
 	hash := HashBlockHeader(&block.Header)
-	if !BlockHashMeetsDifficulty(hash, expectedDifficulty) {
-		return fmt.Errorf("block does not meet difficulty %d, hash: %x", expectedDifficulty, hash[:8])
+	if !BlockHashMeetsDifficulty(hash, block.Header.Bits) {
+		difficulty := CalculateDifficulty(block.Header.Bits)
+		diffFloat, _ := difficulty.Float64()
+		return fmt.Errorf("block does not meet target difficulty %.2f, hash: %x", diffFloat, hash[:8])
+	}
+	
+	// 2b. Verify the target bits are correct for this height
+	expectedBits := GetTargetBits(currentHeight, chain.Blocks)
+	if block.Header.Bits != expectedBits {
+		return fmt.Errorf("incorrect target bits: got %x, expected %x", block.Header.Bits, expectedBits)
 	}
 
 	// 3. Merkle Root
