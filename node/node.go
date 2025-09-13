@@ -68,7 +68,7 @@ func (n *FullNode) Start() <-chan bool {
 		}
 
 		// 2. Start network server and wait for it to be ready
-		networkReady := n.startNetworkingWithCompletion()
+		networkReady := n.startNetworking()
 		if !<-networkReady {
 			log.Printf("%s\tFailed to start network server", n.Config.NodeID)
 			ready <- false
@@ -95,27 +95,8 @@ func (n *FullNode) Start() <-chan bool {
 	return ready
 }
 
-func (n *FullNode) startNetworking() {
-	log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
-	// The networking package handles all network messaging
-	networkConfig := networking.Config{
-		Port:              n.Config.Port,
-		NodeID:            n.Config.NodeID,
-		Store:             n.Store,
-		SeedPeers:         n.Config.SeedPeers,
-		ReqRespConfig:     networking.DefaultReqRespConfig(),
-		PeerRequestConfig: networking.DefaultPeerRequestConfig(),
-	}
-	n.NetworkServer = networking.NewServer(networkConfig)
-
-	err := n.NetworkServer.Start()
-	if err != nil {
-		log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
-	}
-}
-
-// startNetworkingWithCompletion starts network server and signals when ready
-func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
+// startNetworking starts network server and signals when ready
+func (n *FullNode) startNetworking() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
