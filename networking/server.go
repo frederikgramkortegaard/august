@@ -16,11 +16,12 @@ import (
 
 // Config holds network server configuration
 type Config struct {
-	Port          string
-	NodeID        string
-	Store         store.ChainStore
-	SeedPeers     []string        // Seed peers for discovery
-	ReqRespConfig ReqRespConfig   // Request-response configuration
+	Port              string
+	NodeID            string
+	Store             store.ChainStore
+	SeedPeers         []string            // Seed peers for discovery
+	ReqRespConfig     ReqRespConfig       // Request-response configuration
+	PeerRequestConfig PeerRequestConfig   // Bitcoin-style peer request configuration
 }
 
 
@@ -612,17 +613,13 @@ func (s *Server) requestPeerSharing() {
 	allDiscoveredPeers := make([]string, 0)
 	successfulRequests := 0
 
-	for _, peer := range connectedPeers {
-		if peer.Status == PeerConnected {
-			// Use the new synchronous method to get immediate response
-			peers, err := RequestPeersFromPeer(s, peer.Address, 50)
-			if err != nil {
-				s.logf("Failed to request peers from %s: %v", peer.Address, err)
-			} else {
-				allDiscoveredPeers = append(allDiscoveredPeers, peers...)
-				successfulRequests++
-			}
-		}
+	// Use smart peer discovery instead of iterating through individual peers
+	peers, err := RequestPeers(s, 50)
+	if err != nil {
+		s.logf("Failed to discover peers: %v", err)
+	} else {
+		allDiscoveredPeers = append(allDiscoveredPeers, peers...)
+		successfulRequests = 1 // Simplified since we're doing one aggregated request
 	}
 
 	if successfulRequests > 0 {

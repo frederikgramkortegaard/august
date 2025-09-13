@@ -4,10 +4,11 @@ import (
 	"math/big"
 )
 
+// Calculate 2^256 - 1
+var maxTarget = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+
 // getMaxTarget returns the maximum target (2^256 - 1) on demand
 func getMaxTarget() *big.Int {
-	// Calculate 2^256 - 1
-	maxTarget := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 	return maxTarget
 }
 

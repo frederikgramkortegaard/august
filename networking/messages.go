@@ -97,11 +97,12 @@ type ChainHeadPayload struct {
 	Header    blockchain.BlockHeader `json:"header"`     // Full header for validation
 }
 
-// RequestHeadersPayload requests block headers in a range
+// RequestHeadersPayload requests block headers in a range or by specific hashes
 type RequestHeadersPayload struct {
-	StartHeight uint64 `json:"start_height"`
-	Count       uint64 `json:"count"`      // Max number of headers to return
-	StartHash   string `json:"start_hash"` // Alternative: start from hash (base64)
+	StartHeight uint64   `json:"start_height,omitempty"`
+	Count       uint64   `json:"count,omitempty"`        // Max number of headers to return
+	StartHash   string   `json:"start_hash,omitempty"`   // Alternative: start from hash (base64)
+	Hashes      []string `json:"hashes,omitempty"`       // Alternative: specific header hashes (base64)
 }
 
 // HeadersPayload contains a batch of block headers

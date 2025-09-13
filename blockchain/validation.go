@@ -258,6 +258,30 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 	return nil
 }
 
+// ValidateHeaderChain performs lightweight validation on a chain of headers
+func ValidateHeaderChain(headers []BlockHeader) bool {
+	if len(headers) == 0 {
+		return false
+	}
+
+	// Basic validation - each header should link to the previous
+	for i := 1; i < len(headers); i++ {
+		prevHash := HashBlockHeader(&headers[i-1])
+		if headers[i].PreviousHash != prevHash {
+			return false
+		}
+
+		// Height should increment by 1
+		if headers[i].Height != headers[i-1].Height+1 {
+			return false
+		}
+
+		// TODO: Add PoW validation, difficulty checks, etc.
+	}
+
+	return true
+}
+
 // ValidateAndBuildChain validates an entire chain and builds the account states
 func ValidateAndBuildChain(blocks []*Block) *Chain {
 	if len(blocks) == 0 {
@@ -297,4 +321,89 @@ func ValidateAndBuildChain(blocks []*Block) *Chain {
 
 	fmt.Printf("Chain validation successful! Final state has %d accounts\n", len(chain.AccountStates))
 	return chain
+}
+
+// ValidateCompleteChain validates a complete chain by rebuilding state from genesis
+// This is used for validating candidate chains before promotion
+func ValidateCompleteChain(candidateChain *Chain) error {
+	if len(candidateChain.Blocks) == 0 {
+		return fmt.Errorf("empty chain")
+	}
+
+	// Create a fresh chain starting with genesis and rebuild state from scratch
+	validationChain := &Chain{
+		Blocks:        []*Block{candidateChain.Blocks[0]}, // Start with genesis
+		AccountStates: make(map[PublicKey]*AccountState),
+	}
+
+	// Initialize with genesis account (FirstUser gets 10M coins)
+	validationChain.AccountStates[FirstUser] = &AccountState{
+		Address: FirstUser,
+		Balance: 10_000_000,
+		Nonce:   0,
+	}
+
+	// Validate each block sequentially
+	for i := 1; i < len(candidateChain.Blocks); i++ {
+		block := candidateChain.Blocks[i]
+		if err := ValidateAndApplyBlock(block, validationChain); err != nil {
+			return fmt.Errorf("block %d validation failed: %w", block.Header.Height, err)
+		}
+	}
+
+	return nil
+}
+
+// BlockEvaluationResult represents the result of evaluating whether we want a block
+type BlockEvaluationResult struct {
+	ShouldRequest bool
+	Reason        string
+	Action        string // "sequence", "sync", "fork", "ignore"
+}
+
+// EvaluateBlockHeaderForSync determines if we should request a block based on its header
+func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockEvaluationResult {
+	ourHeight := uint64(0)
+	if len(currentChain.Blocks) > 0 {
+		ourHeight = currentChain.Blocks[len(currentChain.Blocks)-1].Header.Height
+	}
+
+	if header.Height == ourHeight+1 {
+		// This might be the next block in sequence
+		if len(currentChain.Blocks) > 0 {
+			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
+			if HashBlockHeader(&ourTip.Header) == header.PreviousHash {
+				return BlockEvaluationResult{
+					ShouldRequest: true,
+					Reason:        "next block in sequence",
+					Action:        "sequence",
+				}
+			}
+		}
+	} else if header.Height > ourHeight+1 {
+		// This block is ahead of us - we might need to sync
+		return BlockEvaluationResult{
+			ShouldRequest: true,
+			Reason:        "block ahead of us, might need sync",
+			Action:        "sync",
+		}
+	} else if header.Height <= ourHeight {
+		// Check if this could be a fork with more work
+		if len(currentChain.Blocks) > 0 {
+			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
+			if CompareWork(header.TotalWork, ourTip.Header.TotalWork) > 0 {
+				return BlockEvaluationResult{
+					ShouldRequest: true,
+					Reason:        "potential fork with more work",
+					Action:        "fork",
+				}
+			}
+		}
+	}
+
+	return BlockEvaluationResult{
+		ShouldRequest: false,
+		Reason:        "not needed",
+		Action:        "ignore",
+	}
 }

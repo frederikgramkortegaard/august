@@ -86,11 +86,12 @@ func (n *FullNode) startNetworking() {
 	log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
 	// The networking package handles all network messaging
 	networkConfig := networking.Config{
-		Port:          n.Config.Port,
-		NodeID:        n.Config.NodeID,
-		Store:         n.store,
-		SeedPeers:     n.Config.SeedPeers,
-		ReqRespConfig: networking.DefaultReqRespConfig(), // Use default request-response configuration
+		Port:              n.Config.Port,
+		NodeID:            n.Config.NodeID,
+		Store:             n.store,
+		SeedPeers:         n.Config.SeedPeers,
+		ReqRespConfig:     networking.DefaultReqRespConfig(),
+		PeerRequestConfig: networking.DefaultPeerRequestConfig(),
 	}
 	n.NetworkServer = networking.NewServer(networkConfig)
 
@@ -161,6 +162,6 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	}
 
 	// Broadcast the transaction to all connected peers
-	go func() { <-networking.BroadcastTransaction(n.NetworkServer, tx) }()
+	go func() { <-networking.RelayTransaction(n.NetworkServer, tx) }()
 	return nil
 }
