@@ -1,9 +1,9 @@
 package main
 
 import (
+	"august/node"
 	"flag"
 	"fmt"
-	"august/node"
 	"log"
 	"strings"
 	"time"
@@ -45,9 +45,9 @@ func main() {
 	// Start the node and wait for it to be ready
 	ready := fullNode.Start()
 	<-ready // Wait for node to be ready
-	
+
 	log.Printf("%s\tNode is ready", *nodeID)
-	
+
 	// Keep the node running
 	select {} // Block forever
 }

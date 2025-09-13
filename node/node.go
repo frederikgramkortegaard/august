@@ -1,11 +1,13 @@
 package node
 
 import (
-	"fmt"
 	"august/blockchain"
-	"august/blockchain/store"
-	"august/p2p"
+	"august/networking"
+	store "august/storage"
+	"fmt"
 	"log"
+
+	"github.com/cockroachdb/pebble"
 )
 
 // Config holds all configuration for a full node
@@ -24,14 +26,14 @@ type FullNode struct {
 	Config Config
 
 	// Components (each package handles its own concern)
-	P2PServer *p2p.Server    // P2P message handling
-	discovery *p2p.Discovery // Peer discovery
+	P2PServer *networking.Server    // P2P message handling
+	discovery *networking.Discovery // Peer discovery
 }
 
 // NewFullNode creates a node that runs all services
 func NewFullNode(config Config) *FullNode {
 	// Create shared store
-	chainStore := store.NewMemoryChainStore()
+	chainStore := store.NewPebbleChainStore("demo", &pebble.Options{})
 
 	return &FullNode{
 		store:  chainStore,
@@ -84,13 +86,13 @@ func (n *FullNode) Start() <-chan bool {
 func (n *FullNode) startP2P() {
 	log.Printf("%s\tStarting P2P server on port %s", n.Config.NodeID, n.Config.P2PPort)
 	// The p2p package handles all P2P messaging
-	p2pConfig := p2p.Config{
+	p2pConfig := networking.Config{
 		Port:          n.Config.P2PPort,
 		NodeID:        n.Config.NodeID,
 		Store:         n.store,
-		ReqRespConfig: p2p.DefaultReqRespConfig(), // Use default request-response configuration
+		ReqRespConfig: networking.DefaultReqRespConfig(), // Use default request-response configuration
 	}
-	n.P2PServer = p2p.NewServer(p2pConfig)
+	n.P2PServer = networking.NewServer(p2pConfig)
 
 	err := n.P2PServer.Start()
 	if err != nil {
@@ -105,13 +107,13 @@ func (n *FullNode) startP2PWithCompletion() <-chan bool {
 	go func() {
 		log.Printf("%s\tStarting P2P server on port %s", n.Config.NodeID, n.Config.P2PPort)
 
-		p2pConfig := p2p.Config{
+		p2pConfig := networking.Config{
 			Port:          n.Config.P2PPort,
 			NodeID:        n.Config.NodeID,
 			Store:         n.store,
-			ReqRespConfig: p2p.DefaultReqRespConfig(),
+			ReqRespConfig: networking.DefaultReqRespConfig(),
 		}
-		n.P2PServer = p2p.NewServer(p2pConfig)
+		n.P2PServer = networking.NewServer(p2pConfig)
 
 		err := n.P2PServer.Start()
 		if err != nil {
@@ -139,11 +141,11 @@ func (n *FullNode) startDiscovery() <-chan bool {
 		}
 
 		// The p2p package also handles discovery
-		discoveryConfig := p2p.DiscoveryConfig{
+		discoveryConfig := networking.DiscoveryConfig{
 			SeedPeers: n.Config.SeedPeers,
 			P2PServer: n.P2PServer,
 		}
-		n.discovery = p2p.NewDiscovery(discoveryConfig)
+		n.discovery = networking.NewDiscovery(discoveryConfig)
 		discoveryStartReady := n.discovery.Start()
 		if !<-discoveryStartReady {
 			log.Printf("%s\tDiscovery failed to start", n.Config.NodeID)
@@ -179,12 +181,12 @@ func (n *FullNode) Stop() error {
 }
 
 // GetP2PServer returns the P2P server for testing purposes
-func (n *FullNode) GetP2PServer() *p2p.Server {
+func (n *FullNode) GetP2PServer() *networking.Server {
 	return n.P2PServer
 }
 
 // GetDiscovery returns the discovery instance for testing purposes
-func (n *FullNode) GetDiscovery() *p2p.Discovery {
+func (n *FullNode) GetDiscovery() *networking.Discovery {
 	return n.discovery
 }
 
@@ -200,6 +202,6 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	}
 
 	// Broadcast the transaction to all connected peers
-	go func() { <-p2p.BroadcastTransaction(n.P2PServer, tx) }()
+	go func() { <-networking.BroadcastTransaction(n.P2PServer, tx) }()
 	return nil
 }
