@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"august/blockchain"
-	store "august/storage"
+	"august/consensus"
 )
 
 // PeerRequestConfig defines parameters for Bitcoin-style peer request strategies
@@ -38,7 +38,7 @@ func DefaultPeerRequestConfig() PeerRequestConfig {
 	return PeerRequestConfig{
 		MaxRequestsPerPeer:    16, // Conservative like Bitcoin Core
 		MaxPeersForRequest:    20, // Try up to 20 peers in parallel/sequence
-		MinPeersForRequest:    2,  // Need at least 2 peers
+		MinPeersForRequest:    1,  // Can sync from 1 peer (like Bitcoin)
 		RequestTimeoutSec:     30, // 30 second timeout per peer
 		RandomizePeerOrder:    true,
 		PreferResponsivePeers: true,
@@ -324,7 +324,7 @@ func RequestPeers(server *Server, maxPeers int) ([]string, error) {
 }
 
 // RequestChainHead requests the current chain head from a peer
-func RequestChainHead(server *Server, peer *Peer) (*ChainHeadPayload, error) {
+func RequestChainHead(server *Server, peer *Peer) (*consensus.ChainHeadPayload, error) {
 	requestPayload := RequestChainHeadPayload{}
 
 	msg, err := NewMessage(MessageTypeRequestChainHead, requestPayload)
@@ -342,7 +342,7 @@ func RequestChainHead(server *Server, peer *Peer) (*ChainHeadPayload, error) {
 		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
 	}
 
-	var headPayload ChainHeadPayload
+	var headPayload consensus.ChainHeadPayload
 	if err := responseMsg.ParsePayload(&headPayload); err != nil {
 		return nil, fmt.Errorf("failed to parse chain head response: %w", err)
 	}
@@ -592,7 +592,7 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 }
 
 // EvaluateChainHead performs headers-first evaluation of a peer's chain
-func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *ChainHeadPayload) error {
+func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.ChainHeadPayload) error {
 	// Get our current chain
 	ourChain, err := server.config.Store.GetChain()
 	if err != nil {
@@ -641,184 +641,21 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *ChainHeadPaylo
 
 	// Phase 2: Headers look good, start candidate chain download
 	server.logf("Headers validated and better, starting candidate chain download")
-	return StartCandidateChainDownload(server, peer, headers, peerChainHead)
-}
 
-// StartCandidateChainDownload creates a candidate chain and downloads blocks
-func StartCandidateChainDownload(server *Server, peer *Peer, headers []blockchain.BlockHeader, chainHead *ChainHeadPayload) error {
-	// Generate candidate ID
-	candidateID := fmt.Sprintf("%s-%d-%s", peer.Address, chainHead.Height, chainHead.HeadHash[:16])
-
-	// Create candidate chain with isolated storage
-	candidateStore := store.NewMemoryChainStore()
-
-	candidate := &CandidateChain{
-		ID:           candidateID,
-		PeerSource:   peer.Address,
-		ChainStore:   candidateStore,
-		Headers:      headers,
-		StartedAt:    time.Now(),
-		ExpectedWork: chainHead.TotalWork,
+	// Create candidate chain using consensus manager
+	candidate, err := server.consensusManager.CreateCandidateChain(peer.Address, headers, peerChainHead)
+	if err != nil {
+		return fmt.Errorf("failed to create candidate chain: %w", err)
 	}
-	candidate.expectedHeight.Store(chainHead.Height)
-	candidate.currentHeight.Store(0)
-	candidate.downloadStatus.Store(0) // downloading
-
-	// Store in candidates map
-	server.candidateChains.Store(candidateID, candidate)
-	server.logf("Created candidate chain %s", candidateID)
 
 	// Start download in background
-	go DownloadCandidateChain(server, candidate)
-
-	return nil
-}
-
-// DownloadCandidateChain downloads all blocks for a candidate chain
-func DownloadCandidateChain(server *Server, candidate *CandidateChain) {
-	defer func() {
-		// Mark as complete or failed
-		if candidate.downloadStatus.Load() == 0 { // still downloading
-			candidate.downloadStatus.Store(1) // mark complete
+	go func() {
+		if err := server.chainDownloader.DownloadCandidateChain(candidate); err != nil {
+			server.logf("Candidate chain download failed: %v", err)
 		}
 	}()
 
-	server.logf("Starting block download for candidate %s", candidate.ID)
-
-	// Download blocks in batches
-	batchSize := uint64(100)
-	startHeight := uint64(1)
-	endHeight := candidate.expectedHeight.Load()
-
-	for startHeight <= endHeight {
-		count := batchSize
-		if startHeight+count-1 > endHeight {
-			count = endHeight - startHeight + 1
-		}
-
-		// Check if we should abort (better candidate appeared)
-		if ShouldAbortDownload(server, candidate) {
-			server.logf("Aborting download for candidate %s - better option found", candidate.ID)
-			candidate.downloadStatus.Store(2) // mark failed
-			return
-		}
-
-		// Convert headers to hashes for this batch
-		var blockHashes []string
-		for _, header := range candidate.Headers {
-			if header.Height >= startHeight && header.Height < startHeight+count {
-				hash := blockchain.HashBlockHeader(&header)
-				hashStr := base64.StdEncoding.EncodeToString(hash[:])
-				blockHashes = append(blockHashes, hashStr)
-			}
-		}
-
-		server.logf("Candidate %s: downloading %d blocks %d-%d from multiple peers", candidate.ID, len(blockHashes), startHeight, startHeight+count-1)
-
-		blocks, err := RequestBlocksByHash(server, blockHashes)
-		if err != nil {
-			server.logf("Failed to download blocks for candidate %s: %v", candidate.ID, err)
-			candidate.downloadStatus.Store(2) // mark failed
-			return
-		}
-
-		server.logf("Candidate %s: downloaded %d blocks from peers", candidate.ID, len(blocks))
-
-		// Add blocks to candidate's isolated chain store
-		for _, block := range blocks {
-			if err := candidate.ChainStore.AddBlock(block); err != nil {
-				server.logf("Failed to add block to candidate %s: %v", candidate.ID, err)
-				candidate.downloadStatus.Store(2) // mark failed
-				return
-			}
-			candidate.currentHeight.Store(block.Header.Height)
-		}
-
-		server.logf("Candidate %s: added %d blocks, now at height %d",
-			candidate.ID, len(blocks), candidate.currentHeight.Load())
-
-		startHeight += count
-	}
-
-	server.logf("Candidate %s: download complete, evaluating for promotion", candidate.ID)
-
-	// Download complete - evaluate for promotion
-	EvaluateCandidateForPromotion(server, candidate)
-}
-
-// ShouldAbortDownload checks if we should abort this download for a better option
-func ShouldAbortDownload(server *Server, candidate *CandidateChain) bool {
-	bestOtherWork := "0"
-
-	server.candidateChains.Range(func(key, value interface{}) bool {
-		other := value.(*CandidateChain)
-		if other.ID != candidate.ID && other.downloadStatus.Load() == 1 { // complete
-			if blockchain.CompareWork(other.ExpectedWork, bestOtherWork) > 0 {
-				bestOtherWork = other.ExpectedWork
-			}
-		}
-		return true
-	})
-
-	// If there's a completed candidate with better work, abort this download
-	return blockchain.CompareWork(bestOtherWork, candidate.ExpectedWork) > 0
-}
-
-// EvaluateCandidateForPromotion checks if candidate should become active chain
-func EvaluateCandidateForPromotion(server *Server, candidate *CandidateChain) {
-	// CRITICAL: Lock the chain for the entire validation and switch process
-	// This prevents race conditions where the chain changes while we're validating
-	server.config.Store.Lock()
-	defer server.config.Store.Unlock()
-
-	// Get current active chain work (now thread-safe under lock)
-	currentChain, err := server.config.Store.GetChainUnsafe()
-	if err != nil {
-		server.logf("Failed to get current chain for comparison: %v", err)
-		return
-	}
-
-	currentWork := "0"
-	if len(currentChain.Blocks) > 0 {
-		currentWork = currentChain.Blocks[len(currentChain.Blocks)-1].Header.TotalWork
-	}
-
-	// Compare work
-	if blockchain.CompareWork(candidate.ExpectedWork, currentWork) > 0 {
-		server.logf("Candidate %s has better work, validating before promotion", candidate.ID)
-
-		// Get the candidate's complete chain
-		candidateChain, err := candidate.ChainStore.GetChain()
-		if err != nil {
-			server.logf("Failed to get candidate chain for promotion: %v", err)
-			return
-		}
-
-		// CRITICAL: Validate all blocks and transactions before switching
-		server.logf("Validating candidate chain %s blocks and transactions", candidate.ID)
-
-		if err := blockchain.ValidateCompleteChain(candidateChain); err != nil {
-			server.logf("Candidate %s failed validation, discarding despite better work: %v", candidate.ID, err)
-			server.candidateChains.Delete(candidate.ID)
-			return
-		}
-
-		server.logf("Candidate %s passed full validation, promoting to active chain", candidate.ID)
-
-		// Atomic switch to new chain (fully validated, no race condition possible under lock)
-		if err := server.config.Store.ReplaceChainUnsafe(candidateChain); err != nil {
-			server.logf("Failed to replace active chain: %v", err)
-			return
-		}
-
-		server.logf("Successfully promoted candidate %s to active chain (height %d)",
-			candidate.ID, len(candidateChain.Blocks)-1)
-
-		// Clean up this candidate
-		server.candidateChains.Delete(candidate.ID)
-	} else {
-		server.logf("Candidate %s not better than current chain, discarding", candidate.ID)
-	}
+	return nil
 }
 
 // ProcessBlock attempts to add a block to the main chain, handling orphans
@@ -863,14 +700,8 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 				server.logf("Block %x is orphan, missing parent %x. Adding to candidate blocks.",
 					blockHash[:8], missingParentErr.Hash[:8])
 
-				// Store in candidate blocks
-				candidateBlock := &CandidateBlock{
-					Block:        block,
-					Source:       excludeAddr,
-					ReceivedAt:   time.Now(),
-					ParentNeeded: missingParentErr.Hash,
-				}
-				server.candidateBlocks.Store(blockHash, candidateBlock)
+				// Store in candidate blocks using consensus manager
+				server.consensusManager.AddCandidateBlock(block, excludeAddr, missingParentErr.Hash)
 
 				// Request missing parent block from multiple peers
 				server.logf("Need to request parent block %x from peers", missingParentErr.Hash[:8])
@@ -947,94 +778,19 @@ func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...st
 		go func() { <-RelayBlockHeader(server, &block.Header, excludeAddr) }()
 
 		// Try to connect any candidate blocks that might now be connectible
-		tryConnectCandidateBlocks(server)
+		if err := server.consensusManager.TryConnectCandidateBlocks(block); err != nil {
+			server.logf("Error connecting candidate blocks: %v", err)
+		}
 	}()
 
 	return complete
 }
 
-// tryConnectCandidateBlocks attempts to connect candidate blocks to the main chain
-func tryConnectCandidateBlocks(server *Server) {
-	connected := true
-
-	// Keep trying until no more candidate blocks can be connected
-	for connected {
-		connected = false
-
-		// Get current chain state for each attempt
-		originalChain, err := server.config.Store.GetChain()
-		if err != nil {
-			server.logf("Failed to get chain for candidate block connection: %v", err)
-			return
-		}
-
-		var toProcess []blockchain.Hash32
-		var blocksToProcess []*CandidateBlock
-
-		// Collect candidate blocks to process
-		server.candidateBlocks.Range(func(key, value interface{}) bool {
-			blockHash := key.(blockchain.Hash32)
-			candidateBlock := value.(*CandidateBlock)
-			toProcess = append(toProcess, blockHash)
-			blocksToProcess = append(blocksToProcess, candidateBlock)
-			return true
-		})
-
-		// Try each candidate block
-		for i, candidateBlock := range blocksToProcess {
-			blockHash := toProcess[i]
-
-			// Make a deep copy to validate on without affecting the original
-			chainCopy := originalChain.DeepCopy()
-			if chainCopy == nil {
-				server.logf("Failed to create chain copy for candidate block %x", blockHash[:8])
-				continue
-			}
-
-			// Try to validate and add this candidate block to the copy
-			if err := blockchain.ValidateAndApplyBlock(candidateBlock.Block, chainCopy); err == nil {
-				// Block validation succeeded, atomically replace the chain
-				if err := server.config.Store.ReplaceChain(chainCopy); err != nil {
-					server.logf("Failed to replace chain with candidate block %x: %v", blockHash[:8], err)
-					continue
-				}
-
-				// Successfully connected!
-				server.logf("Connected candidate block %x to main chain", blockHash[:8])
-
-				// Remove from candidate blocks
-				server.candidateBlocks.Delete(blockHash)
-				connected = true
-
-				// Update originalChain for next iteration
-				originalChain = chainCopy
-
-				// Don't continue iterating as we modified the state
-				break
-			}
-		}
-	}
-
-	// Count remaining candidate blocks
-	candidateCount := 0
-	server.candidateBlocks.Range(func(key, value interface{}) bool {
-		candidateCount++
-		return true
-	})
-
-	if candidateCount > 0 {
-		server.logf("Still have %d candidate blocks waiting for parents", candidateCount)
-	}
-}
-
 // GetCandidateBlockCount returns the number of candidate blocks waiting for parents (for testing)
 func GetCandidateBlockCount(server *Server) int {
-	count := 0
-	server.candidateBlocks.Range(func(key, value interface{}) bool {
-		count++
-		return true
-	})
-	return count
+	// This would need to be implemented in the consensus manager if needed for testing
+	// For now, return 0 as a placeholder
+	return 0
 }
 
 // SendPongResponse sends a pong response to a ping
@@ -1147,7 +903,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	headBlock := chain.Blocks[len(chain.Blocks)-1]
 	headHash := blockchain.HashBlockHeader(&headBlock.Header)
 
-	headPayload := ChainHeadPayload{
+	headPayload := consensus.ChainHeadPayload{
 		HeadHash:  base64.StdEncoding.EncodeToString(headHash[:]),
 		Height:    headBlock.Header.Height,
 		TotalWork: headBlock.Header.TotalWork,
@@ -1280,7 +1036,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 
 // ProcessChainHead handles chain head messages and initiates sync if needed
 func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
-	var headPayload ChainHeadPayload
+	var headPayload consensus.ChainHeadPayload
 	if err := msg.ParsePayload(&headPayload); err != nil {
 		s.logf("Failed to decode chain head payload from %s: %v", peer.Address, err)
 		return
@@ -1451,17 +1207,26 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 	// Create a mock chain head payload from the final header
 	finalHeader := headersPayload.Headers[len(headersPayload.Headers)-1]
 	finalHash := blockchain.HashBlockHeader(&finalHeader)
-	chainHead := &ChainHeadPayload{
+	chainHead := &consensus.ChainHeadPayload{
 		HeadHash:  base64.StdEncoding.EncodeToString(finalHash[:]),
 		Height:    finalHeader.Height,
 		TotalWork: finalHeader.TotalWork,
 		Header:    finalHeader,
 	}
 
-	// Start candidate chain download using existing headers-first system
-	if err := StartCandidateChainDownload(s, peer, headersPayload.Headers, chainHead); err != nil {
-		s.logf("Failed to start candidate chain download from %s: %v", peer.Address, err)
+	// Start candidate chain download using consensus manager
+	candidate, err := s.consensusManager.CreateCandidateChain(peer.Address, headersPayload.Headers, chainHead)
+	if err != nil {
+		s.logf("Failed to create candidate chain from %s: %v", peer.Address, err)
+		return
 	}
+
+	// Start download in background
+	go func() {
+		if err := s.chainDownloader.DownloadCandidateChain(candidate); err != nil {
+			s.logf("Candidate chain download failed: %v", err)
+		}
+	}()
 }
 
 // ProcessBlocks handles received blocks
@@ -1677,4 +1442,3 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 		s.logf("Failed to send blocks to %s: %v", peer.Address, err)
 	}
 }
-

@@ -89,13 +89,7 @@ type RequestChainHeadPayload struct {
 	// Empty - just requesting current head info
 }
 
-// ChainHeadPayload contains information about the current chain head
-type ChainHeadPayload struct {
-	Height    uint64                 `json:"height"`
-	HeadHash  string                 `json:"head_hash"`  // Base64 encoded
-	TotalWork string                 `json:"total_work"` // Big.Int as string
-	Header    blockchain.BlockHeader `json:"header"`     // Full header for validation
-}
+// Note: ChainHeadPayload moved to august/consensus package
 
 // RequestHeadersPayload requests block headers in a range or by specific hashes
 type RequestHeadersPayload struct {

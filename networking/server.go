@@ -2,6 +2,7 @@ package networking
 
 import (
 	"august/blockchain"
+	"august/consensus"
 	store "august/storage"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -24,33 +24,7 @@ type Config struct {
 	PeerRequestConfig PeerRequestConfig // Bitcoin-style peer request configuration
 }
 
-// CandidateChain represents a potential blockchain candidate for adoption
-type CandidateChain struct {
-	ID           string
-	PeerSource   string
-	ChainStore   store.ChainStore
-	Headers      []blockchain.BlockHeader
-	StartedAt    time.Time
-	ExpectedWork string
-
-	// Atomic progress tracking
-	expectedHeight atomic.Uint64
-	currentHeight  atomic.Uint64
-	downloadStatus atomic.Uint32 // 0=downloading, 1=complete, 2=failed
-}
-
-// DownloadStatus returns the current download status (for testing)
-func (c *CandidateChain) DownloadStatus() *atomic.Uint32 {
-	return &c.downloadStatus
-}
-
-// CandidateBlock represents a single block waiting for context or validation
-type CandidateBlock struct {
-	Block        *blockchain.Block
-	Source       string
-	ReceivedAt   time.Time
-	ParentNeeded blockchain.Hash32
-}
+// Note: CandidateBlock and CandidateChain types moved to august/consensus package
 
 // Server handles network communication and message passing
 type Server struct {
@@ -66,9 +40,9 @@ type Server struct {
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
 
-	// New candidate chain system (lock-free)
-	candidateChains sync.Map // map[string]*CandidateChain
-	candidateBlocks sync.Map // map[blockchain.Hash32]*CandidateBlock
+	// Consensus management
+	consensusManager *consensus.CandidateManager
+	chainDownloader  *consensus.ChainDownloader
 
 	// Unified cleanup system
 	cleanupTicker   *time.Ticker
@@ -92,8 +66,22 @@ func NewServer(config Config) *Server {
 		recentBlocks:     make(map[blockchain.Hash32]time.Time),
 		recentBlocksTTL:  5 * time.Minute,
 		cleanupInterval:  30 * time.Second,
-		// candidateChains and candidateBlocks are sync.Maps - no initialization needed
 	}
+
+	// Initialize consensus management
+	server.consensusManager = consensus.NewCandidateManager(config.Store)
+
+	// Create block request function for the chain downloader
+	blockRequestFunc := func(blockHashes []string) ([]*blockchain.Block, error) {
+		return RequestBlocksByHash(server, blockHashes)
+	}
+
+	// Create log function for the chain downloader
+	logFunc := func(format string, args ...interface{}) {
+		server.logf(format, args...)
+	}
+
+	server.chainDownloader = consensus.NewChainDownloader(server.consensusManager, blockRequestFunc, logFunc)
 
 	// Create request-response client with this server as the sender
 	server.reqRespClient = NewReqRespClient(config.ReqRespConfig, server)
@@ -178,11 +166,8 @@ func (s *Server) performCleanupTasks() {
 	// 1. Clean up recent blocks (existing logic)
 	s.cleanRecentBlocks(now)
 
-	// 2. Clean up failed/old candidate chains
-	s.cleanCandidateChains(now)
-
-	// 3. Clean up candidate blocks (replaces orphan pool)
-	s.cleanCandidateBlocks(now)
+	// 2. Candidate chain and block cleanup is now handled by the consensus manager
+	// (No cleanup needed here - consensus manager handles its own lifecycle)
 
 	// 4. Log current chain status
 	s.logChainStatus()
@@ -224,65 +209,6 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 
 	if cleaned > 0 {
 		s.logf("Cleaned up %d old recent blocks", cleaned)
-	}
-}
-
-func (s *Server) cleanCandidateChains(now time.Time) {
-	var toDelete []string
-
-	s.candidateChains.Range(func(key, value interface{}) bool {
-		candidate := value.(*CandidateChain)
-		candidateID := key.(string)
-
-		shouldDelete := false
-
-		// Delete if failed
-		if candidate.downloadStatus.Load() == 2 {
-			shouldDelete = true
-		}
-
-		// Delete if too old (prevent memory leaks)
-		if now.Sub(candidate.StartedAt) > 10*time.Minute {
-			shouldDelete = true
-		}
-
-		if shouldDelete {
-			toDelete = append(toDelete, candidateID)
-		}
-
-		return true
-	})
-
-	for _, id := range toDelete {
-		s.candidateChains.Delete(id)
-	}
-
-	if len(toDelete) > 0 {
-		s.logf("Cleaned up %d old candidate chains", len(toDelete))
-	}
-}
-
-func (s *Server) cleanCandidateBlocks(now time.Time) {
-	var toDelete []blockchain.Hash32
-
-	s.candidateBlocks.Range(func(key, value interface{}) bool {
-		blockHash := key.(blockchain.Hash32)
-		candidateBlock := value.(*CandidateBlock)
-
-		// Delete blocks older than 5 minutes
-		if now.Sub(candidateBlock.ReceivedAt) > 5*time.Minute {
-			toDelete = append(toDelete, blockHash)
-		}
-
-		return true
-	})
-
-	for _, hash := range toDelete {
-		s.candidateBlocks.Delete(hash)
-	}
-
-	if len(toDelete) > 0 {
-		s.logf("Cleaned up %d old candidate blocks", len(toDelete))
 	}
 }
 
@@ -381,7 +307,7 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 		Address:    connAddr, // Will be updated to listen address after handshake
 		ConnAddr:   connAddr, // Actual connection endpoint
 		Status:     PeerConnecting,
-		IsOutgoing: false,    // This is an incoming connection
+		IsOutgoing: false, // This is an incoming connection
 	}
 
 	// Store the connection using the connection address
@@ -488,15 +414,8 @@ func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
 }
 
-// GetCandidateChains returns the candidate chains map (for testing)
-func (s *Server) GetCandidateChains() *sync.Map {
-	return &s.candidateChains
-}
-
-// GetCandidateBlocks returns the candidate blocks map (for testing)
-func (s *Server) GetCandidateBlocks() *sync.Map {
-	return &s.candidateBlocks
-}
+// Note: Candidate chains and blocks are now managed by the consensus package
+// Use server.consensusManager to access candidate functionality
 
 // GetChainStore returns the chain store for testing purposes
 func (s *Server) GetChainStore() store.ChainStore {
@@ -721,10 +640,10 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 
 		// Create peer entry for outgoing connection
 		peer := &Peer{
-			Address:    address,                     // Listen address (where we're connecting to)
-			ConnAddr:   conn.LocalAddr().String(),   // Our side of the connection
+			Address:    address,                   // Listen address (where we're connecting to)
+			ConnAddr:   conn.LocalAddr().String(), // Our side of the connection
 			Status:     PeerConnecting,
-			IsOutgoing: true,                        // We initiated this connection
+			IsOutgoing: true, // We initiated this connection
 		}
 
 		// Add to peer manager
