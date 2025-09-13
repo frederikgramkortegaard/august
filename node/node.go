@@ -139,6 +139,13 @@ func (n *FullNode) Stop() error {
 		}
 	}
 
+	// Close database connection
+	if closer, ok := n.store.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			log.Printf("%s\tError closing database: %v", n.Config.NodeID, err)
+		}
+	}
+
 	log.Println("FullNode stopped successfully")
 	return nil
 }
