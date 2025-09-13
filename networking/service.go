@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"strings"
 	"time"
 
 	"august/blockchain"
@@ -38,7 +37,7 @@ type PeerRequestConfig struct {
 func DefaultPeerRequestConfig() PeerRequestConfig {
 	return PeerRequestConfig{
 		MaxRequestsPerPeer:    16, // Conservative like Bitcoin Core
-		MaxPeersForRequest:    5,  // Try up to 5 peers in parallel/sequence
+		MaxPeersForRequest:    20, // Try up to 20 peers in parallel/sequence
 		MinPeersForRequest:    2,  // Need at least 2 peers
 		RequestTimeoutSec:     30, // 30 second timeout per peer
 		RandomizePeerOrder:    true,
@@ -1193,58 +1192,90 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 	s.logf("Received handshake from %s (node %s), actual peer address: %s",
 		peer.Address, handshake.NodeID, properPeerAddr)
 
-	// Check for duplicate connections (bidirectional connection detection)
+	// Check if peer already exists in manager (duplicate connection detection)
 	s.peerManager.mu.Lock()
 	existingPeer, exists := s.peerManager.peers[properPeerAddr]
-	if exists && existingPeer != peer {
-		// We have a duplicate connection!
-		// Determine which connection to keep based on address comparison
-		localListenAddr := net.JoinHostPort(host, s.config.Port)
 
-		s.logf("Duplicate connection detected: local=%s, remote=%s", localListenAddr, properPeerAddr)
-
-		if strings.Compare(localListenAddr, properPeerAddr) < 0 {
-			// Our address is "smaller", keep incoming connection (this one)
-			s.logf("Keeping incoming connection from %s (lower address)", properPeerAddr)
-
-			// Close the existing outgoing connection
-			existingPeer.Status = PeerDisconnected
-			// Remove old peer and replace with this one
-			delete(s.peerManager.peers, properPeerAddr)
-		} else {
-			// Remote address is "smaller", keep existing outgoing connection
-			s.logf("Rejecting incoming connection from %s (keeping outgoing)", properPeerAddr)
+	if exists {
+		// Check if this is the same peer object (outgoing connection) or a different one (race condition)
+		if existingPeer == peer {
+			// Same peer object, just update it
+			existingPeer.ID = handshake.NodeID
+			existingPeer.Status = PeerConnected
 			s.peerManager.mu.Unlock()
+		} else {
+			// Different peer objects - this is a race condition with bidirectional connections
+			// We need to decide which connection to keep based on a deterministic rule
+			keepExisting := s.shouldKeepExistingConnection(existingPeer, peer, handshake.NodeID)
 
-			// Close this connection and return
-			conn.Close()
-			peer.Status = PeerDisconnected
-			return
+			if keepExisting {
+				s.logf("Duplicate connection detected for %s, keeping existing connection (existing: %v, new: %v)",
+					properPeerAddr, existingPeer.IsOutgoing, peer.IsOutgoing)
+				// Ensure existing peer is marked as properly connected
+				if existingPeer.Status != PeerConnected {
+					existingPeer.Status = PeerConnected
+					existingPeer.ID = handshake.NodeID
+				}
+				s.peerManager.mu.Unlock()
+				conn.Close()
+				return
+			} else {
+				s.logf("Duplicate connection detected for %s, replacing existing connection (existing: %v, new: %v)",
+					properPeerAddr, existingPeer.IsOutgoing, peer.IsOutgoing)
+
+				// Close the old connection and replace with new one
+				s.peerConnectionsMu.Lock()
+				if oldConn, exists := s.peerConnections[existingPeer.ConnAddr]; exists {
+					oldConn.Close()
+					delete(s.peerConnections, existingPeer.ConnAddr)
+				}
+				if oldConn, exists := s.peerConnections[properPeerAddr]; exists && oldConn != conn {
+					oldConn.Close()
+				}
+				s.peerConnections[properPeerAddr] = conn
+				s.peerConnectionsMu.Unlock()
+
+				// Update the existing peer entry with new connection info
+				existingPeer.ID = handshake.NodeID
+				existingPeer.ConnAddr = conn.RemoteAddr().String()
+				existingPeer.Status = PeerConnected
+				existingPeer.IsOutgoing = peer.IsOutgoing
+				existingPeer.LastSeen = time.Now() // Update last seen time
+				s.peerManager.mu.Unlock()
+			}
 		}
-	}
+	} else {
+		// No existing connection - add this peer
+		peer.ID = handshake.NodeID
+		peer.Status = PeerConnected
 
-	// Update peer information
-	peer.ID = handshake.NodeID
-	peer.Status = PeerConnected
-
-	// If the address changed (e.g., from connection address to proper listen address)
-	if peer.Address != properPeerAddr {
-		// Update the peer connection mapping
+		// Update the connection mapping to use the proper address
 		s.peerConnectionsMu.Lock()
-		delete(s.peerConnections, peer.Address)
-		s.peerConnections[properPeerAddr] = conn
+		if peer.Address != properPeerAddr {
+			// Move the connection from ephemeral to proper address
+			if conn, ok := s.peerConnections[peer.Address]; ok {
+				delete(s.peerConnections, peer.Address)
+				s.peerConnections[properPeerAddr] = conn
+			}
+		}
 		s.peerConnectionsMu.Unlock()
 
-		// Update peer address
+		// ConnAddr stays as the actual connection endpoint
+		// Address becomes the listen address
+		oldAddr := peer.Address
 		peer.Address = properPeerAddr
+		if peer.ConnAddr == oldAddr {
+			// ConnAddr was same as Address, keep it as the connection endpoint
+			// For incoming connections, ConnAddr is the ephemeral port they connected from
+		}
+
+		// Add to peer manager with proper address
+		s.peerManager.peers[properPeerAddr] = peer
+		s.peerManager.mu.Unlock()
 	}
 
-	// Update peer in manager with proper address
-	s.peerManager.peers[properPeerAddr] = peer
-	s.peerManager.mu.Unlock()
-
-	s.logf("Handshake completed with %s (node: %s)",
-		properPeerAddr, handshake.NodeID)
+	s.logf("Handshake completed with %s (node: %s, conn: %s, outgoing: %v)",
+		properPeerAddr, handshake.NodeID, peer.ConnAddr, peer.IsOutgoing)
 }
 
 // ProcessChainHead handles chain head messages and initiates sync if needed
@@ -1646,3 +1677,4 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 		s.logf("Failed to send blocks to %s: %v", peer.Address, err)
 	}
 }
+

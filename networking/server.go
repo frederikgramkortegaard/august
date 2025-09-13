@@ -19,11 +19,10 @@ type Config struct {
 	Port              string
 	NodeID            string
 	Store             store.ChainStore
-	SeedPeers         []string            // Seed peers for discovery
-	ReqRespConfig     ReqRespConfig       // Request-response configuration
-	PeerRequestConfig PeerRequestConfig   // Bitcoin-style peer request configuration
+	SeedPeers         []string          // Seed peers for discovery
+	ReqRespConfig     ReqRespConfig     // Request-response configuration
+	PeerRequestConfig PeerRequestConfig // Bitcoin-style peer request configuration
 }
-
 
 // CandidateChain represents a potential blockchain candidate for adoption
 type CandidateChain struct {
@@ -62,7 +61,7 @@ type Server struct {
 	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
-	reqRespClient     *ReqRespClient     // Request-response client
+	reqRespClient     *ReqRespClient      // Request-response client
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
@@ -122,8 +121,8 @@ func (s *Server) SendMessage(peerAddress string, msg RequestResponse) error {
 	return s.sendMessage(conn, message)
 }
 
-// Start begins listening for network connections
-func (s *Server) Start() error {
+// StartListener begins listening for network connections (TCP only)
+func (s *Server) StartListener() error {
 	listener, err := net.Listen("tcp", ":"+s.config.Port)
 	if err != nil {
 		return err
@@ -135,6 +134,11 @@ func (s *Server) Start() error {
 	// Accept connections in background
 	go s.acceptConnections()
 
+	return nil
+}
+
+// StartPeriodicProcesses starts the periodic cleanup and sync processes
+func (s *Server) StartPeriodicProcesses() error {
 	// Start unified periodic cleanup system
 	s.cleanupTicker = time.NewTicker(s.cleanupInterval)
 	go s.unifiedPeriodicCleanup()
@@ -142,6 +146,15 @@ func (s *Server) Start() error {
 	go s.periodicChainSync()
 
 	return nil
+}
+
+// Start begins listening for network connections and starts all periodic processes
+func (s *Server) Start() error {
+	if err := s.StartListener(); err != nil {
+		return err
+	}
+
+	return s.StartPeriodicProcesses()
 }
 
 // unifiedPeriodicCleanup handles all periodic cleanup tasks in one place
@@ -359,36 +372,47 @@ func isNetworkClosedError(err error) bool {
 func (s *Server) HandlePeerConnection(conn net.Conn) {
 	defer conn.Close()
 
-	peerAddr := conn.RemoteAddr().String()
-	s.logf("New peer connection from: %s", peerAddr)
+	connAddr := conn.RemoteAddr().String()
+	s.logf("New peer connection from: %s", connAddr)
 
-	peer := s.peerManager.AddPeer(peerAddr)
-	if peer == nil {
-		s.logf("Failed to add peer %s (peer limit or already exists)", peerAddr)
-		return
+	// For incoming connections, we don't know the peer's listening address yet
+	// We'll get it from their handshake. For now, create a temporary peer entry
+	peer := &Peer{
+		Address:    connAddr, // Will be updated to listen address after handshake
+		ConnAddr:   connAddr, // Actual connection endpoint
+		Status:     PeerConnecting,
+		IsOutgoing: false,    // This is an incoming connection
 	}
 
-	peer.Status = PeerConnected
-	s.logf("Peer %s connected", peerAddr)
-
-	// Store the connection for later message sending
+	// Store the connection using the connection address
 	s.peerConnectionsMu.Lock()
-	s.peerConnections[peerAddr] = conn
+	s.peerConnections[connAddr] = conn
 	s.peerConnectionsMu.Unlock()
 
 	defer func() {
+		// Clean up the connection when done
 		s.peerConnectionsMu.Lock()
-		delete(s.peerConnections, peerAddr)
+		delete(s.peerConnections, connAddr)
+		// Also try to delete by peer's actual address if it changed
+		if peer.Address != connAddr {
+			delete(s.peerConnections, peer.Address)
+		}
 		s.peerConnectionsMu.Unlock()
-		peer.Status = PeerDisconnected
+
+		// Mark peer as disconnected if it's in the manager
+		s.peerManager.mu.Lock()
+		if p, exists := s.peerManager.peers[peer.Address]; exists {
+			p.Status = PeerDisconnected
+		}
+		s.peerManager.mu.Unlock()
 	}()
 
 	// Send handshake
-	s.logf("Sending handshake to %s", peerAddr)
-	s.sendHandshake(peerAddr)
+	s.logf("Sending handshake to %s", connAddr)
+	s.sendHandshake(connAddr)
 
 	// Handle incoming messages
-	s.logf("Starting message handler for %s", peerAddr)
+	s.logf("Starting message handler for %s", connAddr)
 	s.handleMessages(conn, peer)
 }
 
@@ -533,9 +557,22 @@ func (s *Server) connectToSeeds() <-chan bool {
 			return
 		}
 
+		// Get current peers to avoid duplicate connections
+		pm := s.GetPeerManager()
+		pm.mu.RLock()
+		currentPeers := make(map[string]bool)
+		for addr := range pm.peers {
+			currentPeers[addr] = true
+		}
+		pm.mu.RUnlock()
+
 		var connectionTasks []<-chan bool
 		for _, seedAddr := range s.config.SeedPeers {
-			connectionTasks = append(connectionTasks, s.connectToPeer(seedAddr))
+			if !currentPeers[seedAddr] {
+				connectionTasks = append(connectionTasks, s.ConnectToPeer(seedAddr))
+			} else {
+				s.logf("Skipping seed %s - already connected", seedAddr)
+			}
 		}
 
 		// Wait for all connection attempts to complete
@@ -572,9 +609,10 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 		// Try connecting to discovered peers we're not already connected to
 		var connectionTasks []<-chan bool
 		connected := 0
+		maxConnections := s.config.PeerRequestConfig.MaxPeersForRequest
 		for _, addr := range discoveredPeers {
-			if !currentPeers[addr] && connected < 5 { // Limit to 5 new connections per cycle
-				connectionTasks = append(connectionTasks, s.connectToPeer(addr))
+			if !currentPeers[addr] && connected < maxConnections {
+				connectionTasks = append(connectionTasks, s.ConnectToPeer(addr))
 				connected++
 			}
 		}
@@ -655,11 +693,23 @@ func (s *Server) requestPeerSharingAndConnect() <-chan bool {
 }
 
 // connectToPeer attempts to connect to a specific peer and waits for handshake completion
-func (s *Server) connectToPeer(address string) <-chan bool {
+func (s *Server) ConnectToPeer(address string) <-chan bool {
 	result := make(chan bool, 1)
 
 	go func() {
 		defer func() { result <- false }() // Default to failure
+
+		// Check if we're already connected to this peer
+		pm := s.GetPeerManager()
+		pm.mu.RLock()
+		existingPeer, exists := pm.peers[address]
+		if exists && existingPeer.Status == PeerConnected {
+			pm.mu.RUnlock()
+			s.logf("Already connected to peer %s, skipping connection attempt", address)
+			result <- true // Already connected counts as success
+			return
+		}
+		pm.mu.RUnlock()
 
 		s.logf("Attempting to connect to peer: %s", address)
 
@@ -669,20 +719,52 @@ func (s *Server) connectToPeer(address string) <-chan bool {
 			return
 		}
 
-		// Add peer to our peer manager
-		peer := s.GetPeerManager().AddPeer(address)
-		if peer != nil {
+		// Create peer entry for outgoing connection
+		peer := &Peer{
+			Address:    address,                     // Listen address (where we're connecting to)
+			ConnAddr:   conn.LocalAddr().String(),   // Our side of the connection
+			Status:     PeerConnecting,
+			IsOutgoing: true,                        // We initiated this connection
+		}
+
+		// Add to peer manager
+		actualPeer := s.GetPeerManager().AddPeer(address)
+		if actualPeer != nil {
+			// Update the peer object with our info
+			actualPeer.ConnAddr = conn.LocalAddr().String()
+			actualPeer.IsOutgoing = true
+			peer = actualPeer
 			s.logf("TCP connection established to peer: %s", address)
 
-			// Start the connection handler in background
-			go s.HandlePeerConnection(conn)
+			// For outgoing connections, we handle it differently
+			// Store the connection
+			s.peerConnectionsMu.Lock()
+			s.peerConnections[address] = conn
+			s.peerConnectionsMu.Unlock()
+
+			// Send handshake immediately
+			s.sendHandshake(address)
+
+			// Start message handler (but NOT HandlePeerConnection as that's for incoming)
+			go func() {
+				defer conn.Close()
+				defer func() {
+					s.peerConnectionsMu.Lock()
+					delete(s.peerConnections, address)
+					s.peerConnectionsMu.Unlock()
+					peer.Status = PeerDisconnected
+				}()
+
+				peer.Status = PeerConnected
+				s.handleMessages(conn, peer)
+			}()
 
 			// Wait for handshake to complete using channels
 			handshakeComplete := make(chan bool, 1)
 
 			go func() {
 				// Monitor for handshake completion
-				timeout := time.NewTimer(5 * time.Second)
+				timeout := time.NewTimer(10 * time.Second) // Increased timeout for race conditions
 				defer timeout.Stop()
 
 				ticker := time.NewTicker(50 * time.Millisecond)
@@ -695,12 +777,12 @@ func (s *Server) connectToPeer(address string) <-chan bool {
 						handshakeComplete <- false
 						return
 					case <-ticker.C:
-						// Check if peer is now connected (handshake completed)
+						// Check if ANY connection to this peer exists (not just the one we initiated)
 						pm := s.GetPeerManager()
 						pm.mu.RLock()
 						if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
 							pm.mu.RUnlock()
-							s.logf("Handshake completed with peer: %s", address)
+							s.logf("Peer connection established: %s (may be incoming due to race)", address)
 							handshakeComplete <- true
 							return
 						}
@@ -761,11 +843,11 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 			// No connections, try seed peers
 			s.logf("No connected peers, attempting to connect to seed peers")
 			<-s.connectToSeeds() // Wait for seed connections to complete
-		} else if len(connected) < 5 {
+		} else if len(connected) < 15 {
 			// Few connections, try to get more
 			<-s.connectToDiscoveredPeers()
 			<-s.requestPeerSharingAndConnect()
-		} else if len(connected) < 10 {
+		} else if len(connected) < 20 {
 			<-s.connectToDiscoveredPeers()
 		}
 
@@ -773,4 +855,20 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 	}()
 
 	return done
+}
+
+// shouldKeepExistingConnection determines which connection to keep when duplicates are detected
+// Uses a deterministic rule based on node IDs to ensure both nodes make the same decision
+func (s *Server) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer, remoteNodeID string) bool {
+	// Use lexicographic comparison of node IDs to make consistent decisions across nodes
+	// The node with the smaller ID keeps its outgoing connection
+	localNodeID := s.config.NodeID
+
+	if localNodeID < remoteNodeID {
+		// We have the smaller ID, so we keep our outgoing connections
+		return existingPeer.IsOutgoing
+	} else {
+		// Remote has the smaller ID, so we keep incoming connections (their outgoing)
+		return !existingPeer.IsOutgoing
+	}
 }

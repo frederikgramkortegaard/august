@@ -3,15 +3,38 @@ package tests
 import (
 	"august/blockchain"
 	"august/node"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-var testNodeConfig = node.Config{
-	Port:      "9372",
-	NodeID:    "test-node-id",
-	SeedPeers: []string{""},
-	DBName:    "testdb",
+var testNodeConfig node.Config
+
+// TestMain runs before all tests and sets up temporary directories
+func TestMain(m *testing.M) {
+	// Create a temporary directory for all tests
+	tempDir, err := os.MkdirTemp("", "august-node-tests-*")
+	if err != nil {
+		panic("Failed to create temp directory: " + err.Error())
+	}
+
+	// Setup test config with temp database path
+	testNodeConfig = node.Config{
+		Port:      "9372",
+		NodeID:    "test-node-id",
+		SeedPeers: []string{""},
+		DBName:    filepath.Join(tempDir, "testdb"),
+	}
+
+	// Run all tests
+	code := m.Run()
+
+	// Cleanup: Remove temporary directory
+	os.RemoveAll(tempDir)
+
+	// Exit with the same code as the tests
+	os.Exit(code)
 }
 
 func TestNewFullNode(t *testing.T) {

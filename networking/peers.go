@@ -16,12 +16,12 @@ const (
 )
 
 type Peer struct {
-	ID       string
-	Address  string
-	LastSeen time.Time
-	Status   PeerStatus
-	BanScore int       // Accumulated misbehavior score
-	BannedUntil time.Time // When ban expires
+	ID         string
+	Address    string // Listen address (where peer accepts connections)
+	ConnAddr   string // Connection address (actual TCP endpoint, might be ephemeral)
+	LastSeen   time.Time
+	Status     PeerStatus
+	IsOutgoing bool // True if we initiated the connection
 }
 
 type PeerManager struct {

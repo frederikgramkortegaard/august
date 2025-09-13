@@ -40,45 +40,42 @@ func NewFullNode(config Config) *FullNode {
 	}
 }
 
-// Start initializes and starts all components and returns when ready
+// Start initializes and starts all components (convenience method)
 func (n *FullNode) Start() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		// 1. Check if blockchain already exists, if not initialize with genesis
-		chain, err := n.Store.GetChain()
-		if err != nil {
-			log.Printf("%s\tFailed to get existing chain: %v", n.Config.NodeID, err)
+		// 1. Initialize chain
+		if err := n.InitializeChain(); err != nil {
+			log.Printf("%s\tFailed to initialize chain: %v", n.Config.NodeID, err)
 			ready <- false
 			return
 		}
 
-		if len(chain.Blocks) == 0 {
-			// No existing chain, initialize with genesis
-			if err := n.Store.AddBlock(blockchain.GenesisBlock); err != nil {
-				log.Printf("%s\tFailed to add genesis block: %v", n.Config.NodeID, err)
-				ready <- false
-				return
-			}
-			log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
-		} else {
-			// Chain already exists, log current state
-			log.Printf("%s\tLoaded existing blockchain with %d blocks (height %d)",
-				n.Config.NodeID, len(chain.Blocks), chain.Blocks[len(chain.Blocks)-1].Header.Height)
-		}
-
-		// 2. Start network server and wait for it to be ready
-		networkReady := n.startNetworking()
-		if !<-networkReady {
-			log.Printf("%s\tFailed to start network server", n.Config.NodeID)
+		// 2. Start networking
+		if !<-n.StartNetworking() {
+			log.Printf("%s\tFailed to start networking", n.Config.NodeID)
 			ready <- false
 			return
 		}
 
-		// 3. Start peer discovery (network server is ready)
-		discoveryReady := n.NetworkServer.StartDiscovery()
-		if !<-discoveryReady {
+		// 3. Connect to seeds
+		if !<-n.ConnectToSeeds() {
+			log.Printf("%s\tFailed to connect to seeds", n.Config.NodeID)
+			ready <- false
+			return
+		}
+
+		// 4. Start discovery
+		if !<-n.StartDiscovery() {
 			log.Printf("%s\tFailed to start discovery", n.Config.NodeID)
+			ready <- false
+			return
+		}
+
+		// 5. Start sync
+		if !<-n.StartSync() {
+			log.Printf("%s\tFailed to start sync", n.Config.NodeID)
 			ready <- false
 			return
 		}
@@ -95,6 +92,109 @@ func (n *FullNode) Start() <-chan bool {
 	return ready
 }
 
+// InitializeChain checks if blockchain exists, if not initializes with genesis
+func (n *FullNode) InitializeChain() error {
+	chain, err := n.Store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get existing chain: %w", err)
+	}
+
+	if len(chain.Blocks) == 0 {
+		// No existing chain, initialize with genesis
+		if err := n.Store.AddBlock(blockchain.GenesisBlock); err != nil {
+			return fmt.Errorf("failed to add genesis block: %w", err)
+		}
+		log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
+	} else {
+		// Chain already exists, log current state
+		log.Printf("%s\tLoaded existing blockchain with %d blocks (height %d)",
+			n.Config.NodeID, len(chain.Blocks), chain.Blocks[len(chain.Blocks)-1].Header.Height)
+	}
+	return nil
+}
+
+// StartNetworking starts just the network server (TCP listener)
+func (n *FullNode) StartNetworking() <-chan bool {
+	return n.startNetworking()
+}
+
+// StartDiscovery starts peer discovery (requires networking to be started)
+func (n *FullNode) StartDiscovery() <-chan bool {
+	ready := make(chan bool, 1)
+	go func() {
+		if n.NetworkServer == nil {
+			log.Printf("%s\tNetwork server not started - call StartNetworking() first", n.Config.NodeID)
+			ready <- false
+			return
+		}
+
+		discoveryReady := n.NetworkServer.StartDiscovery()
+		ready <- <-discoveryReady
+	}()
+	return ready
+}
+
+// ConnectToSeeds connects to configured seed peers (requires networking)
+func (n *FullNode) ConnectToSeeds() <-chan bool {
+	ready := make(chan bool, 1)
+	go func() {
+		if n.NetworkServer == nil {
+			log.Printf("%s\tNetwork server not started - call StartNetworking() first", n.Config.NodeID)
+			ready <- false
+			return
+		}
+
+		if len(n.Config.SeedPeers) == 0 {
+			log.Printf("%s\tNo seed peers configured", n.Config.NodeID)
+			ready <- true
+			return
+		}
+
+		// Connect to each seed peer
+		var connectionTasks []<-chan bool
+		for _, seedAddr := range n.Config.SeedPeers {
+			connectionTasks = append(connectionTasks, n.NetworkServer.ConnectToPeer(seedAddr))
+		}
+
+		// Wait for all connection attempts to complete
+		successCount := 0
+		for _, task := range connectionTasks {
+			if <-task {
+				successCount++
+			}
+		}
+
+		log.Printf("%s\tSeed connection attempts completed: %d/%d successful",
+			n.Config.NodeID, successCount, len(n.Config.SeedPeers))
+		ready <- successCount > 0 // Success if at least one connection worked
+	}()
+	return ready
+}
+
+// StartSync starts chain synchronization (requires networking and discovery)
+func (n *FullNode) StartSync() <-chan bool {
+	ready := make(chan bool, 1)
+	go func() {
+		if n.NetworkServer == nil {
+			log.Printf("%s\tNetwork server not started - call StartNetworking() first", n.Config.NodeID)
+			ready <- false
+			return
+		}
+
+		// Start the periodic processes (cleanup and chain sync)
+		err := n.NetworkServer.StartPeriodicProcesses()
+		if err != nil {
+			log.Printf("%s\tFailed to start periodic processes: %v", n.Config.NodeID, err)
+			ready <- false
+			return
+		}
+
+		log.Printf("%s\tChain synchronization active", n.Config.NodeID)
+		ready <- true
+	}()
+	return ready
+}
+
 // startNetworking starts network server and signals when ready
 func (n *FullNode) startNetworking() <-chan bool {
 	ready := make(chan bool, 1)
@@ -103,15 +203,16 @@ func (n *FullNode) startNetworking() <-chan bool {
 		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
 
 		networkConfig := networking.Config{
-			Port:          n.Config.Port,
-			NodeID:        n.Config.NodeID,
-			Store:         n.Store,
-			SeedPeers:     n.Config.SeedPeers,
-			ReqRespConfig: networking.DefaultReqRespConfig(),
+			Port:              n.Config.Port,
+			NodeID:            n.Config.NodeID,
+			Store:             n.Store,
+			SeedPeers:         n.Config.SeedPeers,
+			ReqRespConfig:     networking.DefaultReqRespConfig(),
+			PeerRequestConfig: networking.DefaultPeerRequestConfig(),
 		}
 		n.NetworkServer = networking.NewServer(networkConfig)
 
-		err := n.NetworkServer.Start()
+		err := n.NetworkServer.StartListener()
 		if err != nil {
 			log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
 			ready <- false
