@@ -35,6 +35,7 @@ func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	h.Write(uint64ToBytes(tsx.Fee))
 	h.Write(uint64ToBytes(tsx.Amount))
 	h.Write(uint64ToBytes(tsx.Nonce))
+	h.Write(uint64ToBytes(tsx.Timestamp))
 	return h.Sum(nil)
 }
 

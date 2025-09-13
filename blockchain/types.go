@@ -76,6 +76,7 @@ type Transaction struct {
 	Amount    uint64    `json:"amount"`
 	Signature Signature `json:"signature"`
 	Nonce     uint64    `json:"nonce"`
+	Timestamp uint64    `json:"timestamp"` // Unix timestamp when transaction was created
 }
 
 type Hash32 [32]byte

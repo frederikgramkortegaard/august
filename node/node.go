@@ -6,15 +6,14 @@ import (
 	store "august/storage"
 	"fmt"
 	"log"
-
-	"github.com/cockroachdb/pebble"
 )
 
 // Config holds all configuration for a full node
 type Config struct {
-	Port   string
+	Port      string
 	NodeID    string
 	SeedPeers []string
+	DBName    string
 }
 
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
@@ -26,13 +25,13 @@ type FullNode struct {
 	Config Config
 
 	// Components (each package handles its own concern)
-	NetworkServer *networking.Server    // Network message handling
+	NetworkServer *networking.Server // Network message handling
 }
 
 // NewFullNode creates a node that runs all services
 func NewFullNode(config Config) *FullNode {
 	// Create shared store
-	chainStore := store.NewPebbleChainStore("demo", &pebble.Options{})
+	chainStore := store.NewPersistentChainStore(config.DBName)
 
 	return &FullNode{
 		store:  chainStore,
@@ -128,7 +127,6 @@ func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
 
 	return ready
 }
-
 
 // Stop gracefully shuts down the FullNode
 func (n *FullNode) Stop() error {

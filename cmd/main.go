@@ -29,9 +29,10 @@ func main() {
 
 	// Create node configuration
 	config := node.Config{
-		Port:   *port,
+		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
+		DBName:    "augustdb",
 	}
 
 	// Create and start full node

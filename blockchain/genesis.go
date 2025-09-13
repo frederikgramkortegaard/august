@@ -13,11 +13,12 @@ func init() {
 	// Genesis coinbase transaction gives 10M coins to FirstUser
 	genesisCoinbase := Transaction{
 		From:      PublicKey{}, // Coinbase (empty)
-		To:        FirstUser,   // Send to FirstUser  
+		To:        FirstUser,   // Send to FirstUser
 		Amount:    10000000,    // 10 million initial coins
 		Fee:       0,           // No fee for coinbase
 		Nonce:     0,           // Coinbase doesn't need nonce
 		Signature: Signature{}, // Coinbase doesn't need signature
+		Timestamp: 1704067200,  // Fixed timestamp for genesis (Jan 1, 2024)
 	}
 
 	// Pre-computed genesis block header (properly mined with valid nonce and merkle root)
