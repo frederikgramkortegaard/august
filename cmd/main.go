@@ -14,6 +14,7 @@ func main() {
 	port := flag.String("port", "9372", "Network port")
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
 	seeds := flag.String("seeds", "", "Comma-separated seed peers")
+	dbname := flag.String("dbname", "augustdb", "Name of the Pebble DB")
 	flag.Parse()
 
 	// Parse seed peers
@@ -32,7 +33,7 @@ func main() {
 		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
-		DBName:    "augustdb",
+		DBName:    dbname,
 	}
 
 	// Create and start full node
