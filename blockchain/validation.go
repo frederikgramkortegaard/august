@@ -6,14 +6,22 @@ import (
 	"log"
 )
 
+// DebugLogging controls whether to output verbose validation logs
+var DebugLogging = false
+
+// debugLog logs a message only if debug logging is enabled
+func debugLog(format string, args ...interface{}) {
+	if DebugLogging {
+		log.Printf(format, args...)
+	}
+}
+
 // ErrMissingParent is returned when a block's parent is not found in the chain
 type ErrMissingParent struct {
 	Hash Hash32
 }
 
-func (e ErrMissingParent) Error() string {
-	return fmt.Sprintf("missing parent block: %x", e.Hash[:8])
-}
+func (e ErrMissingParent) Error() string { return "missing parent" }
 
 // ErrSwitchChain is returned when a block triggers a chain reorganization
 type ErrSwitchChain struct {
@@ -21,8 +29,65 @@ type ErrSwitchChain struct {
 	CommonAncestor *Block
 }
 
-func (e ErrSwitchChain) Error() string {
-	return "chain reorganization required"
+func (e ErrSwitchChain) Error() string { return "chain switch" }
+
+// ValidateHeaderStructure validates a single block header without chain context
+// This is used by networking layer to validate headers from peers
+func ValidateHeaderStructure(header *BlockHeader) error {
+	// 1. Proof of Work - check if hash meets the target specified in header
+	hash := HashBlockHeader(header)
+	if !BlockHashMeetsDifficulty(hash, header.Bits) {
+		difficulty := CalculateDifficulty(header.Bits)
+		diffFloat, _ := difficulty.Float64()
+		return fmt.Errorf("header does not meet target difficulty %.2f, hash: %x", diffFloat, hash[:8])
+	}
+
+	// 2. Basic field validation
+	if header.Height == 0 {
+		// Genesis block validation
+		genesisHash := HashBlockHeader(&GenesisBlock.Header)
+		headerHash := HashBlockHeader(header)
+		if genesisHash != headerHash {
+			return fmt.Errorf("invalid genesis header")
+		}
+	}
+
+	// 3. Timestamp sanity (not too far in future)
+	// TODO: Add timestamp validation if needed
+
+	return nil
+}
+
+// ValidateBlockStructure validates a single block without chain context
+// This is used by networking layer to validate blocks from peers
+func ValidateBlockStructure(block *Block) error {
+	// 1. Validate the header first
+	if err := ValidateHeaderStructure(&block.Header); err != nil {
+		return fmt.Errorf("invalid block header: %w", err)
+	}
+
+	// 2. Merkle root validation
+	merkle := MerkleTransactions(block.Transactions)
+	if merkle != block.Header.MerkleRoot {
+		return fmt.Errorf("merkle root mismatch")
+	}
+
+	// 3. Basic transaction structure validation
+	for i, tx := range block.Transactions {
+		if i == 0 {
+			// Coinbase transaction - should have zero hash as From
+			if tx.From != (PublicKey{}) {
+				// Actually, only check this for non-coinbase
+			}
+		} else {
+			// Regular transaction - validate signature structure
+			if !validateTransactionSignature(&tx) {
+				return fmt.Errorf("invalid transaction signature in transaction %d", i)
+			}
+		}
+	}
+
+	return nil
 }
 
 func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
@@ -50,15 +115,9 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 			return fmt.Errorf("block is not genesis")
 		}
 	} else {
-		// Check if we have the parent block
-		parentExists := false
-		for _, chainBlock := range chain.Blocks {
-			if HashBlockHeader(&chainBlock.Header) == block.Header.PreviousHash {
-				prevBlock = chainBlock
-				parentExists = true
-				break
-			}
-		}
+		// Check if we have the parent block using O(1) lookup
+		var parentExists bool
+		prevBlock, parentExists = chain.GetBlockByHash(block.Header.PreviousHash)
 
 		// Parent block not found - this is an orphan
 		if !parentExists {
@@ -66,7 +125,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		}
 
 		// Check if this is a fork (parent exists but is not the tip)
-		if len(chain.Blocks) > 0 && HashBlockHeader(&chain.Blocks[len(chain.Blocks)-1].Header) != block.Header.PreviousHash {
+		if chain.Tip != nil && HashBlockHeader(&chain.Tip.Header) != block.Header.PreviousHash {
 			// This is a fork - let ValidateAndApplyBlock handle chain switching
 			return ErrSwitchChain{Block: block, CommonAncestor: prevBlock}
 		}
@@ -79,7 +138,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		diffFloat, _ := difficulty.Float64()
 		return fmt.Errorf("block does not meet target difficulty %.2f, hash: %x", diffFloat, hash[:8])
 	}
-	
+
 	// 2b. Verify the target bits are correct for this height
 	expectedBits := GetTargetBits(currentHeight, chain.Blocks)
 	if block.Header.Bits != expectedBits {
@@ -102,90 +161,31 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 
 // validateTransactionSignature validates just the cryptographic signature
 func validateTransactionSignature(tsx *Transaction) bool {
-	log.Printf("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
+	debugLog("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
 	signingData := GetSigningBytesFromTransaction(tsx)
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
 	valid := ed25519.Verify(publicKey, signingData, signature)
 	if !valid {
-		log.Printf("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
+		debugLog("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
 	} else {
-		log.Printf("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
+		debugLog("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
 	}
 	return valid
 }
 
 // ValidateAndApplyTransaction validates and applies a single transaction to account states
+// This is a convenience function that combines separate validation and application
 func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
-	log.Printf("VALIDATION\tValidating transaction: %x -> %x, amount=%d, nonce=%d",
-		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
-
-	// Coinbase transactions - just apply
-	if tsx.From == (PublicKey{}) {
-		log.Printf("VALIDATION\tProcessing coinbase transaction")
-
-		// Credit the recipient
-		if toState, ok := accountStates[tsx.To]; ok {
-			toState.Balance += tsx.Amount
-		} else {
-			accountStates[tsx.To] = &AccountState{
-				Balance: tsx.Amount,
-				Address: tsx.To,
-				Nonce:   0,
-			}
-			fmt.Printf("Created new account via coinbase: %x\n", tsx.To[:])
-		}
-		return true
-	}
-
-	// Regular transactions - validate first, then apply
-
-	// 1. Signature validation
-	if !validateTransactionSignature(tsx) {
-		log.Printf("VALIDATION\tTRANSACTION REJECTED: Invalid signature")
+	// First validate
+	if err := ValidateTransaction(tsx, accountStates); err != nil {
+		debugLog("VALIDATION\tTRANSACTION REJECTED: %v", err)
 		return false
 	}
 
-	// 2. Check sender account exists and has sufficient balance
-	fromState, exists := accountStates[tsx.From]
-	if !exists {
-		log.Printf("VALIDATION\tTRANSACTION REJECTED: Sender account does not exist: %x", tsx.From[:8])
-		return false
-	}
-
-	log.Printf("VALIDATION\tSender %x has balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
-
-	if fromState.Balance < tsx.Amount+tsx.Fee {
-		log.Printf("VALIDATION\tTRANSACTION REJECTED: Insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount+tsx.Fee)
-		return false
-	}
-
-	// 3. Nonce validation (prevent double-spend)
-	if tsx.Nonce != (fromState.Nonce + 1) {
-		log.Printf("VALIDATION\tTRANSACTION REJECTED: Invalid nonce: expected %d, got %d", fromState.Nonce+1, tsx.Nonce)
-		return false
-	}
-
-	// 4. All validation passed - apply the transaction
-	log.Printf("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
-
-	// Deduct from sender (amount + fee)
-	fromState.Balance -= (tsx.Amount + tsx.Fee)
-	fromState.Nonce += 1
-	log.Printf("VALIDATION\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
-
-	// Credit recipient
-	if toState, ok := accountStates[tsx.To]; ok {
-		toState.Balance += tsx.Amount
-	} else {
-		accountStates[tsx.To] = &AccountState{
-			Balance: tsx.Amount,
-			Address: tsx.To,
-			Nonce:   0,
-		}
-		fmt.Printf("Created new account: %x\n", tsx.To[:])
-	}
-
+	// Then apply
+	debugLog("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
+	ApplyTransaction(tsx, accountStates)
 	return true
 }
 
@@ -210,8 +210,14 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 		return fmt.Errorf("sender account does not exist: %x", tsx.From[:8])
 	}
 
-	if fromState.Balance < tsx.Amount+tsx.Fee {
-		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, tsx.Amount+tsx.Fee)
+	// Check for overflow in amount + fee
+	total := tsx.Amount + tsx.Fee
+	if total < tsx.Amount || total < tsx.Fee {
+		return fmt.Errorf("transaction amount + fee overflow")
+	}
+
+	if fromState.Balance < total {
+		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, total)
 	}
 
 	// 3. Nonce validation (prevent double-spend)
@@ -223,9 +229,60 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	return nil
 }
 
-// ValidateAndApplyBlock validates block structure, applies transactions, and adds block to chain
-func ValidateAndApplyBlock(block *Block, chain *Chain) error {
+// ValidateStandaloneTransaction validates a transaction against current chain state for mempool
+// This is used by the networking layer when receiving broadcast transactions before they're in blocks
+func ValidateStandaloneTransaction(tsx *Transaction, chain *Chain) error {
+	// Use the current chain's account states for validation
+	return ValidateTransaction(tsx, chain.AccountStates)
+}
 
+// ApplyTransaction applies a valid transaction to account states (assumes already validated)
+func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) {
+	debugLog("APPLY\tApplying transaction: %x -> %x, amount=%d, nonce=%d",
+		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
+
+	// Coinbase transactions
+	if tsx.From == (PublicKey{}) {
+		debugLog("APPLY\tProcessing coinbase transaction")
+
+		// Credit the recipient
+		if toState, ok := accountStates[tsx.To]; ok {
+			toState.Balance += tsx.Amount
+		} else {
+			accountStates[tsx.To] = &AccountState{
+				Balance: tsx.Amount,
+				Address: tsx.To,
+				Nonce:   0,
+			}
+			fmt.Printf("Created new account via coinbase: %x\n", tsx.To[:])
+		}
+		return
+	}
+
+	// Regular transactions
+	fromState := accountStates[tsx.From] // Should exist (validated earlier)
+
+	// Deduct from sender (amount + fee) - overflow already checked in validation
+	total := tsx.Amount + tsx.Fee
+	fromState.Balance -= total
+	fromState.Nonce += 1
+	debugLog("APPLY\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
+
+	// Credit recipient
+	if toState, ok := accountStates[tsx.To]; ok {
+		toState.Balance += tsx.Amount
+	} else {
+		accountStates[tsx.To] = &AccountState{
+			Balance: tsx.Amount,
+			Address: tsx.To,
+			Nonce:   0,
+		}
+		fmt.Printf("Created new account: %x\n", tsx.To[:])
+	}
+}
+
+// ValidateBlock validates a block and its transactions WITHOUT applying changes
+func ValidateBlock(block *Block, chain *Chain) error {
 	// First validate block structure (PoW, hashes, etc.)
 	if err := validateBlockStructure(block, chain); err != nil {
 		// Propagate ErrSwitchChain and ErrMissingParent directly, wrap other errors
@@ -238,13 +295,25 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 		return fmt.Errorf("block structure validation failed: %w", err)
 	}
 
+	// Create a copy of account states for validation without modifying original
+	accountStatesCopy := make(map[PublicKey]*AccountState)
+	for k, v := range chain.AccountStates {
+		accountStatesCopy[k] = &AccountState{
+			Address: v.Address,
+			Balance: v.Balance,
+			Nonce:   v.Nonce,
+		}
+	}
+
 	var tsxfeesum uint64 = 0
-	// Then validate and apply each transaction incrementally
+	// Validate each transaction without applying changes
 	for i, tsx := range block.Transactions {
 		tsxfeesum += tsx.Fee
-		if !ValidateAndApplyTransaction(&tsx, chain.AccountStates) {
-			return fmt.Errorf("transaction %d failed validation", i)
+		if err := ValidateTransaction(&tsx, accountStatesCopy); err != nil {
+			return fmt.Errorf("transaction %d failed validation: %w", i, err)
 		}
+		// Apply to the copy for subsequent transaction validation
+		ApplyTransaction(&tsx, accountStatesCopy)
 	}
 
 	// Validate Coinbase tsx amount is Fee's + Block Reward
@@ -252,9 +321,29 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 		return fmt.Errorf("Coinbase transaction is not Transaction Fee's + BlockReward")
 	}
 
-	// Add the validated block to the chain
-	chain.Blocks = append(chain.Blocks, block)
+	return nil
+}
 
+// ApplyBlock applies a validated block to the chain (assumes already validated)
+func ApplyBlock(block *Block, chain *Chain) {
+	// Apply each transaction to the chain state
+	for _, tsx := range block.Transactions {
+		ApplyTransaction(&tsx, chain.AccountStates)
+	}
+
+	// Add the block to the chain and update tip/index
+	chain.AddBlock(block)
+}
+
+// ValidateAndApplyBlock validates block structure, applies transactions, and adds block to chain
+func ValidateAndApplyBlock(block *Block, chain *Chain) error {
+	// First validate
+	if err := ValidateBlock(block, chain); err != nil {
+		return err
+	}
+
+	// Then apply
+	ApplyBlock(block, chain)
 	return nil
 }
 

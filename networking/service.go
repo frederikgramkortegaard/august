@@ -399,7 +399,15 @@ func RequestHeadersByHeight(server *Server, startHeight uint64, count uint64) ([
 				return
 			}
 
-			server.logf("Received %d headers from %s starting at height %d", len(headersPayload.Headers), p.Address, startHeight)
+			// Validate each header structure
+			for i, header := range headersPayload.Headers {
+				if err := blockchain.ValidateHeaderStructure(&header); err != nil {
+					responses <- headerResponse{nil, fmt.Errorf("invalid header %d from peer: %w", i, err), p.Address}
+					return
+				}
+			}
+
+			server.logf("Received %d valid headers from %s starting at height %d", len(headersPayload.Headers), p.Address, startHeight)
 			responses <- headerResponse{headersPayload.Headers, nil, p.Address}
 		}(peer)
 	}
@@ -471,7 +479,15 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 				return
 			}
 
-			server.logf("Received %d headers from %s by hash", len(headersPayload.Headers), p.Address)
+			// Validate each header structure
+			for i, header := range headersPayload.Headers {
+				if err := blockchain.ValidateHeaderStructure(&header); err != nil {
+					responses <- headerResponse{nil, fmt.Errorf("invalid header %d from peer: %w", i, err), p.Address}
+					return
+				}
+			}
+
+			server.logf("Received %d valid headers from %s by hash", len(headersPayload.Headers), p.Address)
 			responses <- headerResponse{headersPayload.Headers, nil, p.Address}
 		}(peer)
 	}
@@ -542,7 +558,15 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 				return
 			}
 
-			server.logf("Received %d requested blocks from %s", len(blocksPayload.Blocks), p.Address)
+			// Validate each block structure
+			for i, block := range blocksPayload.Blocks {
+				if err := blockchain.ValidateBlockStructure(block); err != nil {
+					responses <- peerResponse{nil, fmt.Errorf("invalid block %d from peer: %w", i, err), p.Address}
+					return
+				}
+			}
+
+			server.logf("Received %d valid blocks from %s", len(blocksPayload.Blocks), p.Address)
 			responses <- peerResponse{blocksPayload.Blocks, nil, p.Address}
 		}(peer)
 	}

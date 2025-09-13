@@ -10,20 +10,21 @@ type NonceType = uint64
 
 const (
 	BlockReward     = 50     // Base block reward for mining
-	HalvingInterval = 210000 // Blocks between reward halvings (optional for future)
+	HalvingInterval = 210000 // Blocks between reward halvings
 )
 
 type BlockCreationParams struct {
 	Version      uint64
 	PreviousHash [32]byte
 	Height       uint64
-	PreviousWork string // Total work of previous block (big.Int as string)
+	PreviousWork string // Total work of previous block as decimal string
 	Coinbase     Transaction
 	Transactions []Transaction
 	Timestamp    uint64
-	TargetBits   uint32 // Target in compact format (replaces Difficulty)
+	TargetBits   uint32 // Target in compact format
 }
 
+// NewBlock creates a new block and mines it to satisfy targetBits
 func NewBlock(params BlockCreationParams) (Block, error) {
 	ts := params.Timestamp
 	if ts == 0 {
@@ -31,50 +32,49 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	}
 
 	// Combine coinbase and regular transactions
-	tsxs := make([]Transaction, 0, len(params.Transactions)+1)
-	tsxs = append(tsxs, params.Coinbase)
-	tsxs = append(tsxs, params.Transactions...)
+	tsxs := append([]Transaction{params.Coinbase}, params.Transactions...)
 
 	// Calculate transaction fees
-	var tsxfeesum uint64 = 0
-	for _, tsx := range params.Transactions {
-		tsxfeesum += tsx.Fee
+	var feeSum uint64
+	for _, tx := range params.Transactions {
+		feeSum += tx.Fee
 	}
 
-	// Validate Coinbase transaction amount is BlockReward + Fees
-	if params.Coinbase.Amount != tsxfeesum+BlockReward {
-		return Block{}, fmt.Errorf("Coinbase transaction is not Transaction Fee's + BlockReward")
+	// Validate Coinbase amount
+	if params.Coinbase.Amount != BlockReward+feeSum {
+		return Block{}, fmt.Errorf("Coinbase amount (%d) must equal BlockReward (%d) + transaction fees (%d)",
+			params.Coinbase.Amount, BlockReward, feeSum)
 	}
 
-	// Calculate merkle root
-	merkle := MerkleTransactions(tsxs)
+	// Calculate Merkle root
+	merkleRoot := MerkleTransactions(tsxs)
 
-	// Calculate work for this block using Bitcoin-style calculation
+	// Calculate this block's work
 	blockWork := GetBlockWork(params.TargetBits)
 
-	// Calculate total work (previous work + this block's work)
+	// Total work = previous work + this block's work
 	totalWork := AddWork(params.PreviousWork, blockWork.String())
 
-	// Create header
+	// Initialize block header
 	header := BlockHeader{
 		Version:      params.Version,
 		PreviousHash: params.PreviousHash,
 		Height:       params.Height,
 		Timestamp:    ts,
 		Nonce:        0,
-		MerkleRoot:   merkle,
+		MerkleRoot:   merkleRoot,
 		Bits:         params.TargetBits,
 		TotalWork:    totalWork,
 	}
 
-	// Mine the header to find valid nonce
+	// Mine the block to find a valid nonce
 	nonce, err := MineCorrectNonce(&header, params.TargetBits)
 	if err != nil {
-		return Block{}, errors.New("could not find a valid nonce")
+		return Block{}, err
 	}
 	header.Nonce = nonce
 
-	// Create and return the block
+	// Construct the final block
 	block := Block{
 		Header:       header,
 		Transactions: tsxs,
@@ -83,8 +83,8 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	return block, nil
 }
 
+// MineCorrectNonce finds a nonce such that the block hash meets the target
 func MineCorrectNonce(header *BlockHeader, targetBits uint32) (NonceType, error) {
-	// Mine until we find a hash that meets the target
 	for {
 		hash := HashBlockHeader(header)
 		if BlockHashMeetsDifficulty(hash, targetBits) {
@@ -92,9 +92,9 @@ func MineCorrectNonce(header *BlockHeader, targetBits uint32) (NonceType, error)
 		}
 		header.Nonce++
 
-		// Prevent infinite loop in case of error
+		// Avoid infinite loop if nonce overflows
 		if header.Nonce == ^uint64(0) {
-			return 0, errors.New("nonce overflow")
+			return 0, errors.New("nonce overflow, could not mine block")
 		}
 	}
 }

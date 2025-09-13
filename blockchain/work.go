@@ -4,42 +4,34 @@ import (
 	"math/big"
 )
 
-// Calculate 2^256 - 1
-var maxTarget = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+// Bitcoin mainnet difficulty-1 target
+// 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+var maxTarget, _ = new(big.Int).SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)
 
-// getMaxTarget returns the maximum target (2^256 - 1) on demand
 func getMaxTarget() *big.Int {
-	return maxTarget
+	return new(big.Int).Set(maxTarget) // return a copy for safety
 }
 
-// CalculateBlockWork calculates the amount of work represented by a given difficulty
-// Work = 2^256 / difficulty_target
+// CalculateBlockWork computes the expected work for a given difficulty.
+// work = floor(2^256 / (target + 1))
 func CalculateBlockWork(difficulty uint64) *big.Int {
 	if difficulty == 0 {
 		return big.NewInt(0)
 	}
 
-	// Calculate target from difficulty
-	// target = max_target / difficulty
-	maxTarget := getMaxTarget()
-	target := new(big.Int).Div(maxTarget, big.NewInt(int64(difficulty)))
+	target := new(big.Int).Div(getMaxTarget(), big.NewInt(int64(difficulty)))
 
-	// Work = 2^256 / target
-	// But since target = max_target / difficulty, we have:
-	// Work = 2^256 / (max_target / difficulty) = (2^256 * difficulty) / max_target
-	// Since max_target ≈ 2^256, this simplifies to approximately: difficulty
-	// But let's do it properly:
+	two256 := new(big.Int).Lsh(big.NewInt(1), 256)
+	denom := new(big.Int).Add(target, big.NewInt(1))
 
-	work := new(big.Int).Div(maxTarget, target)
-	return work
+	return new(big.Int).Div(two256, denom)
 }
 
-// AddWork adds two work values (both as big.Int strings)
+// AddWork adds two chainwork values given as decimal strings.
 func AddWork(work1Str, work2Str string) string {
 	work1 := new(big.Int)
 	work2 := new(big.Int)
 
-	// Parse existing work values
 	if work1Str != "" {
 		work1.SetString(work1Str, 10)
 	}
@@ -47,16 +39,11 @@ func AddWork(work1Str, work2Str string) string {
 		work2.SetString(work2Str, 10)
 	}
 
-	// Add them
-	total := new(big.Int).Add(work1, work2)
-	return total.String()
+	return new(big.Int).Add(work1, work2).String()
 }
 
-// CompareWork compares two work values, returns:
-// -1 if work1 < work2
-//
-//	0 if work1 == work2
-//	1 if work1 > work2
+// CompareWork compares two chainwork values given as decimal strings.
+// Returns -1 if work1 < work2, 0 if equal, 1 if work1 > work2.
 func CompareWork(work1Str, work2Str string) int {
 	work1 := new(big.Int)
 	work2 := new(big.Int)

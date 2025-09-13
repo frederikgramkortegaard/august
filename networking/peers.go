@@ -20,6 +20,8 @@ type Peer struct {
 	Address  string
 	LastSeen time.Time
 	Status   PeerStatus
+	BanScore int       // Accumulated misbehavior score
+	BannedUntil time.Time // When ban expires
 }
 
 type PeerManager struct {

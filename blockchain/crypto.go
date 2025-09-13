@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"math/big"
 )
 
 func uint64ToBytes(n uint64) []byte {
@@ -13,7 +14,7 @@ func uint64ToBytes(n uint64) []byte {
 	return b
 }
 
-// deterministic hash for transaction
+// HashTransaction deterministically hashes a transaction
 func HashTransaction(tsx *Transaction) Hash32 {
 	h := sha256.New()
 	h.Write(tsx.From[:])
@@ -26,6 +27,7 @@ func HashTransaction(tsx *Transaction) Hash32 {
 	return hash
 }
 
+// GetSigningBytesFromTransaction returns bytes used for signing
 func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	h := sha256.New()
 	h.Write(tsx.From[:])
@@ -36,15 +38,15 @@ func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
 	return h.Sum(nil)
 }
 
-func SignTransaction(tsx *Transaction, privatekey []byte) []byte {
-	signingbytes := GetSigningBytesFromTransaction(tsx)
-	sig := ed25519.Sign(privatekey, signingbytes)
+// SignTransaction signs the transaction with the given private key
+func SignTransaction(tsx *Transaction, privateKey []byte) []byte {
+	signingBytes := GetSigningBytesFromTransaction(tsx)
+	sig := ed25519.Sign(privateKey, signingBytes)
 	copy(tsx.Signature[:], sig)
 	return sig
-
 }
 
-// deterministic hash for block headers
+// HashBlockHeader deterministically hashes a block header
 func HashBlockHeader(header *BlockHeader) Hash32 {
 	h := sha256.New()
 	h.Write(uint64ToBytes(header.Version))
@@ -52,34 +54,35 @@ func HashBlockHeader(header *BlockHeader) Hash32 {
 	h.Write(uint64ToBytes(header.Height))
 	h.Write(uint64ToBytes(header.Timestamp))
 	h.Write(header.MerkleRoot[:])
-	h.Write([]byte(header.TotalWork)) // Write TotalWork as string bytes
+
+	// Encode TotalWork as big.Int bytes, not string
+	workInt := new(big.Int)
+	workInt.SetString(header.TotalWork, 10)
+	h.Write(workInt.Bytes())
+
 	h.Write(uint64ToBytes(header.Nonce))
 	var hash Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
-// MerkleTransactions creates a merkle root from a list of transactions
+// MerkleTransactions computes a Merkle root for a list of transactions
 func MerkleTransactions(transactions []Transaction) Hash32 {
 	if len(transactions) == 0 {
 		return Hash32{}
 	}
 
-	// Hash all transactions
 	hashes := make([][]byte, len(transactions))
 	for i, tx := range transactions {
-		hash := HashTransaction(&tx)
-		hashes[i] = hash[:]
+		h := HashTransaction(&tx)
+		hashes[i] = h[:]
 	}
 
-	// Build merkle tree
 	for len(hashes) > 1 {
-		// If odd number, duplicate last hash
 		if len(hashes)%2 == 1 {
 			hashes = append(hashes, hashes[len(hashes)-1])
 		}
 
-		// Combine pairs
 		newLevel := make([][]byte, 0, len(hashes)/2)
 		for i := 0; i < len(hashes); i += 2 {
 			h := sha256.New()
@@ -90,13 +93,12 @@ func MerkleTransactions(transactions []Transaction) Hash32 {
 		hashes = newLevel
 	}
 
-	// Convert to Hash32
 	var root Hash32
 	copy(root[:], hashes[0])
 	return root
 }
 
-// EncodeHash encodes a Hash32 to base64 string for network transmission
+// EncodeHash converts a Hash32 to base64 string
 func EncodeHash(hash Hash32) string {
 	return base64.StdEncoding.EncodeToString(hash[:])
 }
