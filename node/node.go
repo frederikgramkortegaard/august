@@ -19,7 +19,7 @@ type Config struct {
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
 type FullNode struct {
 	// Core blockchain storage
-	store store.ChainStore
+	Store store.ChainStore
 
 	// Configuration
 	Config Config
@@ -34,7 +34,7 @@ func NewFullNode(config Config) *FullNode {
 	chainStore := store.NewPersistentChainStore(config.DBName)
 
 	return &FullNode{
-		store:  chainStore,
+		Store:  chainStore,
 		Config: config,
 		// Components will be initialized in Start()
 	}
@@ -46,7 +46,7 @@ func (n *FullNode) Start() <-chan bool {
 
 	go func() {
 		// 1. Check if blockchain already exists, if not initialize with genesis
-		chain, err := n.store.GetChain()
+		chain, err := n.Store.GetChain()
 		if err != nil {
 			log.Printf("%s\tFailed to get existing chain: %v", n.Config.NodeID, err)
 			ready <- false
@@ -55,7 +55,7 @@ func (n *FullNode) Start() <-chan bool {
 
 		if len(chain.Blocks) == 0 {
 			// No existing chain, initialize with genesis
-			if err := n.store.AddBlock(blockchain.GenesisBlock); err != nil {
+			if err := n.Store.AddBlock(blockchain.GenesisBlock); err != nil {
 				log.Printf("%s\tFailed to add genesis block: %v", n.Config.NodeID, err)
 				ready <- false
 				return
@@ -101,7 +101,7 @@ func (n *FullNode) startNetworking() {
 	networkConfig := networking.Config{
 		Port:              n.Config.Port,
 		NodeID:            n.Config.NodeID,
-		Store:             n.store,
+		Store:             n.Store,
 		SeedPeers:         n.Config.SeedPeers,
 		ReqRespConfig:     networking.DefaultReqRespConfig(),
 		PeerRequestConfig: networking.DefaultPeerRequestConfig(),
@@ -124,7 +124,7 @@ func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
 		networkConfig := networking.Config{
 			Port:          n.Config.Port,
 			NodeID:        n.Config.NodeID,
-			Store:         n.store,
+			Store:         n.Store,
 			SeedPeers:     n.Config.SeedPeers,
 			ReqRespConfig: networking.DefaultReqRespConfig(),
 		}
@@ -154,7 +154,7 @@ func (n *FullNode) Stop() error {
 	}
 
 	// Close database connection
-	if closer, ok := n.store.(interface{ Close() error }); ok {
+	if closer, ok := n.Store.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
 			log.Printf("%s\tError closing database: %v", n.Config.NodeID, err)
 		}
