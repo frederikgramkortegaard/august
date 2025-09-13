@@ -33,7 +33,7 @@ func main() {
 		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
-		DBName:    dbname,
+		DBName:    *dbname,
 	}
 
 	// Create and start full node
