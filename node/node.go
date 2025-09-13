@@ -45,13 +45,27 @@ func (n *FullNode) Start() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		// 1. Initialize blockchain with genesis
-		if err := n.store.AddBlock(blockchain.GenesisBlock); err != nil {
-			log.Printf("%s\tFailed to add genesis block: %v", n.Config.NodeID, err)
+		// 1. Check if blockchain already exists, if not initialize with genesis
+		chain, err := n.store.GetChain()
+		if err != nil {
+			log.Printf("%s\tFailed to get existing chain: %v", n.Config.NodeID, err)
 			ready <- false
 			return
 		}
-		log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
+
+		if len(chain.Blocks) == 0 {
+			// No existing chain, initialize with genesis
+			if err := n.store.AddBlock(blockchain.GenesisBlock); err != nil {
+				log.Printf("%s\tFailed to add genesis block: %v", n.Config.NodeID, err)
+				ready <- false
+				return
+			}
+			log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
+		} else {
+			// Chain already exists, log current state
+			log.Printf("%s\tLoaded existing blockchain with %d blocks (height %d)",
+				n.Config.NodeID, len(chain.Blocks), chain.Blocks[len(chain.Blocks)-1].Header.Height)
+		}
 
 		// 2. Start network server and wait for it to be ready
 		networkReady := n.startNetworkingWithCompletion()
