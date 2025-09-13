@@ -10,7 +10,7 @@ import (
 // DiscoveryConfig holds configuration for peer discovery
 type DiscoveryConfig struct {
 	SeedPeers []string
-	P2PServer *Server
+	NetworkServer *Server
 }
 
 // Discovery handles finding and connecting to peers
@@ -21,8 +21,8 @@ type Discovery struct {
 // logf logs with node ID prefix
 func (d *Discovery) logf(format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
-	if d.config.P2PServer != nil {
-		log.Printf("%s\t%s", d.config.P2PServer.config.NodeID, message)
+	if d.config.NetworkServer != nil {
+		log.Printf("%s\t%s", d.config.NetworkServer.config.NodeID, message)
 	} else {
 		log.Printf("DISCOVERY\t%s", message)
 	}
@@ -42,9 +42,9 @@ func (d *Discovery) Start() <-chan bool {
 	go func() {
 		d.logf("Starting peer discovery with %d seed peers", len(d.config.SeedPeers))
 
-		// Double-check P2P server is available
-		if d.config.P2PServer == nil {
-			d.logf("P2P server not available, discovery cannot start")
+		// Double-check network server is available
+		if d.config.NetworkServer == nil {
+			d.logf("Network server not available, discovery cannot start")
 			ready <- false
 			return
 		}
@@ -97,12 +97,12 @@ func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		if d.config.P2PServer == nil {
+		if d.config.NetworkServer == nil {
 			done <- true
 			return
 		}
 
-		pm := d.config.P2PServer.GetPeerManager()
+		pm := d.config.NetworkServer.GetPeerManager()
 		discoveredPeers := pm.GetDiscoveredPeers()
 
 		// Get current peers to avoid duplicate connections
@@ -142,7 +142,7 @@ func (d *Discovery) connectToDiscoveredPeers() <-chan bool {
 }
 
 func (d *Discovery) requestPeerSharing() {
-	pm := d.config.P2PServer.GetPeerManager()
+	pm := d.config.NetworkServer.GetPeerManager()
 	if pm == nil {
 		return
 	}
@@ -160,7 +160,7 @@ func (d *Discovery) requestPeerSharing() {
 	for _, peer := range connectedPeers {
 		if peer.Status == PeerConnected {
 			// Use the new synchronous method to get immediate response
-			peers, err := RequestPeersFromPeer(d.config.P2PServer, peer.Address, 50)
+			peers, err := RequestPeersFromPeer(d.config.NetworkServer, peer.Address, 50)
 			if err != nil {
 				d.logf("Failed to request peers from %s: %v", peer.Address, err)
 			} else {
@@ -218,13 +218,13 @@ func (d *Discovery) connectToPeer(address string) <-chan bool {
 		}
 
 		// Add peer to our peer manager
-		if d.config.P2PServer != nil {
-			peer := d.config.P2PServer.GetPeerManager().AddPeer(address)
+		if d.config.NetworkServer != nil {
+			peer := d.config.NetworkServer.GetPeerManager().AddPeer(address)
 			if peer != nil {
 				d.logf("TCP connection established to peer: %s", address)
 
 				// Start the connection handler in background
-				go d.config.P2PServer.HandlePeerConnection(conn)
+				go d.config.NetworkServer.HandlePeerConnection(conn)
 
 				// Wait for handshake to complete using channels
 				handshakeComplete := make(chan bool, 1)
@@ -245,7 +245,7 @@ func (d *Discovery) connectToPeer(address string) <-chan bool {
 							return
 						case <-ticker.C:
 							// Check if peer is now connected (handshake completed)
-							pm := d.config.P2PServer.GetPeerManager()
+							pm := d.config.NetworkServer.GetPeerManager()
 							pm.mu.RLock()
 							if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
 								pm.mu.RUnlock()
@@ -294,13 +294,13 @@ func (d *Discovery) RunDiscoveryRound() <-chan bool {
 	go func() {
 		defer func() { done <- true }()
 
-		// Check if P2P server is available
-		if d.config.P2PServer == nil {
-			d.logf("P2P server not available, skipping discovery")
+		// Check if network server is available
+		if d.config.NetworkServer == nil {
+			d.logf("Network server not available, skipping discovery")
 			return
 		}
 
-		pm := d.config.P2PServer.GetPeerManager()
+		pm := d.config.NetworkServer.GetPeerManager()
 		connected := pm.GetConnectedPeers()
 		var connectedAddrs []string
 		for _, peer := range connected {

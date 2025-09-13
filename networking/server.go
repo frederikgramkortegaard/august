@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Config holds P2P server configuration
+// Config holds network server configuration
 type Config struct {
 	Port          string
 	NodeID        string
@@ -56,7 +56,7 @@ type CandidateBlock struct {
 	ParentNeeded blockchain.Hash32
 }
 
-// Server handles P2P networking and message passing
+// Server handles network communication and message passing
 type Server struct {
 	config            Config
 	listener          net.Listener
@@ -85,7 +85,7 @@ func (s *Server) logf(format string, args ...interface{}) {
 	log.Printf("%s\t%s", s.config.NodeID, message)
 }
 
-// NewServer creates a new P2P server
+// NewServer creates a new network server
 func NewServer(config Config) *Server {
 	server := &Server{
 		config:           config,
@@ -125,7 +125,7 @@ func (s *Server) SendMessage(peerAddress string, msg reqresp.RequestResponse) er
 	return s.sendMessage(conn, message)
 }
 
-// Start begins listening for P2P connections
+// Start begins listening for network connections
 func (s *Server) Start() error {
 	listener, err := net.Listen("tcp", ":"+s.config.Port)
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *Server) Start() error {
 	}
 
 	s.listener = listener
-	s.logf("P2P server listening on port %s", s.config.Port)
+	s.logf("Network server listening on port %s", s.config.Port)
 
 	// Accept connections in background
 	go s.acceptConnections()
@@ -482,7 +482,7 @@ func (s *Server) GetChainStore() store.ChainStore {
 	return s.config.Store
 }
 
-// Stop gracefully shuts down the P2P server
+// Stop gracefully shuts down the network server
 func (s *Server) Stop() error {
 	if s.listener != nil {
 		// Close the listener first

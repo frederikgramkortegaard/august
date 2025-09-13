@@ -12,12 +12,12 @@ import (
 
 // Config holds all configuration for a full node
 type Config struct {
-	P2PPort   string
+	Port   string
 	NodeID    string
 	SeedPeers []string
 }
 
-// FullNode orchestrates Peer Discovery and the rest of P2P stuff
+// FullNode orchestrates Peer Discovery and the rest of networking stuff
 type FullNode struct {
 	// Core blockchain storage
 	store store.ChainStore
@@ -26,7 +26,7 @@ type FullNode struct {
 	Config Config
 
 	// Components (each package handles its own concern)
-	P2PServer *networking.Server    // P2P message handling
+	NetworkServer *networking.Server    // Network message handling
 	discovery *networking.Discovery // Peer discovery
 }
 
@@ -55,15 +55,15 @@ func (n *FullNode) Start() <-chan bool {
 		}
 		log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
 
-		// 2. Start P2P server and wait for it to be ready
-		p2pReady := n.startP2PWithCompletion()
-		if !<-p2pReady {
-			log.Printf("%s\tFailed to start P2P server", n.Config.NodeID)
+		// 2. Start network server and wait for it to be ready
+		networkReady := n.startNetworkingWithCompletion()
+		if !<-networkReady {
+			log.Printf("%s\tFailed to start network server", n.Config.NodeID)
 			ready <- false
 			return
 		}
 
-		// 3. Start peer discovery (P2P server is ready)
+		// 3. Start peer discovery (network server is ready)
 		discoveryReady := n.startDiscovery()
 		if !<-discoveryReady {
 			log.Printf("%s\tFailed to start discovery", n.Config.NodeID)
@@ -71,7 +71,7 @@ func (n *FullNode) Start() <-chan bool {
 			return
 		}
 
-		log.Printf("%s\tFull node started: P2P on :%s", n.Config.NodeID, n.Config.P2PPort)
+		log.Printf("%s\tFull node started: Network on :%s", n.Config.NodeID, n.Config.Port)
 
 		// Signal ready
 		ready <- true
@@ -83,41 +83,41 @@ func (n *FullNode) Start() <-chan bool {
 	return ready
 }
 
-func (n *FullNode) startP2P() {
-	log.Printf("%s\tStarting P2P server on port %s", n.Config.NodeID, n.Config.P2PPort)
-	// The p2p package handles all P2P messaging
-	p2pConfig := networking.Config{
-		Port:          n.Config.P2PPort,
+func (n *FullNode) startNetworking() {
+	log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
+	// The networking package handles all network messaging
+	networkConfig := networking.Config{
+		Port:          n.Config.Port,
 		NodeID:        n.Config.NodeID,
 		Store:         n.store,
 		ReqRespConfig: networking.DefaultReqRespConfig(), // Use default request-response configuration
 	}
-	n.P2PServer = networking.NewServer(p2pConfig)
+	n.NetworkServer = networking.NewServer(networkConfig)
 
-	err := n.P2PServer.Start()
+	err := n.NetworkServer.Start()
 	if err != nil {
-		log.Printf("%s\tFailed to start P2P server: %v", n.Config.NodeID, err)
+		log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
 	}
 }
 
-// startP2PWithCompletion starts P2P server and signals when ready
-func (n *FullNode) startP2PWithCompletion() <-chan bool {
+// startNetworkingWithCompletion starts network server and signals when ready
+func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		log.Printf("%s\tStarting P2P server on port %s", n.Config.NodeID, n.Config.P2PPort)
+		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
 
-		p2pConfig := networking.Config{
-			Port:          n.Config.P2PPort,
+		networkConfig := networking.Config{
+			Port:          n.Config.Port,
 			NodeID:        n.Config.NodeID,
 			Store:         n.store,
 			ReqRespConfig: networking.DefaultReqRespConfig(),
 		}
-		n.P2PServer = networking.NewServer(p2pConfig)
+		n.NetworkServer = networking.NewServer(networkConfig)
 
-		err := n.P2PServer.Start()
+		err := n.NetworkServer.Start()
 		if err != nil {
-			log.Printf("%s\tFailed to start P2P server: %v", n.Config.NodeID, err)
+			log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
 			ready <- false
 		} else {
 			ready <- true
@@ -133,17 +133,17 @@ func (n *FullNode) startDiscovery() <-chan bool {
 	go func() {
 		log.Printf("%s\tStarting peer discovery...", n.Config.NodeID)
 
-		// Double-check P2P server is available
-		if n.P2PServer == nil {
-			log.Printf("%s\tP2P server not ready for discovery", n.Config.NodeID)
+		// Double-check network server is available
+		if n.NetworkServer == nil {
+			log.Printf("%s\tNetwork server not ready for discovery", n.Config.NodeID)
 			ready <- false
 			return
 		}
 
-		// The p2p package also handles discovery
+		// The networking package also handles discovery
 		discoveryConfig := networking.DiscoveryConfig{
 			SeedPeers: n.Config.SeedPeers,
-			P2PServer: n.P2PServer,
+			NetworkServer: n.NetworkServer,
 		}
 		n.discovery = networking.NewDiscovery(discoveryConfig)
 		discoveryStartReady := n.discovery.Start()
@@ -163,16 +163,16 @@ func (n *FullNode) startDiscovery() <-chan bool {
 func (n *FullNode) Stop() error {
 	log.Printf("%s\tStopping FullNode...", n.Config.NodeID)
 
-	// Stop P2P server
-	if n.P2PServer != nil {
-		if err := n.P2PServer.Stop(); err != nil {
-			log.Printf("%s\tError stopping P2P server: %v", n.Config.NodeID, err)
+	// Stop network server
+	if n.NetworkServer != nil {
+		if err := n.NetworkServer.Stop(); err != nil {
+			log.Printf("%s\tError stopping network server: %v", n.Config.NodeID, err)
 		}
 	}
 
 	// Stop discovery
 	if n.discovery != nil {
-		// Discovery doesn't have a Stop method, but stopping P2P server should be enough
+		// Discovery doesn't have a Stop method, but stopping network server should be enough
 		log.Println("Discovery stopped")
 	}
 
@@ -180,9 +180,9 @@ func (n *FullNode) Stop() error {
 	return nil
 }
 
-// GetP2PServer returns the P2P server for testing purposes
-func (n *FullNode) GetP2PServer() *networking.Server {
-	return n.P2PServer
+// GetNetworkServer returns the network server for testing purposes
+func (n *FullNode) GetNetworkServer() *networking.Server {
+	return n.NetworkServer
 }
 
 // GetDiscovery returns the discovery instance for testing purposes
@@ -197,11 +197,11 @@ func (n *FullNode) GetNodeID() string {
 
 // SubmitTransaction submits a transaction to the network
 func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
-	if n.P2PServer == nil {
-		return fmt.Errorf("P2P server not initialized")
+	if n.NetworkServer == nil {
+		return fmt.Errorf("network server not initialized")
 	}
 
 	// Broadcast the transaction to all connected peers
-	go func() { <-networking.BroadcastTransaction(n.P2PServer, tx) }()
+	go func() { <-networking.BroadcastTransaction(n.NetworkServer, tx) }()
 	return nil
 }

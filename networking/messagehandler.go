@@ -9,7 +9,7 @@ import (
 	"august/blockchain"
 )
 
-// ProcessMessage handles different types of P2P messages
+// ProcessMessage handles different types of network messages
 func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 	// First check if this is a response to a pending request
 	if handled := server.reqRespClient.HandleResponse(msg); handled {

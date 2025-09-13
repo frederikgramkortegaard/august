@@ -5,7 +5,7 @@ import (
 	"august/blockchain"
 )
 
-// MessageType defines the type of P2P message
+// MessageType defines the type of network message
 type MessageType string
 
 const (
@@ -28,7 +28,7 @@ const (
 	MessageTypeBlocks           MessageType = "blocks"         // Batch blocks response
 )
 
-// Message represents a P2P message between nodes
+// Message represents a network message between nodes
 type Message struct {
 	Type      MessageType     `json:"type"`
 	RequestID string          `json:"request_id,omitempty"` // For correlating requests
@@ -121,7 +121,7 @@ type BlocksPayload struct {
 	Blocks []*blockchain.Block `json:"blocks"`
 }
 
-// NewMessage creates a new P2P message with the given type and payload
+// NewMessage creates a new network message with the given type and payload
 func NewMessage(msgType MessageType, payload interface{}) (*Message, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {

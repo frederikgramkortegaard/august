@@ -11,7 +11,7 @@ import (
 
 func main() {
 	// Command line flags
-	p2pPort := flag.String("p2p", "9372", "P2P port")
+	port := flag.String("port", "9372", "Network port")
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
 	seeds := flag.String("seeds", "", "Comma-separated seed peers")
 	flag.Parse()
@@ -24,12 +24,12 @@ func main() {
 
 	// Auto-generate node ID if not provided
 	if *nodeID == "" {
-		*nodeID = fmt.Sprintf("node-%s-%d", *p2pPort, time.Now().Unix()%10000)
+		*nodeID = fmt.Sprintf("node-%s-%d", *port, time.Now().Unix()%10000)
 	}
 
 	// Create node configuration
 	config := node.Config{
-		P2PPort:   *p2pPort,
+		Port:   *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
 	}
@@ -37,7 +37,7 @@ func main() {
 	// Create and start full node
 	fullNode := node.NewFullNode(config)
 
-	log.Printf("%s\tStarting full node: P2P on :%s", *nodeID, *p2pPort)
+	log.Printf("%s\tStarting full node: Network on :%s", *nodeID, *port)
 	if len(seedPeers) > 0 {
 		log.Printf("%s\tSeed peers: %v", *nodeID, seedPeers)
 	}
