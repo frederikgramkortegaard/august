@@ -27,7 +27,6 @@ type FullNode struct {
 
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server    // Network message handling
-	discovery *networking.Discovery // Peer discovery
 }
 
 // NewFullNode creates a node that runs all services
@@ -64,7 +63,7 @@ func (n *FullNode) Start() <-chan bool {
 		}
 
 		// 3. Start peer discovery (network server is ready)
-		discoveryReady := n.startDiscovery()
+		discoveryReady := n.NetworkServer.StartDiscovery()
 		if !<-discoveryReady {
 			log.Printf("%s\tFailed to start discovery", n.Config.NodeID)
 			ready <- false
@@ -90,6 +89,7 @@ func (n *FullNode) startNetworking() {
 		Port:          n.Config.Port,
 		NodeID:        n.Config.NodeID,
 		Store:         n.store,
+		SeedPeers:     n.Config.SeedPeers,
 		ReqRespConfig: networking.DefaultReqRespConfig(), // Use default request-response configuration
 	}
 	n.NetworkServer = networking.NewServer(networkConfig)
@@ -111,6 +111,7 @@ func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
 			Port:          n.Config.Port,
 			NodeID:        n.Config.NodeID,
 			Store:         n.store,
+			SeedPeers:     n.Config.SeedPeers,
 			ReqRespConfig: networking.DefaultReqRespConfig(),
 		}
 		n.NetworkServer = networking.NewServer(networkConfig)
@@ -127,37 +128,6 @@ func (n *FullNode) startNetworkingWithCompletion() <-chan bool {
 	return ready
 }
 
-func (n *FullNode) startDiscovery() <-chan bool {
-	ready := make(chan bool, 1)
-
-	go func() {
-		log.Printf("%s\tStarting peer discovery...", n.Config.NodeID)
-
-		// Double-check network server is available
-		if n.NetworkServer == nil {
-			log.Printf("%s\tNetwork server not ready for discovery", n.Config.NodeID)
-			ready <- false
-			return
-		}
-
-		// The networking package also handles discovery
-		discoveryConfig := networking.DiscoveryConfig{
-			SeedPeers: n.Config.SeedPeers,
-			NetworkServer: n.NetworkServer,
-		}
-		n.discovery = networking.NewDiscovery(discoveryConfig)
-		discoveryStartReady := n.discovery.Start()
-		if !<-discoveryStartReady {
-			log.Printf("%s\tDiscovery failed to start", n.Config.NodeID)
-			ready <- false
-			return
-		}
-
-		ready <- true
-	}()
-
-	return ready
-}
 
 // Stop gracefully shuts down the FullNode
 func (n *FullNode) Stop() error {
@@ -170,12 +140,6 @@ func (n *FullNode) Stop() error {
 		}
 	}
 
-	// Stop discovery
-	if n.discovery != nil {
-		// Discovery doesn't have a Stop method, but stopping network server should be enough
-		log.Println("Discovery stopped")
-	}
-
 	log.Println("FullNode stopped successfully")
 	return nil
 }
@@ -183,11 +147,6 @@ func (n *FullNode) Stop() error {
 // GetNetworkServer returns the network server for testing purposes
 func (n *FullNode) GetNetworkServer() *networking.Server {
 	return n.NetworkServer
-}
-
-// GetDiscovery returns the discovery instance for testing purposes
-func (n *FullNode) GetDiscovery() *networking.Discovery {
-	return n.discovery
 }
 
 // GetNodeID returns the node's ID

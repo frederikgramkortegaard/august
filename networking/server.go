@@ -2,7 +2,6 @@ package networking
 
 import (
 	"august/blockchain"
-	"august/networking/reqresp"
 	store "august/storage"
 	"encoding/json"
 	"fmt"
@@ -20,13 +19,10 @@ type Config struct {
 	Port          string
 	NodeID        string
 	Store         store.ChainStore
-	ReqRespConfig reqresp.Config // Request-response configuration
+	SeedPeers     []string        // Seed peers for discovery
+	ReqRespConfig ReqRespConfig   // Request-response configuration
 }
 
-// DefaultReqRespConfig returns default request-response configuration
-func DefaultReqRespConfig() reqresp.Config {
-	return reqresp.DefaultConfig()
-}
 
 // CandidateChain represents a potential blockchain candidate for adoption
 type CandidateChain struct {
@@ -65,7 +61,7 @@ type Server struct {
 	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
-	reqRespClient     *reqresp.Client     // Request-response client
+	reqRespClient     *ReqRespClient     // Request-response client
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
@@ -100,13 +96,13 @@ func NewServer(config Config) *Server {
 	}
 
 	// Create request-response client with this server as the sender
-	server.reqRespClient = reqresp.NewClient(config.ReqRespConfig, server)
+	server.reqRespClient = NewReqRespClient(config.ReqRespConfig, server)
 
 	return server
 }
 
 // SendMessage implements the MessageSender interface for reqresp client
-func (s *Server) SendMessage(peerAddress string, msg reqresp.RequestResponse) error {
+func (s *Server) SendMessage(peerAddress string, msg RequestResponse) error {
 	// Get the connection for this peer
 	s.peerConnectionsMu.RLock()
 	conn, exists := s.peerConnections[peerAddress]
@@ -504,4 +500,280 @@ func (s *Server) Stop() error {
 	s.peerConnectionsMu.Unlock()
 
 	return nil
+}
+
+// StartDiscovery begins peer discovery process
+func (s *Server) StartDiscovery() <-chan bool {
+	ready := make(chan bool, 1)
+
+	go func() {
+		s.logf("Starting peer discovery with %d seed peers", len(s.config.SeedPeers))
+
+		// Connect to seed peers
+		go s.connectToSeeds()
+
+		// Periodic peer discovery
+		go s.periodicDiscovery()
+
+		s.logf("Peer discovery started successfully")
+		ready <- true
+	}()
+
+	return ready
+}
+
+// connectToSeeds attempts to connect to all seed peers and waits for completion
+func (s *Server) connectToSeeds() <-chan bool {
+	done := make(chan bool, 1)
+
+	go func() {
+		if len(s.config.SeedPeers) == 0 {
+			done <- true
+			return
+		}
+
+		var connectionTasks []<-chan bool
+		for _, seedAddr := range s.config.SeedPeers {
+			connectionTasks = append(connectionTasks, s.connectToPeer(seedAddr))
+		}
+
+		// Wait for all connection attempts to complete
+		successCount := 0
+		for _, task := range connectionTasks {
+			if <-task {
+				successCount++
+			}
+		}
+
+		s.logf("Seed connection attempts completed: %d/%d successful", successCount, len(s.config.SeedPeers))
+		done <- true
+	}()
+
+	return done
+}
+
+// connectToDiscoveredPeers attempts to connect to peers we've learned about
+func (s *Server) connectToDiscoveredPeers() <-chan bool {
+	done := make(chan bool, 1)
+
+	go func() {
+		pm := s.GetPeerManager()
+		discoveredPeers := pm.GetDiscoveredPeers()
+
+		// Get current peers to avoid duplicate connections
+		pm.mu.RLock()
+		currentPeers := make(map[string]bool)
+		for addr := range pm.peers {
+			currentPeers[addr] = true
+		}
+		pm.mu.RUnlock()
+
+		// Try connecting to discovered peers we're not already connected to
+		var connectionTasks []<-chan bool
+		connected := 0
+		for _, addr := range discoveredPeers {
+			if !currentPeers[addr] && connected < 5 { // Limit to 5 new connections per cycle
+				connectionTasks = append(connectionTasks, s.connectToPeer(addr))
+				connected++
+			}
+		}
+
+		if connected > 0 {
+			s.logf("Attempting to connect to %d discovered peers", connected)
+			// Wait for all connection attempts to complete
+			successCount := 0
+			for _, task := range connectionTasks {
+				if <-task {
+					successCount++
+				}
+			}
+			s.logf("Discovery connection attempts completed: %d/%d successful", successCount, connected)
+		}
+
+		done <- true
+	}()
+
+	return done
+}
+
+func (s *Server) requestPeerSharing() {
+	pm := s.GetPeerManager()
+	if pm == nil {
+		return
+	}
+
+	// Get connected peers
+	connectedPeers := pm.GetConnectedPeers()
+	if len(connectedPeers) == 0 {
+		return
+	}
+
+	// Request peers from all connected peers and collect responses
+	allDiscoveredPeers := make([]string, 0)
+	successfulRequests := 0
+
+	for _, peer := range connectedPeers {
+		if peer.Status == PeerConnected {
+			// Use the new synchronous method to get immediate response
+			peers, err := RequestPeersFromPeer(s, peer.Address, 50)
+			if err != nil {
+				s.logf("Failed to request peers from %s: %v", peer.Address, err)
+			} else {
+				allDiscoveredPeers = append(allDiscoveredPeers, peers...)
+				successfulRequests++
+			}
+		}
+	}
+
+	if successfulRequests > 0 {
+		s.logf("Successfully requested peers from %d peers", successfulRequests)
+
+		// Add all discovered peers to our peer manager
+		if len(allDiscoveredPeers) > 0 {
+			newPeerCount := pm.AddDiscoveredPeers(allDiscoveredPeers)
+			if newPeerCount > 0 {
+				s.logf("Discovered %d new peers through peer sharing", newPeerCount)
+			}
+		}
+	}
+}
+
+// requestPeerSharingAndConnect requests peers and then tries to connect to them
+func (s *Server) requestPeerSharingAndConnect() <-chan bool {
+	done := make(chan bool, 1)
+
+	go func() {
+		s.logf("Starting peer sharing and connect sequence")
+		// Request peers (synchronous - responses are handled immediately)
+		s.requestPeerSharing()
+
+		// Now try to connect to any newly discovered peers
+		s.logf("Now attempting to connect to discovered peers")
+		<-s.connectToDiscoveredPeers()
+
+		done <- true
+	}()
+
+	return done
+}
+
+// connectToPeer attempts to connect to a specific peer and waits for handshake completion
+func (s *Server) connectToPeer(address string) <-chan bool {
+	result := make(chan bool, 1)
+
+	go func() {
+		defer func() { result <- false }() // Default to failure
+
+		s.logf("Attempting to connect to peer: %s", address)
+
+		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+		if err != nil {
+			s.logf("Failed to connect to peer %s: %v", address, err)
+			return
+		}
+
+		// Add peer to our peer manager
+		peer := s.GetPeerManager().AddPeer(address)
+		if peer != nil {
+			s.logf("TCP connection established to peer: %s", address)
+
+			// Start the connection handler in background
+			go s.HandlePeerConnection(conn)
+
+			// Wait for handshake to complete using channels
+			handshakeComplete := make(chan bool, 1)
+
+			go func() {
+				// Monitor for handshake completion
+				timeout := time.NewTimer(5 * time.Second)
+				defer timeout.Stop()
+
+				ticker := time.NewTicker(50 * time.Millisecond)
+				defer ticker.Stop()
+
+				for {
+					select {
+					case <-timeout.C:
+						s.logf("Handshake timeout for peer %s", address)
+						handshakeComplete <- false
+						return
+					case <-ticker.C:
+						// Check if peer is now connected (handshake completed)
+						pm := s.GetPeerManager()
+						pm.mu.RLock()
+						if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
+							pm.mu.RUnlock()
+							s.logf("Handshake completed with peer: %s", address)
+							handshakeComplete <- true
+							return
+						}
+						pm.mu.RUnlock()
+					}
+				}
+			}()
+
+			// Wait for handshake result
+			if <-handshakeComplete {
+				result <- true
+				return
+			}
+		} else {
+			// If we can't add the peer, close the connection
+			conn.Close()
+		}
+	}()
+
+	return result
+}
+
+// periodicDiscovery runs periodic peer discovery
+func (s *Server) periodicDiscovery() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Just trigger a manual discovery round
+		<-s.RunDiscoveryRound()
+	}
+}
+
+// RunDiscoveryRound manually triggers one round of peer discovery
+// Returns a channel that signals when the discovery round is complete
+func (s *Server) RunDiscoveryRound() <-chan bool {
+	done := make(chan bool, 1)
+
+	go func() {
+		defer func() { done <- true }()
+
+		pm := s.GetPeerManager()
+		connected := pm.GetConnectedPeers()
+		var connectedAddrs []string
+		for _, peer := range connected {
+			connectedAddrs = append(connectedAddrs, peer.Address)
+		}
+		s.logf("Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
+
+		// Clean up dead peers
+		removed := pm.CleanupDeadPeers()
+		if removed > 0 {
+			s.logf("Cleaned up %d dead peers", removed)
+		}
+
+		// Different strategies based on connection count
+		if len(connected) == 0 {
+			// No connections, try seed peers
+			s.logf("No connected peers, attempting to connect to seed peers")
+			<-s.connectToSeeds() // Wait for seed connections to complete
+		} else if len(connected) < 5 {
+			// Few connections, try to get more
+			<-s.connectToDiscoveredPeers()
+			<-s.requestPeerSharingAndConnect()
+		} else if len(connected) < 10 {
+			<-s.connectToDiscoveredPeers()
+		}
+
+		s.logf("Discovery round completed")
+	}()
+
+	return done
 }
