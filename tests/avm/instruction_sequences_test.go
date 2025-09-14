@@ -12,6 +12,14 @@ func hex(s string) *big.Int {
 	return n
 }
 
+// Helper function for creating default runtime config
+func defaultConfig() avm.RuntimeConfig {
+	return avm.RuntimeConfig{
+		StackSize:  1024, // Allow up to 1024 stack elements
+		MemorySize: 1024, // Allow up to 1024 memory slots
+	}
+}
+
 func TestSwapOperation(t *testing.T) {
 	// Test SWAP operation: [A, B, C, D] -> SWAP 2 -> [A, D, C, B]
 	instructions := []avm.Instruction{
@@ -22,8 +30,8 @@ func TestSwapOperation(t *testing.T) {
 		avm.MakeInstructionWithParam(avm.SWAP, 2),        // Stack: [A, D, C, B] (swap top with 2nd from top)
 	}
 
-	r := avm.NewRuntime(1000)
-	gasUsed, err := r.StartExecution(instructions)
+	r := avm.NewRuntime(1000, instructions, defaultConfig())
+	gasUsed, err := r.StartExecution()
 
 	if err != nil {
 		t.Fatalf("Execution error: %v", err)
@@ -59,8 +67,8 @@ func TestBasicStackOperations(t *testing.T) {
 		avm.MakeInstruction(avm.POP),                      // Stack: [42, 42]
 	}
 
-	r := avm.NewRuntime(100)
-	gasUsed, err := r.StartExecution(instructions)
+	r := avm.NewRuntime(100, instructions, defaultConfig())
+	gasUsed, err := r.StartExecution()
 
 	if err != nil {
 		t.Fatalf("Execution error: %v", err)
@@ -128,10 +136,10 @@ func TestSwapEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := avm.NewRuntime(1000)
+			r := avm.NewRuntime(1000, tt.setup, defaultConfig())
 
 			// Execute all instructions including the swap
-			_, err := r.StartExecution(tt.setup)
+			_, err := r.StartExecution()
 
 			if tt.shouldError && err == nil {
 				t.Error("Expected error but got none")
@@ -154,8 +162,8 @@ func TestGasAccounting(t *testing.T) {
 		// Total: 14 gas
 	}
 
-	r := avm.NewRuntime(20) // Enough gas
-	gasUsed, err := r.StartExecution(instructions)
+	r := avm.NewRuntime(20, instructions, defaultConfig()) // Enough gas
+	gasUsed, err := r.StartExecution()
 
 	if err != nil {
 		t.Fatalf("Execution error: %v", err)
@@ -179,8 +187,8 @@ func TestOutOfGas(t *testing.T) {
 		avm.MakeInstructionWithValue(avm.PUSH, hex("3")), // 3 gas - this should fail
 	}
 
-	r := avm.NewRuntime(5) // Not enough gas (need 9)
-	_, err := r.StartExecution(instructions)
+	r := avm.NewRuntime(5, instructions, defaultConfig()) // Not enough gas (need 9)
+	_, err := r.StartExecution()
 
 	if err == nil {
 		t.Error("Expected out of gas error")
@@ -312,8 +320,8 @@ func TestValidationPreventsExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := avm.NewRuntime(1000)
-			gasUsed, err := r.StartExecution(tt.instructions)
+			r := avm.NewRuntime(1000, tt.instructions, defaultConfig())
+			gasUsed, err := r.StartExecution()
 
 			// Should fail with validation error
 			if err == nil {
@@ -341,4 +349,717 @@ func TestValidationPreventsExecution(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestArithmeticOperations(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     string // hex values
+		opcode   avm.OPCODE
+		expected string // hex result
+	}{
+		{"ADD: 5 + 3", "5", "3", avm.ADD, "8"},
+		{"SUB: 10 - 3", "A", "3", avm.SUB, "7"},
+		{"MUL: 6 * 7", "6", "7", avm.MUL, "2A"}, // 42 in hex
+		{"DIV: 20 / 4", "14", "4", avm.DIV, "5"},
+		{"AND: 0xFF & 0x0F", "FF", "0F", avm.AND, "0F"},
+		{"OR: 0xF0 | 0x0F", "F0", "0F", avm.OR, "FF"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := []avm.Instruction{
+				avm.MakeInstructionWithValue(avm.PUSH, hex(tt.a)),
+				avm.MakeInstructionWithValue(avm.PUSH, hex(tt.b)),
+				avm.MakeInstruction(tt.opcode),
+			}
+
+			r := avm.NewRuntime(100, instructions, defaultConfig())
+			_, err := r.StartExecution()
+			if err != nil {
+				t.Fatalf("Execution error: %v", err)
+			}
+
+			result, err := r.Stack.Pop()
+			if err != nil {
+				t.Fatalf("Failed to pop result: %v", err)
+			}
+
+			expected := hex(tt.expected)
+			if result.Cmp(expected) != 0 {
+				t.Errorf("Expected %s, got %s", expected.Text(16), result.Text(16))
+			}
+		})
+	}
+}
+
+func TestComparisonOperations(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     string // hex values
+		opcode   avm.OPCODE
+		expected int64 // 1 for true, 0 for false
+	}{
+		{"EQ: 5 == 5", "5", "5", avm.EQ, 1},
+		{"EQ: 5 == 3", "5", "3", avm.EQ, 0},
+		{"LT: 3 < 5", "3", "5", avm.LT, 1},
+		{"LT: 5 < 3", "5", "3", avm.LT, 0},
+		{"GT: 5 > 3", "5", "3", avm.GT, 1},
+		{"GT: 3 > 5", "3", "5", avm.GT, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := []avm.Instruction{
+				avm.MakeInstructionWithValue(avm.PUSH, hex(tt.a)),
+				avm.MakeInstructionWithValue(avm.PUSH, hex(tt.b)),
+				avm.MakeInstruction(tt.opcode),
+			}
+
+			r := avm.NewRuntime(100, instructions, defaultConfig())
+			_, err := r.StartExecution()
+			if err != nil {
+				t.Fatalf("Execution error: %v", err)
+			}
+
+			result, err := r.Stack.Pop()
+			if err != nil {
+				t.Fatalf("Failed to pop result: %v", err)
+			}
+
+			expected := big.NewInt(tt.expected)
+			if result.Cmp(expected) != 0 {
+				t.Errorf("Expected %d, got %s", tt.expected, result.Text(10))
+			}
+		})
+	}
+}
+
+func TestIsZeroOperation(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected int64
+	}{
+		{"ISZERO: 0", "0", 1},
+		{"ISZERO: 1", "1", 0},
+		{"ISZERO: 42", "2A", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := []avm.Instruction{
+				avm.MakeInstructionWithValue(avm.PUSH, hex(tt.value)),
+				avm.MakeInstruction(avm.ISZERO),
+			}
+
+			r := avm.NewRuntime(50, instructions, defaultConfig())
+			_, err := r.StartExecution()
+			if err != nil {
+				t.Fatalf("Execution error: %v", err)
+			}
+
+			result, err := r.Stack.Pop()
+			if err != nil {
+				t.Fatalf("Failed to pop result: %v", err)
+			}
+
+			expected := big.NewInt(tt.expected)
+			if result.Cmp(expected) != 0 {
+				t.Errorf("Expected %d, got %s", tt.expected, result.Text(10))
+			}
+		})
+	}
+}
+
+func TestJumpOperations(t *testing.T) {
+	t.Run("JUMP: unconditional jump", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithParam(avm.JUMP, 3),        // 1: Jump to instruction 3
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 2: This should be skipped
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 3: Push C
+		}
+
+		r := avm.NewRuntime(50, instructions, defaultConfig())
+		_, err := r.StartExecution()
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Stack should contain [A, C] from bottom to top
+		// Pop in reverse order
+		val1, err := r.Stack.Pop() // Should be C
+		if err != nil {
+			t.Fatalf("Failed to pop first value: %v", err)
+		}
+		if val1.Cmp(hex("C")) != 0 {
+			t.Errorf("Expected C, got %s", val1.Text(16))
+		}
+
+		val2, err := r.Stack.Pop() // Should be A
+		if err != nil {
+			t.Fatalf("Failed to pop second value: %v", err)
+		}
+		if val2.Cmp(hex("A")) != 0 {
+			t.Errorf("Expected A, got %s", val2.Text(16))
+		}
+
+		// Stack should be empty
+		if r.Stack.Size() != 0 {
+			t.Errorf("Expected empty stack, size is %d", r.Stack.Size())
+		}
+	})
+
+	t.Run("JUMPC: conditional jump with true condition", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // 1: Push 1 (true condition)
+			avm.MakeInstructionWithParam(avm.JUMPC, 5),       // 2: Jump to instruction 5 if top is 1
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 3: This should be skipped
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 4: This should be skipped
+			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 5: Push D
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Stack should contain [A, D] from bottom to top
+		val1, err := r.Stack.Pop() // Should be D
+		if err != nil {
+			t.Fatalf("Failed to pop first value: %v", err)
+		}
+		if val1.Cmp(hex("D")) != 0 {
+			t.Errorf("Expected D, got %s", val1.Text(16))
+		}
+
+		val2, err := r.Stack.Pop() // Should be A
+		if err != nil {
+			t.Fatalf("Failed to pop second value: %v", err)
+		}
+		if val2.Cmp(hex("A")) != 0 {
+			t.Errorf("Expected A, got %s", val2.Text(16))
+		}
+	})
+
+	t.Run("JUMPC: conditional jump with false condition", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithValue(avm.PUSH, hex("0")), // 1: Push 0 (false condition)
+			avm.MakeInstructionWithParam(avm.JUMPC, 5),       // 2: Should not jump
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 3: Push B
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 4: Push C
+			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 5: Push D
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Stack should contain [A, B, C, D] from bottom to top
+		expected := []string{"D", "C", "B", "A"}
+		for i, exp := range expected {
+			val, err := r.Stack.Pop()
+			if err != nil {
+				t.Fatalf("Failed to pop value %d: %v", i, err)
+			}
+			if val.Cmp(hex(exp)) != 0 {
+				t.Errorf("Position %d: expected %s, got %s", i, exp, val.Text(16))
+			}
+		}
+	})
+
+	t.Run("JUMP: invalid destination", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithParam(avm.JUMP, 10),       // 1: Jump to invalid instruction 10
+		}
+
+		r := avm.NewRuntime(50, instructions, defaultConfig())
+		_, err := r.StartExecution()
+		if err == nil {
+			t.Fatal("Expected error for invalid jump destination")
+		}
+
+		// Should be ErrInvalidJump
+		if err.Error() != "invalid jump destination" {
+			t.Errorf("Expected 'invalid jump destination', got '%s'", err.Error())
+		}
+	})
+
+	t.Run("JUMPC: invalid destination", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // 0: Push 1 (true condition)
+			avm.MakeInstructionWithParam(avm.JUMPC, 10),      // 1: Jump to invalid instruction 10
+		}
+
+		r := avm.NewRuntime(50, instructions, defaultConfig())
+		_, err := r.StartExecution()
+		if err == nil {
+			t.Fatal("Expected error for invalid jump destination")
+		}
+
+		// Should be ErrInvalidJump
+		if err.Error() != "invalid jump destination" {
+			t.Errorf("Expected 'invalid jump destination', got '%s'", err.Error())
+		}
+	})
+
+	t.Run("JUMP: jump backwards (simple loop prevention)", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 1: Push B
+			avm.MakeInstructionWithParam(avm.JUMP, 0),        // 2: Jump back to instruction 0
+		}
+
+		r := avm.NewRuntime(50, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		// This should fail due to out of gas (infinite loop)
+		if err == nil {
+			t.Fatal("Expected out of gas error for infinite loop")
+		}
+
+		if err.Error() != "out of gas" {
+			t.Errorf("Expected 'out of gas', got '%s'", err.Error())
+		}
+	})
+}
+
+func TestStopOperation(t *testing.T) {
+	t.Run("STOP: terminates execution early", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 1: Push B
+			avm.MakeInstruction(avm.STOP),                    // 2: Stop execution
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 3: This should not execute
+			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 4: This should not execute
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		// Should get program stopped error
+		if err == nil {
+			t.Fatal("Expected program stopped error")
+		}
+
+		if err.Error() != "program stopped" {
+			t.Errorf("Expected 'program stopped', got '%s'", err.Error())
+		}
+
+		// Stack should contain only A and B
+		if r.Stack.Size() != 2 {
+			t.Errorf("Expected stack size 2, got %d", r.Stack.Size())
+		}
+
+		// Check stack contents (pop in reverse order)
+		val1, err := r.Stack.Pop() // Should be B
+		if err != nil {
+			t.Fatalf("Failed to pop first value: %v", err)
+		}
+		if val1.Cmp(hex("B")) != 0 {
+			t.Errorf("Expected B, got %s", val1.Text(16))
+		}
+
+		val2, err := r.Stack.Pop() // Should be A
+		if err != nil {
+			t.Fatalf("Failed to pop second value: %v", err)
+		}
+		if val2.Cmp(hex("A")) != 0 {
+			t.Errorf("Expected A, got %s", val2.Text(16))
+		}
+	})
+
+	t.Run("STOP: as first instruction", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstruction(avm.STOP),                    // 0: Stop immediately
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 1: This should not execute
+		}
+
+		r := avm.NewRuntime(50, instructions, defaultConfig())
+		gasUsed, err := r.StartExecution()
+
+		// Should get program stopped error
+		if err == nil {
+			t.Fatal("Expected program stopped error")
+		}
+
+		if err.Error() != "program stopped" {
+			t.Errorf("Expected 'program stopped', got '%s'", err.Error())
+		}
+
+		// Should have used gas for STOP instruction only
+		expectedGas := uint64(0) // STOP costs 0 gas
+		if gasUsed != expectedGas {
+			t.Errorf("Expected gas %d, got %d", expectedGas, gasUsed)
+		}
+
+		// Stack should be empty
+		if r.Stack.Size() != 0 {
+			t.Errorf("Expected empty stack, got size %d", r.Stack.Size())
+		}
+	})
+
+	t.Run("STOP: after some operations", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("5")), // 0: Push 5
+			avm.MakeInstructionWithValue(avm.PUSH, hex("3")), // 1: Push 3
+			avm.MakeInstruction(avm.ADD),                     // 2: 5 + 3 = 8
+			avm.MakeInstruction(avm.STOP),                    // 3: Stop here
+			avm.MakeInstructionWithValue(avm.PUSH, hex("9")), // 4: Should not execute
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		gasUsed, err := r.StartExecution()
+
+		// Should get program stopped error
+		if err == nil {
+			t.Fatal("Expected program stopped error")
+		}
+
+		if err.Error() != "program stopped" {
+			t.Errorf("Expected 'program stopped', got '%s'", err.Error())
+		}
+
+		// Should have used gas for PUSH + PUSH + ADD + STOP = 3 + 3 + 3 + 0 = 9
+		expectedGas := uint64(9)
+		if gasUsed != expectedGas {
+			t.Errorf("Expected gas %d, got %d", expectedGas, gasUsed)
+		}
+
+		// Stack should contain the result of ADD (8)
+		if r.Stack.Size() != 1 {
+			t.Errorf("Expected stack size 1, got %d", r.Stack.Size())
+		}
+
+		val, err := r.Stack.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop result: %v", err)
+		}
+		if val.Cmp(hex("8")) != 0 {
+			t.Errorf("Expected 8, got %s", val.Text(16))
+		}
+	})
+}
+
+func TestStackOverflow(t *testing.T) {
+	t.Run("Stack overflow with small stack size", func(t *testing.T) {
+		// Create a config with very small stack size
+		smallConfig := avm.RuntimeConfig{
+			StackSize:  2, // Only allow 2 elements
+			MemorySize: 1024,
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A (stack: [A])
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 1: Push B (stack: [A, B]) - should be at limit
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 2: Push C - should cause overflow
+		}
+
+		r := avm.NewRuntime(100, instructions, smallConfig)
+		_, err := r.StartExecution()
+
+		// Should get stack overflow error
+		if err == nil {
+			t.Fatal("Expected stack overflow error")
+		}
+
+		if err.Error() != "stack overflow" {
+			t.Errorf("Expected 'stack overflow', got '%s'", err.Error())
+		}
+
+		// Stack should contain A and B
+		if r.Stack.Size() != 2 {
+			t.Errorf("Expected stack size 2, got %d", r.Stack.Size())
+		}
+	})
+
+	t.Run("No overflow with unlimited stack", func(t *testing.T) {
+		// Create a config with unlimited stack size (0 means unlimited)
+		unlimitedConfig := avm.RuntimeConfig{
+			StackSize:  0, // Unlimited
+			MemorySize: 1024,
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")),
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")),
+			avm.MakeInstructionWithValue(avm.PUSH, hex("D")),
+			avm.MakeInstructionWithValue(avm.PUSH, hex("E")),
+		}
+
+		r := avm.NewRuntime(100, instructions, unlimitedConfig)
+		_, err := r.StartExecution()
+
+		// Should succeed
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Stack should contain all 5 elements
+		if r.Stack.Size() != 5 {
+			t.Errorf("Expected stack size 5, got %d", r.Stack.Size())
+		}
+	})
+
+	t.Run("DUP causes overflow", func(t *testing.T) {
+		// Test that DUP can also cause overflow
+		smallConfig := avm.RuntimeConfig{
+			StackSize:  1, // Only allow 1 element
+			MemorySize: 1024,
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A (stack: [A]) - at limit
+			avm.MakeInstruction(avm.DUP),                     // 1: DUP - should cause overflow
+		}
+
+		r := avm.NewRuntime(100, instructions, smallConfig)
+		_, err := r.StartExecution()
+
+		// Should get stack overflow error
+		if err == nil {
+			t.Fatal("Expected stack overflow error")
+		}
+
+		if err.Error() != "stack overflow" {
+			t.Errorf("Expected 'stack overflow', got '%s'", err.Error())
+		}
+
+		// Stack should contain only A
+		if r.Stack.Size() != 1 {
+			t.Errorf("Expected stack size 1, got %d", r.Stack.Size())
+		}
+	})
+}
+
+func TestMemoryOperations(t *testing.T) {
+	t.Run("Basic MSTORE and MLOAD", func(t *testing.T) {
+		// Store value 42 at address 0, then load it back
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("0")),  // address 0
+			avm.MakeInstructionWithValue(avm.PUSH, hex("2A")), // value 42
+			avm.MakeInstruction(avm.MSTORE),                   // Store 42 at address 0
+			avm.MakeInstructionWithValue(avm.PUSH, hex("0")),  // address 0
+			avm.MakeInstruction(avm.MLOAD),                    // Load from address 0
+		}
+
+		r := avm.NewRuntime(1000, instructions, defaultConfig())
+		gasUsed, err := r.StartExecution()
+
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Verify gas consumption: 2 PUSH (3 each) + MSTORE (20) + PUSH (3) + MLOAD (15) = 44
+		expectedGas := uint64(3 + 3 + 20 + 3 + 15)
+		if gasUsed != expectedGas {
+			t.Errorf("Expected gas %d, got %d", expectedGas, gasUsed)
+		}
+
+		// Verify the loaded value
+		val, err := r.Stack.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop from stack: %v", err)
+		}
+
+		if val.Cmp(hex("2A")) != 0 {
+			t.Errorf("Expected value 42, got %s", val.String())
+		}
+	})
+
+	t.Run("Multiple memory locations", func(t *testing.T) {
+		// Store different values at different addresses
+		instructions := []avm.Instruction{
+			// Store 100 at address 5
+			avm.MakeInstructionWithValue(avm.PUSH, hex("5")),  // address 5
+			avm.MakeInstructionWithValue(avm.PUSH, hex("64")), // value 100
+			avm.MakeInstruction(avm.MSTORE),
+			// Store 200 at address 10
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),  // address 10
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C8")), // value 200
+			avm.MakeInstruction(avm.MSTORE),
+			// Load from address 5
+			avm.MakeInstructionWithValue(avm.PUSH, hex("5")),
+			avm.MakeInstruction(avm.MLOAD),
+			// Load from address 10
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),
+			avm.MakeInstruction(avm.MLOAD),
+		}
+
+		r := avm.NewRuntime(1000, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Stack should have [100, 200] from bottom to top
+		val2, err := r.Stack.Pop() // Should be 200
+		if err != nil {
+			t.Fatalf("Failed to pop from stack: %v", err)
+		}
+		if val2.Cmp(hex("C8")) != 0 {
+			t.Errorf("Expected value 200, got %s", val2.String())
+		}
+
+		val1, err := r.Stack.Pop() // Should be 100
+		if err != nil {
+			t.Fatalf("Failed to pop from stack: %v", err)
+		}
+		if val1.Cmp(hex("64")) != 0 {
+			t.Errorf("Expected value 100, got %s", val1.String())
+		}
+	})
+
+	t.Run("Load from uninitialized memory", func(t *testing.T) {
+		// Load from address that was never written to
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("FF")), // address 255
+			avm.MakeInstruction(avm.MLOAD),                    // Load from uninitialized address
+		}
+
+		r := avm.NewRuntime(1000, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err != nil {
+			t.Fatalf("Execution error: %v", err)
+		}
+
+		// Should return 0 for uninitialized memory
+		val, err := r.Stack.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop from stack: %v", err)
+		}
+
+		if val.Cmp(big.NewInt(0)) != 0 {
+			t.Errorf("Expected value 0 for uninitialized memory, got %s", val.String())
+		}
+	})
+
+	t.Run("Memory out of bounds - store", func(t *testing.T) {
+		// Try to store beyond memory limit
+		config := avm.RuntimeConfig{
+			StackSize:  1024,
+			MemorySize: 10, // Small memory limit
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),  // address 10 (out of bounds for size 10)
+			avm.MakeInstructionWithValue(avm.PUSH, hex("64")), // value 100
+			avm.MakeInstruction(avm.MSTORE),
+		}
+
+		r := avm.NewRuntime(1000, instructions, config)
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Fatal("Expected memory out of bounds error, got nil")
+		}
+
+		if err.Error() != "memory access out of bounds" {
+			t.Errorf("Expected 'memory access out of bounds', got '%s'", err.Error())
+		}
+	})
+
+	t.Run("Memory out of bounds - load", func(t *testing.T) {
+		// Try to load beyond memory limit
+		config := avm.RuntimeConfig{
+			StackSize:  1024,
+			MemorySize: 10, // Small memory limit
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // address 10 (out of bounds for size 10)
+			avm.MakeInstruction(avm.MLOAD),
+		}
+
+		r := avm.NewRuntime(1000, instructions, config)
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Fatal("Expected memory out of bounds error, got nil")
+		}
+
+		if err.Error() != "memory access out of bounds" {
+			t.Errorf("Expected 'memory access out of bounds', got '%s'", err.Error())
+		}
+	})
+
+	t.Run("Unlimited memory", func(t *testing.T) {
+		// Test with unlimited memory (MemorySize = 0)
+		config := avm.RuntimeConfig{
+			StackSize:  1024,
+			MemorySize: 0, // Unlimited memory
+		}
+
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("FFFF")), // Large address
+			avm.MakeInstructionWithValue(avm.PUSH, hex("42")),   // value 66
+			avm.MakeInstruction(avm.MSTORE),
+			avm.MakeInstructionWithValue(avm.PUSH, hex("FFFF")),
+			avm.MakeInstruction(avm.MLOAD),
+		}
+
+		r := avm.NewRuntime(1000, instructions, config)
+		_, err := r.StartExecution()
+
+		if err != nil {
+			t.Fatalf("Execution error with unlimited memory: %v", err)
+		}
+
+		// Verify the loaded value
+		val, err := r.Stack.Pop()
+		if err != nil {
+			t.Fatalf("Failed to pop from stack: %v", err)
+		}
+
+		if val.Cmp(hex("42")) != 0 {
+			t.Errorf("Expected value 66, got %s", val.String())
+		}
+	})
+
+	t.Run("Stack underflow on MSTORE", func(t *testing.T) {
+		// Try MSTORE with insufficient stack items
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("0")), // Only one value on stack
+			avm.MakeInstruction(avm.MSTORE),                  // Needs two values: address and value
+		}
+
+		r := avm.NewRuntime(1000, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Fatal("Expected stack underflow error, got nil")
+		}
+
+		if err.Error() != "Empty Stack" {
+			t.Errorf("Expected 'Empty Stack', got '%s'", err.Error())
+		}
+	})
+
+	t.Run("Stack underflow on MLOAD", func(t *testing.T) {
+		// Try MLOAD with empty stack
+		instructions := []avm.Instruction{
+			avm.MakeInstruction(avm.MLOAD), // Needs address on stack
+		}
+
+		r := avm.NewRuntime(1000, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Fatal("Expected stack underflow error, got nil")
+		}
+
+		if err.Error() != "Empty Stack" {
+			t.Errorf("Expected 'Empty Stack', got '%s'", err.Error())
+		}
+	})
 }

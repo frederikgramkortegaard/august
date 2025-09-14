@@ -27,7 +27,6 @@ const (
 	DIV
 	AND
 	OR
-	NOT
 
 	// Conditionals
 	EQ
@@ -63,7 +62,6 @@ var opcodeNames = [...]string{
 	DIV:    "DIV",
 	AND:    "AND",
 	OR:     "OR",
-	NOT:    "NOT",
 	EQ:     "EQ",
 	LT:     "LT",
 	GT:     "GT",
@@ -132,7 +130,7 @@ func (ins Instruction) ValidateInstruction() error {
 		}
 
 	// Arithmetic and comparison operations need values on stack, not instruction parameters
-	case ADD, SUB, MUL, DIV, AND, OR, NOT, EQ, LT, GT, ISZERO:
+	case ADD, SUB, MUL, DIV, AND, OR, EQ, LT, GT, ISZERO:
 		if ins.Value != nil || ins.Param != 0 {
 			return ErrUnexpectedInstructionParameter
 		}

@@ -13,23 +13,27 @@ func main() {
 		return n
 	}
 
-	// Create a list of instructions: push, pop, push, dup, emit
+	// Create a simple calculator: (7 + 3) * 2 > 15 ?
 	instructions := []avm.Instruction{
-		avm.MakeInstructionWithValue(avm.PUSH, hex("6")),     // 0x06 = 6 decimal
-		avm.MakeInstructionWithValue(avm.PUSH, hex("2A")),    // 0x2A = 42 decimal
-		avm.MakeInstructionWithValue(avm.PUSH, hex("2A")),    // 0x2A = 42 decimal
-		avm.MakeInstruction(avm.POP),
-		avm.MakeInstructionWithValue(avm.PUSH, hex("DEAD")),  // 0xDEAD
-		avm.MakeInstruction(avm.DUP),
-		avm.MakeInstructionWithParam(avm.SWAP, 3),
-		avm.MakeInstruction(avm.EMIT),
+		avm.MakeInstructionWithValue(avm.PUSH, hex("7")), // Push 7
+		avm.MakeInstructionWithValue(avm.PUSH, hex("3")), // Push 3
+		avm.MakeInstruction(avm.ADD),                     // 7 + 3 = 10
+		avm.MakeInstructionWithValue(avm.PUSH, hex("2")), // Push 2
+		avm.MakeInstruction(avm.MUL),                     // 10 * 2 = 20
+		avm.MakeInstructionWithValue(avm.PUSH, hex("F")), // Push 15
+		avm.MakeInstruction(avm.GT),                      // 20 > 15 = true (1)
+		avm.MakeInstruction(avm.EMIT),                    // Emit result
 	}
 
-	// Create runtime with 1000 gas
-	r := avm.NewRuntime(1000)
+	// Create runtime with 1000 gas and default config
+	config := avm.RuntimeConfig{
+		StackSize:  1024, // Allow up to 1024 stack elements
+		MemorySize: 1024, // Allow up to 1024 memory slots
+	}
+	r := avm.NewRuntime(1000, instructions, config)
 
 	// Execute
-	gasUsed, err := r.StartExecution(instructions)
+	gasUsed, err := r.StartExecution()
 	if err != nil {
 		fmt.Printf("Execution error: %v\n", err)
 	} else {
