@@ -18,7 +18,7 @@ type Config struct {
 	NodeID         string
 	SeedPeers      []string
 	DBName         string
-	MinerPort      string        // HTTP port for miners (optional)
+	QueryPort      string        // HTTP port for query API and miners (optional)
 	MaxMempoolSize int           // Maximum transactions in mempool (default: 1000)
 	MempoolExpiry  time.Duration // Maximum age for mempool transactions (default: 7 days)
 }
@@ -96,12 +96,12 @@ func (n *FullNode) Start() <-chan bool {
 			return
 		}
 
-		// 6. Start HTTP API for miners if configured
-		if n.Config.MinerPort != "" {
+		// 6. Start HTTP API for miners and queries if configured
+		if n.Config.QueryPort != "" {
 			go func() {
-				port, _ := strconv.Atoi(n.Config.MinerPort)
-				if err := n.StartMinerAPI(port); err != nil {
-					log.Printf("%s\tMiner API server failed: %v", n.Config.NodeID, err)
+				port, _ := strconv.Atoi(n.Config.QueryPort)
+				if err := n.StartQueryAPI(port); err != nil {
+					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
 				}
 			}()
 		}

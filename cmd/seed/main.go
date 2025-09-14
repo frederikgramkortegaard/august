@@ -27,7 +27,7 @@ func main() {
 		NodeID:    *nodeID,
 		SeedPeers: []string{}, // Seeds don't connect to other seeds
 		DBName:    *dbname,
-		MinerPort: *minerport,
+		QueryPort: *minerport,
 	}
 
 	// Create and start seed node

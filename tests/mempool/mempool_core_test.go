@@ -337,7 +337,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 func TestMempoolPersistenceAndAPI(t *testing.T) {
 	// Create node with miner API
 	nodeA := createMempoolTestNode(2)
-	nodeA.Config.MinerPort = strconv.Itoa(MEMPOOL_PORT_START + 100)
+	nodeA.Config.QueryPort = strconv.Itoa(MEMPOOL_PORT_START + 100)
 
 	// Start and initialize
 	ready := nodeA.Start()
