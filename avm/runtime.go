@@ -41,13 +41,17 @@ func (s *stack) Top() (*big.Int, error) {
 // stack has len() = 10, swap0 would do nothing, swap10 would require len=11
 
 func (s *stack) Swap(down int) error {
-	l := len(s.s)
-	if l < down {
+	if len(s.s) <= down {
 		return ErrStackUnderflow
 	}
 
-	// Swap top element with element 'down' positions from top
-	s.s[l-1], s.s[l-down] = s.s[l-down], s.s[l-1]
+	cpy, err := s.Top()
+	if err != nil {
+		return err
+	}
+
+	l := len(s.s)
+	s.s[l-1], s.s[l-1-down] = s.s[l-1-down], cpy
 	return nil
 }
 
@@ -134,9 +138,6 @@ func (s *stack) ExecuteInstruction(ins Instruction) error {
 	case SWAP:
 		if ins.Rhs == nil {
 			return ErrInvalidInstructionNoRhs
-		}
-		if !ins.Rhs.IsInt64() {
-			return errors.New("swap distance too large")
 		}
 		return s.Swap(int(ins.Rhs.Int64()))
 

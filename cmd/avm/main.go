@@ -15,13 +15,13 @@ func main() {
 
 	// Create a list of instructions: push, pop, push, dup, emit
 	instructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Rhs: hex("6")},  // 0x2A = 42 decimal
+		{Opcode: avm.PUSH, Rhs: hex("6")},  // 0x06 = 6 decimal
 		{Opcode: avm.PUSH, Rhs: hex("2A")}, // 0x2A = 42 decimal
 		{Opcode: avm.PUSH, Rhs: hex("2A")}, // 0x2A = 42 decimal
 		{Opcode: avm.POP},
 		{Opcode: avm.PUSH, Rhs: hex("DEAD")}, // 0xDEAD
 		{Opcode: avm.DUP},
-		{Opcode: avm.SWAP, Rhs: hex("5")},
+		{Opcode: avm.SWAP, Rhs: hex("3")},
 		{Opcode: avm.EMIT},
 	}
 
