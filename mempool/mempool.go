@@ -128,8 +128,9 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 
 // GetTransactions returns the top N transactions ordered by fee (highest first)
 func (mp *Mempool) GetTransactions(limit int) []blockchain.Transaction {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
+	// Use write lock since we modify state by cleaning expired transactions
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
 
 	// Clean expired transactions first
 	mp.cleanExpiredTransactions()

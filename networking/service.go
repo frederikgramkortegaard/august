@@ -843,8 +843,11 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 	s.logf("Received handshake from %s (node %s), actual peer address: %s",
 		peer.Address, handshake.NodeID, properPeerAddr)
 
-	// Check if peer already exists in manager (duplicate connection detection)
+	// Consistent lock ordering to prevent deadlocks
+	// Always acquire peerConnectionsMu before peerManager.mu
+	s.peerConnectionsMu.Lock()
 	s.peerManager.mu.Lock()
+
 	existingPeer, exists := s.peerManager.peers[properPeerAddr]
 
 	if exists {
@@ -854,6 +857,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 			existingPeer.ID = handshake.NodeID
 			existingPeer.Status = PeerConnected
 			s.peerManager.mu.Unlock()
+			s.peerConnectionsMu.Unlock()
 		} else {
 			// Different peer objects - this is a race condition with bidirectional connections
 			// We need to decide which connection to keep based on a deterministic rule
@@ -868,14 +872,14 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 					existingPeer.ID = handshake.NodeID
 				}
 				s.peerManager.mu.Unlock()
+				s.peerConnectionsMu.Unlock()
 				conn.Close()
 				return
 			} else {
 				s.logf("Duplicate connection detected for %s, replacing existing connection (existing: %v, new: %v)",
 					properPeerAddr, existingPeer.IsOutgoing, peer.IsOutgoing)
 
-				// Close the old connection and replace with new one
-				s.peerConnectionsMu.Lock()
+				// Close the old connection and replace with new one (locks already held)
 				if oldConn, exists := s.peerConnections[existingPeer.ConnAddr]; exists {
 					oldConn.Close()
 					delete(s.peerConnections, existingPeer.ConnAddr)
@@ -884,7 +888,6 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 					oldConn.Close()
 				}
 				s.peerConnections[properPeerAddr] = conn
-				s.peerConnectionsMu.Unlock()
 
 				// Update the existing peer entry with new connection info
 				existingPeer.ID = handshake.NodeID
@@ -893,6 +896,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 				existingPeer.IsOutgoing = peer.IsOutgoing
 				existingPeer.LastSeen = time.Now() // Update last seen time
 				s.peerManager.mu.Unlock()
+				s.peerConnectionsMu.Unlock()
 			}
 		}
 	} else {
@@ -900,8 +904,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 		peer.ID = handshake.NodeID
 		peer.Status = PeerConnected
 
-		// Update the connection mapping to use the proper address
-		s.peerConnectionsMu.Lock()
+		// Update the connection mapping to use the proper address (locks already held)
 		if peer.Address != properPeerAddr {
 			// Move the connection from ephemeral to proper address
 			if conn, ok := s.peerConnections[peer.Address]; ok {
@@ -909,7 +912,6 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 				s.peerConnections[properPeerAddr] = conn
 			}
 		}
-		s.peerConnectionsMu.Unlock()
 
 		// ConnAddr stays as the actual connection endpoint
 		// Address becomes the listen address
@@ -923,6 +925,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 		// Add to peer manager with proper address
 		s.peerManager.peers[properPeerAddr] = peer
 		s.peerManager.mu.Unlock()
+		s.peerConnectionsMu.Unlock()
 	}
 
 	s.logf("Handshake completed with %s (node: %s, conn: %s, outgoing: %v)",
@@ -1007,15 +1010,15 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 
 	// Check if we already have this block header in our recent blocks (deduplication)
 	s.recentBlocksMu.Lock()
+	defer s.recentBlocksMu.Unlock()
+
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
 		if time.Now().Sub(addedTime) <= s.recentBlocksTTL {
-			s.recentBlocksMu.Unlock()
 			s.logf("Ignoring duplicate block header: %x", blockHash[:8])
 			return
 		}
 	}
 	s.recentBlocks[blockHash] = time.Now()
-	s.recentBlocksMu.Unlock()
 
 	s.logf("Received new block header %x (height %d) from peer %s",
 		blockHash[:8], header.Height, peer.Address)
@@ -1157,15 +1160,15 @@ func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 	// Mitigate Broadcast Storm by keeping list of blocks to ignore
 	blockHash := blockchain.HashBlockHeader(&blockPayload.Block.Header)
 	s.recentBlocksMu.Lock()
+	defer s.recentBlocksMu.Unlock()
+
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
 		if time.Now().Sub(addedTime) <= s.recentBlocksTTL {
-			s.recentBlocksMu.Unlock()
 			s.logf("Ignoring new block: %x because its in recentblocks", blockHash[:8])
 			return
 		}
 	}
 	s.recentBlocks[blockHash] = time.Now()
-	s.recentBlocksMu.Unlock()
 
 	s.logf("Received new block %x from peer %s", blockHash[:8], peer.Address)
 

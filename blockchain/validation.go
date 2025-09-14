@@ -365,7 +365,17 @@ func ValidateHeaderChain(headers []BlockHeader) bool {
 			return false
 		}
 
-		// TODO: Add PoW validation, difficulty checks, etc.
+		// PoW validation - check if hash meets the target specified in header
+		if err := ValidateHeaderStructure(&headers[i]); err != nil {
+			debugLog("VALIDATION\tHeader %d failed structure validation: %v", i, err)
+			return false
+		}
+
+		// Timestamp validation - must be greater than previous block
+		if headers[i].Timestamp <= headers[i-1].Timestamp {
+			debugLog("VALIDATION\tHeader %d timestamp not greater than previous", i)
+			return false
+		}
 	}
 
 	return true

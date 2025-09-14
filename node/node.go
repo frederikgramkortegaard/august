@@ -6,10 +6,12 @@ import (
 	"august/networking"
 	"august/node/queryapi"
 	store "august/storage"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -35,6 +37,11 @@ type FullNode struct {
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server // Network message handling
 	Mempool       *mempool.Mempool   // Transaction pool
+
+	// Goroutine management
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // NewFullNode creates a node that runs all services
@@ -49,10 +56,15 @@ func NewFullNode(config Config) *FullNode {
 	}
 	nodeMempool := mempool.NewMempool(mempoolConfig)
 
+	// Create context for goroutine management
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &FullNode{
 		Store:   chainStore,
 		Config:  config,
 		Mempool: nodeMempool,
+		ctx:     ctx,
+		cancel:  cancel,
 		// Components will be initialized in Start()
 	}
 }
@@ -259,11 +271,30 @@ func (n *FullNode) startNetworking() <-chan bool {
 func (n *FullNode) Stop() error {
 	log.Printf("%s\tStopping FullNode...", n.Config.NodeID)
 
+	// Signal all goroutines to stop
+	if n.cancel != nil {
+		n.cancel()
+	}
+
 	// Stop network server
 	if n.NetworkServer != nil {
 		if err := n.NetworkServer.Stop(); err != nil {
 			log.Printf("%s\tError stopping network server: %v", n.Config.NodeID, err)
 		}
+	}
+
+	// Wait for all goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		n.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Printf("%s\tAll goroutines stopped gracefully", n.Config.NodeID)
+	case <-time.After(5 * time.Second):
+		log.Printf("%s\tTimeout waiting for goroutines to stop", n.Config.NodeID)
 	}
 
 	// Close database connection
@@ -308,8 +339,15 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	log.Printf("%s\tTransaction added to mempool: %x", n.Config.NodeID, txHash[:8])
 
 	// Broadcast the transaction to all connected peers
+	n.wg.Add(1)
 	go func() {
-		<-networking.RelayTransaction(n.NetworkServer, tx)
+		defer n.wg.Done()
+		select {
+		case <-n.ctx.Done():
+			return // Node is shutting down
+		case <-networking.RelayTransaction(n.NetworkServer, tx):
+			// Transaction relayed successfully
+		}
 	}()
 
 	return nil
@@ -322,8 +360,15 @@ func (n *FullNode) SubmitBlock(block *blockchain.Block) error {
 	}
 
 	// Process through the node's block processing pipeline
+	n.wg.Add(1)
 	go func() {
-		<-n.ProcessBlock(block)
+		defer n.wg.Done()
+		select {
+		case <-n.ctx.Done():
+			return // Node is shutting down
+		case <-n.ProcessBlock(block):
+			// Block processed successfully
+		}
 	}()
 
 	return nil
@@ -430,11 +475,18 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 				log.Printf("%s\tReorganized Chain", n.Config.NodeID)
 
 				// Clean mempool after chain reorganization
+				n.wg.Add(1)
 				go func() {
-					// Revalidate all transactions against new chain state
-					invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-					if invalidated > 0 {
-						log.Printf("%s\tRemoved %d invalid transactions from mempool after chain reorganization", n.Config.NodeID, invalidated)
+					defer n.wg.Done()
+					select {
+					case <-n.ctx.Done():
+						return
+					default:
+						// Revalidate all transactions against new chain state
+						invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
+						if invalidated > 0 {
+							log.Printf("%s\tRemoved %d invalid transactions from mempool after chain reorganization", n.Config.NodeID, invalidated)
+						}
 					}
 				}()
 
@@ -455,22 +507,38 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 		log.Printf("%s\tBlock %x added to main chain", n.Config.NodeID, blockHash[:8])
 
 		// Clean mempool after new block is added
+		n.wg.Add(1)
 		go func() {
-			// Remove transactions that were included in this block from mempool
-			removed := n.Mempool.RemoveTransactions(block.Transactions)
-			if removed > 0 {
-				log.Printf("%s\tRemoved %d transactions from mempool (included in block %x)", n.Config.NodeID, removed, blockHash[:8])
-			}
+			defer n.wg.Done()
+			select {
+			case <-n.ctx.Done():
+				return
+			default:
+				// Remove transactions that were included in this block from mempool
+				removed := n.Mempool.RemoveTransactions(block.Transactions)
+				if removed > 0 {
+					log.Printf("%s\tRemoved %d transactions from mempool (included in block %x)", n.Config.NodeID, removed, blockHash[:8])
+				}
 
-			// Revalidate remaining transactions against new chain state
-			invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-			if invalidated > 0 {
-				log.Printf("%s\tRemoved %d invalid transactions from mempool after block %x", n.Config.NodeID, invalidated, blockHash[:8])
+				// Revalidate remaining transactions against new chain state
+				invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
+				if invalidated > 0 {
+					log.Printf("%s\tRemoved %d invalid transactions from mempool after block %x", n.Config.NodeID, invalidated, blockHash[:8])
+				}
 			}
 		}()
 
 		// Relay the block header to connected peers (headers-first approach)
-		go func() { <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr) }()
+		n.wg.Add(1)
+		go func() {
+			defer n.wg.Done()
+			select {
+			case <-n.ctx.Done():
+				return
+			case <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr):
+				// Header relayed successfully
+			}
+		}()
 
 		// Try to connect any candidate blocks that might now be connectible
 		if err := n.NetworkServer.GetConsensusManager().TryConnectCandidateBlocks(block); err != nil {

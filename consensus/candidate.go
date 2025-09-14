@@ -120,34 +120,55 @@ func (cm *CandidateManager) ShouldAbortDownload(candidate *CandidateChain) bool 
 
 // EvaluateCandidateForPromotion checks if candidate should become active chain
 func (cm *CandidateManager) EvaluateCandidateForPromotion(candidate *CandidateChain) error {
-	// CRITICAL: Lock the chain for the entire validation and switch process
+	// First pass: Get current chain state without holding lock for long
+	var currentWork string
 	cm.store.Lock()
-	defer cm.store.Unlock()
-
-	// Get current active chain for comparison
 	currentChain, err := cm.store.GetChain()
 	if err != nil {
+		cm.store.Unlock()
 		return fmt.Errorf("failed to get current chain: %w", err)
 	}
 
-	currentWork := "0"
+	currentWork = "0"
 	if len(currentChain.Blocks) > 0 {
 		currentWork = currentChain.Blocks[len(currentChain.Blocks)-1].Header.TotalWork
 	}
+	cm.store.Unlock()
 
-	// Compare work
-	if blockchain.CompareWork(candidate.ExpectedWork, currentWork) > 0 {
-		// Get the candidate's complete chain
-		candidateChain, err := candidate.ChainStore.GetChain()
-		if err != nil {
-			return fmt.Errorf("failed to get candidate chain: %w", err)
-		}
+	// Early exit if candidate doesn't have more work
+	if blockchain.CompareWork(candidate.ExpectedWork, currentWork) <= 0 {
+		return nil // Not better than current chain
+	}
 
-		// CRITICAL: Validate all blocks and transactions before switching
-		if err := blockchain.ValidateCompleteChain(candidateChain); err != nil {
-			cm.candidateChains.Delete(candidate.ID)
-			return fmt.Errorf("candidate failed validation: %w", err)
-		}
+	// Get candidate chain without holding main store lock
+	candidateChain, err := candidate.ChainStore.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get candidate chain: %w", err)
+	}
+
+	// Expensive validation done WITHOUT holding the store lock
+	if err := blockchain.ValidateCompleteChain(candidateChain); err != nil {
+		cm.candidateChains.Delete(candidate.ID)
+		return fmt.Errorf("candidate failed validation: %w", err)
+	}
+
+	// Second pass: Re-acquire lock and double-check before switching
+	cm.store.Lock()
+	defer cm.store.Unlock()
+
+	// Re-check current state (may have changed during validation)
+	currentChain, err = cm.store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to re-check current chain: %w", err)
+	}
+
+	newCurrentWork := "0"
+	if len(currentChain.Blocks) > 0 {
+		newCurrentWork = currentChain.Blocks[len(currentChain.Blocks)-1].Header.TotalWork
+	}
+
+	// Final check: still better than current?
+	if blockchain.CompareWork(candidate.ExpectedWork, newCurrentWork) > 0 {
 
 		// Atomic switch to new chain (fully validated, no race condition possible under lock)
 		if err := cm.store.ReplaceChainUnsafe(candidateChain); err != nil {
