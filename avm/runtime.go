@@ -93,11 +93,12 @@ func (r *Runtime) StartExecution(instructions []Instruction) (uint64, error) {
 }
 
 func (r *Runtime) ExecuteInstruction(ins Instruction) error {
-	oc := ins.Opcode
-
-	if !oc.Valid() {
-		return ErrInvalidOpcode
+	// Validate instruction before execution
+	if err := ins.ValidateInstruction(); err != nil {
+		return err
 	}
+
+	oc := ins.Opcode
 
 	if r.GasAvailable < uint64(oc.Price()) {
 		return ErrOutOfGas
@@ -117,15 +118,8 @@ func (s *stack) ExecuteInstruction(ins Instruction) error {
 	case NOOP:
 		// Nothing
 	case PUSH:
-		if ins.Rhs == nil {
-			return ErrInvalidPush
-		}
-		// Ensure it's a 32-byte value
-		bytes := ins.Rhs.Bytes()
-		if len(bytes) > 32 {
-			return ErrInvalidPush
-		}
-		return s.Push(ins.Rhs)
+		// Validation already done, safe to push
+		return s.Push(ins.Value)
 	case POP:
 		_, err := s.Pop()
 		return err
@@ -136,10 +130,8 @@ func (s *stack) ExecuteInstruction(ins Instruction) error {
 		}
 		return s.Push(val)
 	case SWAP:
-		if ins.Rhs == nil {
-			return ErrInvalidInstructionNoRhs
-		}
-		return s.Swap(int(ins.Rhs.Int64()))
+		// Validation already done, safe to convert from uint16
+		return s.Swap(int(ins.Param))
 
 	case EMIT:
 		val, err := s.Top()

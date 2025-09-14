@@ -15,14 +15,14 @@ func main() {
 
 	// Create a list of instructions: push, pop, push, dup, emit
 	instructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Rhs: hex("6")},  // 0x06 = 6 decimal
-		{Opcode: avm.PUSH, Rhs: hex("2A")}, // 0x2A = 42 decimal
-		{Opcode: avm.PUSH, Rhs: hex("2A")}, // 0x2A = 42 decimal
-		{Opcode: avm.POP},
-		{Opcode: avm.PUSH, Rhs: hex("DEAD")}, // 0xDEAD
-		{Opcode: avm.DUP},
-		{Opcode: avm.SWAP, Rhs: hex("3")},
-		{Opcode: avm.EMIT},
+		avm.MakeInstructionWithValue(avm.PUSH, hex("6")),     // 0x06 = 6 decimal
+		avm.MakeInstructionWithValue(avm.PUSH, hex("2A")),    // 0x2A = 42 decimal
+		avm.MakeInstructionWithValue(avm.PUSH, hex("2A")),    // 0x2A = 42 decimal
+		avm.MakeInstruction(avm.POP),
+		avm.MakeInstructionWithValue(avm.PUSH, hex("DEAD")),  // 0xDEAD
+		avm.MakeInstruction(avm.DUP),
+		avm.MakeInstructionWithParam(avm.SWAP, 3),
+		avm.MakeInstruction(avm.EMIT),
 	}
 
 	// Create runtime with 1000 gas
