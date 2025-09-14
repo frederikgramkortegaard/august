@@ -4,8 +4,10 @@ import (
 	"august/blockchain"
 	"august/networking"
 	store "august/storage"
+	"encoding/base64"
 	"fmt"
 	"log"
+	"strconv"
 )
 
 // Config holds all configuration for a full node
@@ -14,6 +16,7 @@ type Config struct {
 	NodeID    string
 	SeedPeers []string
 	DBName    string
+	MinerPort string // HTTP port for miners (optional)
 }
 
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
@@ -78,6 +81,16 @@ func (n *FullNode) Start() <-chan bool {
 			log.Printf("%s\tFailed to start sync", n.Config.NodeID)
 			ready <- false
 			return
+		}
+
+		// 6. Start HTTP API for miners if configured
+		if n.Config.MinerPort != "" {
+			go func() {
+				port, _ := strconv.Atoi(n.Config.MinerPort)
+				if err := n.StartMinerAPI(port); err != nil {
+					log.Printf("%s\tMiner API server failed: %v", n.Config.NodeID, err)
+				}
+			}()
 		}
 
 		log.Printf("%s\tFull node started: Network on :%s", n.Config.NodeID, n.Config.Port)
@@ -212,6 +225,9 @@ func (n *FullNode) startNetworking() <-chan bool {
 		}
 		n.NetworkServer = networking.NewServer(networkConfig)
 
+		// Set the block processor callback to use our node's ProcessBlock method
+		n.NetworkServer.SetBlockProcessor(n.ProcessBlock)
+
 		err := n.NetworkServer.StartListener()
 		if err != nil {
 			log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
@@ -263,6 +279,176 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	}
 
 	// Broadcast the transaction to all connected peers
-	go func() { <-networking.RelayTransaction(n.NetworkServer, tx) }()
+	go func() {
+
+		// @TODO : Here we want to add it to our mempool and relay it
+		//<-networking.RelayTransaction(n.NetworkServer, tx)
+
+	}()
 	return nil
 }
+
+// SubmitBlock accepts an already-mined block from external miners
+func (n *FullNode) SubmitBlock(block *blockchain.Block) error {
+	if n.NetworkServer == nil {
+		return fmt.Errorf("network server not initialized")
+	}
+
+	// Process through the node's block processing pipeline
+	go func() {
+		<-n.ProcessBlock(block)
+	}()
+
+	return nil
+}
+
+// ProcessBlock attempts to add a block to the main chain, handling orphans
+// Returns a completion channel that will be closed when processing completes
+// excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
+func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{} {
+	complete := make(chan struct{})
+
+	go func() {
+		defer close(complete)
+
+		if block == nil {
+			return
+		}
+
+		blockHash := blockchain.HashBlockHeader(&block.Header)
+
+		// Determine exclude address for relay
+		var excludeAddr string
+		if len(excludePeerAddr) > 0 {
+			excludeAddr = excludePeerAddr[0]
+		}
+
+		// Get current chain and make a deep copy for validation
+		originalChain, err := n.Store.GetChain()
+		if err != nil {
+			log.Printf("%s\tFailed to get chain for block %x: %v", n.Config.NodeID, blockHash[:8], err)
+			return
+		}
+
+		// Make a deep copy to validate on without affecting the original
+		chainCopy := originalChain.DeepCopy()
+		if chainCopy == nil {
+			log.Printf("%s\tFailed to create chain copy for block %x", n.Config.NodeID, blockHash[:8])
+			return
+		}
+
+		// Try to validate and apply block to the copy (this also adds the block to the chain)
+		if err := blockchain.ValidateAndApplyBlock(block, chainCopy); err != nil {
+			// Check if this is a missing parent error (orphan block)
+			if missingParentErr, ok := err.(blockchain.ErrMissingParent); ok {
+				log.Printf("%s\tBlock %x is orphan, missing parent %x. Adding to candidate blocks.",
+					n.Config.NodeID, blockHash[:8], missingParentErr.Hash[:8])
+
+				// Store in candidate blocks using consensus manager
+				n.NetworkServer.GetConsensusManager().AddCandidateBlock(block, excludeAddr, missingParentErr.Hash)
+
+				// Request missing parent block from multiple peers
+				log.Printf("%s\tNeed to request parent block %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
+
+				connectedPeers := n.NetworkServer.GetPeerManager().GetConnectedPeers()
+				if len(connectedPeers) > 0 {
+					hashString := base64.StdEncoding.EncodeToString(missingParentErr.Hash[:])
+					go func() {
+						blocks, err := networking.RequestBlocksByHash(n.NetworkServer, []string{hashString})
+						if err != nil {
+							log.Printf("%s\tFailed to request parent block %x from peers: %v", n.Config.NodeID, missingParentErr.Hash[:8], err)
+							return
+						}
+
+						if len(blocks) == 0 {
+							log.Printf("%s\tNo parent block returned for %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
+							return
+						}
+
+						// Process the parent block - this should connect orphan blocks
+						<-n.ProcessBlock(blocks[0])
+					}()
+				}
+				return
+
+				// Check if this is a chain switch request (fork detected)
+			} else if details, ok := err.(blockchain.ErrSwitchChain); ok {
+				log.Printf("%s\tBlock %x detected fork, need to check for chain reorganization", n.Config.NodeID, blockHash[:8])
+
+				// Check if current chain has more work
+				if blockchain.CompareWork(details.Block.Header.TotalWork, chainCopy.Blocks[len(chainCopy.Blocks)-1].Header.TotalWork) <= 0 {
+					log.Printf("%s\tCurrent chain has more total work, ignoring block %x", n.Config.NodeID, blockHash[:8])
+					return
+				}
+
+				// Perform Chain Switch - fork has more work
+				// Build new chain up to the fork point
+				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
+				newBlocks = append(newBlocks, details.Block)
+
+				// Create new chain and rebuild account states from genesis
+				newChain := &blockchain.Chain{
+					Blocks:        newBlocks,
+					AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+				}
+
+				// Rebuild account states by processing all transactions
+				for _, block := range newBlocks {
+					for _, tx := range block.Transactions {
+						blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
+					}
+				}
+
+				chainCopy = newChain
+				log.Printf("%s\tReorganized Chain", n.Config.NodeID)
+
+			} else {
+				// Other validation errors
+				log.Printf("%s\tBlock %x validation failed: %v", n.Config.NodeID, blockHash[:8], err)
+				return
+			}
+		}
+
+		// Block validation succeeded and was added to the copy, now atomically replace the chain
+		if err := n.Store.ReplaceChain(chainCopy); err != nil {
+			log.Printf("%s\tFailed to replace chain with validated block %x: %v", n.Config.NodeID, blockHash[:8], err)
+			return
+		}
+
+		// Block successfully added to main chain
+		log.Printf("%s\tBlock %x added to main chain", n.Config.NodeID, blockHash[:8])
+
+		// Relay the block header to connected peers (headers-first approach)
+		go func() { <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr) }()
+
+		// Try to connect any candidate blocks that might now be connectible
+		if err := n.NetworkServer.GetConsensusManager().TryConnectCandidateBlocks(block); err != nil {
+			log.Printf("%s\tError connecting candidate blocks: %v", n.Config.NodeID, err)
+		}
+	}()
+
+	return complete
+}
+
+// GetChainHead returns information about the current chain head
+func (n *FullNode) GetChainHead() blockchain.ChainHead {
+	chain, err := n.Store.GetChain()
+	if err != nil || len(chain.Blocks) == 0 {
+		// Return genesis/empty chain info
+		return blockchain.ChainHead{
+			Height:    0,
+			Hash:      blockchain.Hash32{},
+			TotalWork: "0",
+		}
+	}
+
+	lastBlock := chain.Blocks[len(chain.Blocks)-1]
+	hash := blockchain.HashBlockHeader(&lastBlock.Header)
+
+	return blockchain.ChainHead{
+		Height:    lastBlock.Header.Height,
+		Hash:      hash,
+		TotalWork: lastBlock.Header.TotalWork,
+	}
+}
+

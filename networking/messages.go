@@ -26,6 +26,9 @@ const (
 	MessageTypeHeaders          MessageType = "headers"
 	MessageTypeRequestBlocks    MessageType = "request_blocks" // Batch blocks request
 	MessageTypeBlocks           MessageType = "blocks"         // Batch blocks response
+
+	// Mining submission (one-off, no peer relationship required)
+	MessageTypeSubmitBlock      MessageType = "submit_block"   // Miner block submission
 )
 
 // Message represents a network message between nodes
@@ -114,6 +117,11 @@ type RequestBlocksPayload struct {
 // BlocksPayload contains a batch of full blocks
 type BlocksPayload struct {
 	Blocks []*blockchain.Block `json:"blocks"`
+}
+
+// SubmitBlockPayload contains a mined block for submission
+type SubmitBlockPayload struct {
+	Block *blockchain.Block `json:"block"`
 }
 
 // NewMessage creates a new network message with the given type and payload

@@ -43,6 +43,8 @@ func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 		server.SendBlocksResponse(conn, msg, peer)
 	case MessageTypeBlocks:
 		server.ProcessBlocks(msg, peer)
+	case MessageTypeSubmitBlock:
+		server.ProcessSubmitBlock(msg, conn)
 	default:
 		server.logf("Unknown message type: %s", msg.Type)
 	}

@@ -3,7 +3,6 @@ package networking
 import (
 	"encoding/base64"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"time"
@@ -658,132 +657,18 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.Chai
 	return nil
 }
 
-// ProcessBlock attempts to add a block to the main chain, handling orphans
+// ProcessBlock delegates to the node's ProcessBlock method via callback
 // Returns a completion channel that will be closed when processing completes
 // excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
 func ProcessBlock(server *Server, block *blockchain.Block, excludePeerAddr ...string) <-chan struct{} {
-	complete := make(chan struct{})
+	if server.blockProcessor == nil {
+		// If no processor is set, return a completed channel
+		complete := make(chan struct{})
+		close(complete)
+		return complete
+	}
 
-	go func() {
-		defer close(complete)
-
-		if block == nil {
-			return
-		}
-
-		blockHash := blockchain.HashBlockHeader(&block.Header)
-
-		// Determine exclude address for relay
-		var excludeAddr string
-		if len(excludePeerAddr) > 0 {
-			excludeAddr = excludePeerAddr[0]
-		}
-
-		// Get current chain and make a deep copy for validation
-		originalChain, err := server.config.Store.GetChain()
-		if err != nil {
-			server.logf("Failed to get chain for block %x: %v", blockHash[:8], err)
-			return
-		}
-
-		// Make a deep copy to validate on without affecting the original
-		chainCopy := originalChain.DeepCopy()
-		if chainCopy == nil {
-			server.logf("Failed to create chain copy for block %x", blockHash[:8])
-			return
-		}
-
-		// Try to validate and apply block to the copy (this also adds the block to the chain)
-		if err := blockchain.ValidateAndApplyBlock(block, chainCopy); err != nil {
-			// Check if this is a missing parent error (orphan block)
-			if missingParentErr, ok := err.(blockchain.ErrMissingParent); ok {
-				server.logf("Block %x is orphan, missing parent %x. Adding to candidate blocks.",
-					blockHash[:8], missingParentErr.Hash[:8])
-
-				// Store in candidate blocks using consensus manager
-				server.consensusManager.AddCandidateBlock(block, excludeAddr, missingParentErr.Hash)
-
-				// Request missing parent block from multiple peers
-				server.logf("Need to request parent block %x from peers", missingParentErr.Hash[:8])
-
-				connectedPeers := server.peerManager.GetConnectedPeers()
-				if len(connectedPeers) > 0 {
-					hashString := base64.StdEncoding.EncodeToString(missingParentErr.Hash[:])
-					go func() {
-						blocks, err := RequestBlocksByHash(server, []string{hashString})
-						if err != nil {
-							server.logf("Failed to request parent block %x from peers: %v", missingParentErr.Hash[:8], err)
-							return
-						}
-
-						if len(blocks) == 0 {
-							server.logf("No parent block returned for %x from peers", missingParentErr.Hash[:8])
-							return
-						}
-
-						// Process the parent block - this should connect orphan blocks
-						<-ProcessBlock(server, blocks[0])
-					}()
-				}
-				return
-
-				// Check if this is a chain switch request (fork detected)
-			} else if details, ok := err.(blockchain.ErrSwitchChain); ok {
-				server.logf("Block %x detected fork, need to check for chain reorganization", blockHash[:8])
-
-				// Check if current chain has more work
-				if blockchain.CompareWork(details.Block.Header.TotalWork, chainCopy.Blocks[len(chainCopy.Blocks)-1].Header.TotalWork) <= 0 {
-					server.logf("Current chain has more total work, ignoring block %x", blockHash[:8])
-					return
-				}
-
-				// Perform Chain Switch - fork has more work
-				// Build new chain up to the fork point
-				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
-				newBlocks = append(newBlocks, details.Block)
-
-				// Create new chain and rebuild account states from genesis
-				newChain := &blockchain.Chain{
-					Blocks:        newBlocks,
-					AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
-				}
-
-				// Rebuild account states by processing all transactions
-				for _, block := range newBlocks {
-					for _, tx := range block.Transactions {
-						blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
-					}
-				}
-
-				chainCopy = newChain
-				server.logf("Reorganized Chain")
-
-			} else {
-				// Other validation errors
-				server.logf("Block %x validation failed: %v", blockHash[:8], err)
-				return
-			}
-		}
-
-		// Block validation succeeded and was added to the copy, now atomically replace the chain
-		if err := server.config.Store.ReplaceChain(chainCopy); err != nil {
-			server.logf("Failed to replace chain with validated block %x: %v", blockHash[:8], err)
-			return
-		}
-
-		// Block successfully added to main chain
-		log.Printf("Block %x added to main chain", blockHash[:8])
-
-		// Relay the block header to connected peers (headers-first approach)
-		go func() { <-RelayBlockHeader(server, &block.Header, excludeAddr) }()
-
-		// Try to connect any candidate blocks that might now be connectible
-		if err := server.consensusManager.TryConnectCandidateBlocks(block); err != nil {
-			server.logf("Error connecting candidate blocks: %v", err)
-		}
-	}()
-
-	return complete
+	return server.blockProcessor(block, excludePeerAddr...)
 }
 
 // GetCandidateBlockCount returns the number of candidate blocks waiting for parents (for testing)
@@ -886,7 +771,11 @@ func (s *Server) SendBlockResponse(conn net.Conn, msg *Message, peer *Peer) {
 
 // SendChainHeadResponse sends chain head information in response to a request
 func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) {
-	s.logf("Peer %s requested chain head", peer.Address)
+	requesterAddr := "anonymous"
+	if peer != nil {
+		requesterAddr = peer.Address
+	}
+	s.logf("Requester %s requested chain head", requesterAddr)
 
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
@@ -895,7 +784,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	}
 
 	if len(chain.Blocks) == 0 {
-		s.logf("No blocks in chain to share with %s", peer.Address)
+		s.logf("No blocks in chain to share with %s", requesterAddr)
 		return
 	}
 
@@ -922,9 +811,9 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	}
 
 	if err := s.sendMessage(conn, response); err != nil {
-		s.logf("Failed to send chain head to %s: %v", peer.Address, err)
+		s.logf("Failed to send chain head to %s: %v", requesterAddr, err)
 	} else {
-		s.logf("Sent chain head (height %d) to peer %s", headBlock.Header.Height, peer.Address)
+		s.logf("Sent chain head (height %d) to %s", headBlock.Header.Height, requesterAddr)
 	}
 }
 
@@ -1308,6 +1197,36 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 	// TODO: Add transaction to mempool and validate
 	// For now, just relay to other peers
 	go func() { <-RelayTransaction(s, txPayload.Transaction, peer.Address) }()
+}
+
+// ProcessSubmitBlock handles one-off block submissions from miners (no peer relationship required)
+func (s *Server) ProcessSubmitBlock(msg *Message, conn net.Conn) {
+	var submitPayload SubmitBlockPayload
+	if err := msg.ParsePayload(&submitPayload); err != nil {
+		s.logf("Failed to parse submit block payload: %v", err)
+		return
+	}
+
+	blockHash := blockchain.HashBlockHeader(&submitPayload.Block.Header)
+	remoteAddr := conn.RemoteAddr().String()
+	s.logf("Received block submission %x from miner %s", blockHash[:8], remoteAddr)
+
+	// Process the block through the same pipeline
+	// (no excludePeerAddr since this isn't from a peer)
+	go func() {
+		<-ProcessBlock(s, submitPayload.Block)
+	}()
+
+	// Send simple acknowledgment back to miner
+	response := map[string]interface{}{
+		"status": "received",
+		"block_hash": fmt.Sprintf("%x", blockHash[:8]),
+	}
+
+	ackMsg, err := NewMessage(MessageTypePong, response) // Reuse pong for simplicity
+	if err == nil {
+		s.sendMessage(conn, ackMsg)
+	}
 }
 
 // SendHeadersResponse sends headers in response to a request

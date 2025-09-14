@@ -36,6 +36,16 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 	// Just append the block to the chain - validation should be done by caller
 	chain.Blocks = append(chain.Blocks, block)
 
+	// Update block index
+	if chain.BlockIndex == nil {
+		chain.BlockIndex = make(map[blockchain.Hash32]*blockchain.Block)
+	}
+	blockHash := blockchain.HashBlockHeader(&block.Header)
+	chain.BlockIndex[blockHash] = block
+
+	// Update tip
+	chain.Tip = block
+
 	return nil
 }
 

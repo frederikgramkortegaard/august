@@ -6,6 +6,13 @@ import (
 	"fmt"
 )
 
+// ChainHead represents the current head of the blockchain
+type ChainHead struct {
+	Height    uint64  `json:"height"`
+	Hash      Hash32  `json:"hash"`
+	TotalWork string  `json:"total_work"`
+}
+
 const (
 	Difficulty = 1
 )

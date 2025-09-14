@@ -44,6 +44,9 @@ type Server struct {
 	consensusManager *consensus.CandidateManager
 	chainDownloader  *consensus.ChainDownloader
 
+	// Block processing callback (set by node)
+	blockProcessor func(*blockchain.Block, ...string) <-chan struct{}
+
 	// Unified cleanup system
 	cleanupTicker   *time.Ticker
 	cleanupInterval time.Duration
@@ -412,6 +415,16 @@ func (s *Server) GetListener() net.Listener {
 // GetPeerManager returns the peer manager (for testing)
 func (s *Server) GetPeerManager() *PeerManager {
 	return s.peerManager
+}
+
+// GetConsensusManager returns the consensus manager
+func (s *Server) GetConsensusManager() *consensus.CandidateManager {
+	return s.consensusManager
+}
+
+// SetBlockProcessor sets the callback function for processing blocks
+func (s *Server) SetBlockProcessor(processor func(*blockchain.Block, ...string) <-chan struct{}) {
+	s.blockProcessor = processor
 }
 
 // Note: Candidate chains and blocks are now managed by the consensus package

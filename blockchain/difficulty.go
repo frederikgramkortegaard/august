@@ -14,8 +14,8 @@ const (
 // Bitcoin's max target (difficulty 1) - easiest possible difficulty
 const MaxTargetCompact uint32 = 0x1d00ffff
 
-// Test target for mining tests
-const TestTargetCompact uint32 = 0x1e0fffff
+// Super easy target for testing - requires only 8 leading zero bits
+const TestTargetCompact uint32 = 0x1f00ffff
 
 // CompactToBig converts a compact representation (bits) to a big.Int target
 func CompactToBig(compact uint32) *big.Int {
@@ -75,7 +75,7 @@ func CalculateDifficulty(targetBits uint32) *big.Float {
 // GetTargetBits calculates the next target in compact format
 func GetTargetBits(height int, blocks []*Block) uint32 {
 	if height == 0 || len(blocks) == 0 {
-		return MaxTargetCompact
+		return TestTargetCompact // Use easy difficulty for testing
 	}
 
 	if height%RecalculationFrequency != 0 {
