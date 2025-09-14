@@ -2,21 +2,25 @@ package node
 
 import (
 	"august/blockchain"
+	"august/mempool"
 	"august/networking"
 	store "august/storage"
 	"encoding/base64"
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 )
 
 // Config holds all configuration for a full node
 type Config struct {
-	Port      string
-	NodeID    string
-	SeedPeers []string
-	DBName    string
-	MinerPort string // HTTP port for miners (optional)
+	Port           string
+	NodeID         string
+	SeedPeers      []string
+	DBName         string
+	MinerPort      string        // HTTP port for miners (optional)
+	MaxMempoolSize int           // Maximum transactions in mempool (default: 1000)
+	MempoolExpiry  time.Duration // Maximum age for mempool transactions (default: 7 days)
 }
 
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
@@ -29,6 +33,7 @@ type FullNode struct {
 
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server // Network message handling
+	Mempool       *mempool.Mempool   // Transaction pool
 }
 
 // NewFullNode creates a node that runs all services
@@ -36,9 +41,17 @@ func NewFullNode(config Config) *FullNode {
 	// Create shared store
 	chainStore := store.NewPersistentChainStore(config.DBName)
 
+	// Create mempool with configuration
+	mempoolConfig := mempool.Config{
+		MaxSize:   config.MaxMempoolSize,
+		MaxExpiry: config.MempoolExpiry,
+	}
+	nodeMempool := mempool.NewMempool(mempoolConfig)
+
 	return &FullNode{
-		Store:  chainStore,
-		Config: config,
+		Store:   chainStore,
+		Config:  config,
+		Mempool: nodeMempool,
 		// Components will be initialized in Start()
 	}
 }
@@ -278,13 +291,26 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 		return fmt.Errorf("network server not initialized")
 	}
 
+	// Get current chain state for validation
+	chain, err := n.Store.GetChain()
+	if err != nil {
+		return fmt.Errorf("failed to get chain state: %w", err)
+	}
+
+	// Try to add transaction to mempool (includes validation)
+	if !n.Mempool.AddTransaction(*tx, chain.AccountStates) {
+		return fmt.Errorf("transaction rejected by mempool (invalid, duplicate, or fee too low)")
+	}
+
+	txHash := blockchain.HashTransaction(tx)
+	log.Printf("%s\tTransaction added to mempool: %x", n.Config.NodeID, txHash[:8])
+
 	// Broadcast the transaction to all connected peers
 	go func() {
-
-		// @TODO : Here we want to add it to our mempool and relay it
-		//<-networking.RelayTransaction(n.NetworkServer, tx)
-
+		// @TODO: Implement RelayTransaction in networking package
+		// <-networking.RelayTransaction(n.NetworkServer, tx)
 	}()
+
 	return nil
 }
 
@@ -402,6 +428,15 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 				chainCopy = newChain
 				log.Printf("%s\tReorganized Chain", n.Config.NodeID)
 
+				// Clean mempool after chain reorganization
+				go func() {
+					// Revalidate all transactions against new chain state
+					invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
+					if invalidated > 0 {
+						log.Printf("%s\tRemoved %d invalid transactions from mempool after chain reorganization", n.Config.NodeID, invalidated)
+					}
+				}()
+
 			} else {
 				// Other validation errors
 				log.Printf("%s\tBlock %x validation failed: %v", n.Config.NodeID, blockHash[:8], err)
@@ -417,6 +452,21 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 
 		// Block successfully added to main chain
 		log.Printf("%s\tBlock %x added to main chain", n.Config.NodeID, blockHash[:8])
+
+		// Clean mempool after new block is added
+		go func() {
+			// Remove transactions that were included in this block from mempool
+			removed := n.Mempool.RemoveTransactions(block.Transactions)
+			if removed > 0 {
+				log.Printf("%s\tRemoved %d transactions from mempool (included in block %x)", n.Config.NodeID, removed, blockHash[:8])
+			}
+
+			// Revalidate remaining transactions against new chain state
+			invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
+			if invalidated > 0 {
+				log.Printf("%s\tRemoved %d invalid transactions from mempool after block %x", n.Config.NodeID, invalidated, blockHash[:8])
+			}
+		}()
 
 		// Relay the block header to connected peers (headers-first approach)
 		go func() { <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr) }()
