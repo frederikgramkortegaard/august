@@ -75,6 +75,12 @@ go test ./tests/queryapi/...    # HTTP API tests
 
 ```
 
+## Currency Units
+
+- **1 leaf** = The smallest unit of currency (like 1 wei in Ethereum)
+- **1 AUG** = 10^18 leaf (like 1 ETH = 10^18 wei)
+- All amounts in transactions and balances are denominated in leaf
+
 ## Technical Features
 
 - **Consensus**: Proof-of-work with SHA-256 and difficulty adjustment
