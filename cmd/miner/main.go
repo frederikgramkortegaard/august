@@ -138,7 +138,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Coinbase:     coinbase,
 		Transactions: []blockchain.Transaction{}, // No other transactions
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact, // Super easy difficulty for testing
+		TargetBits:   blockchain.MaxTargetCompact,
 	}
 
 	// Mine the block (this will take some time!)

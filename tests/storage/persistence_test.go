@@ -101,7 +101,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		},
 		Transactions: []blockchain.Transaction{}, // No other transactions
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact, // Easy difficulty for testing
+		TargetBits:   blockchain.TestTargetCompact, // Super easy difficulty for testing
 	}
 
 	// Mine the block
@@ -136,7 +136,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 	log.Printf("NodeA stopped")
 
 	// Create NodeB with same database to test persistence
-	nodeB := createTestNode(1) // Different port but same temp directory
+	nodeB := createTestNode(1)                // Different port but same temp directory
 	nodeB.Config.DBName = nodeA.Config.DBName // Use same database path
 
 	// Start NodeB
