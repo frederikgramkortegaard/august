@@ -143,6 +143,60 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 	return complete
 }
 
+// RelayTransaction broadcasts a transaction to all connected peers, optionally excluding specific peers
+// Returns a completion channel that will be closed when the relay operation completes
+func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAddrs ...string) <-chan struct{} {
+	complete := make(chan struct{})
+
+	go func() {
+		defer close(complete)
+
+		txHash := blockchain.HashTransaction(tx)
+
+		// Mark this transaction as seen (for deduplication)
+		server.MarkTransactionSeen(txHash)
+
+		// Create map for quick exclusion lookup
+		excludeMap := make(map[string]bool)
+		for _, addr := range excludePeerAddrs {
+			excludeMap[addr] = true
+		}
+
+		// Get list of connected peers
+		peers := server.peerManager.GetConnectedPeers()
+
+		// Track how many we actually relay to
+		relayCount := 0
+
+		for _, peer := range peers {
+			// Skip excluded peers (typically the one who sent us the transaction)
+			if excludeMap[peer.Address] {
+				continue
+			}
+
+			// Send transaction to peer
+			msg, err := NewMessage(MessageTypeNewTx, tx)
+			if err != nil {
+				server.logf("Failed to create transaction message: %v", err)
+				continue
+			}
+
+			err = server.reqRespClient.SendNotification(peer.Address, msg)
+			if err != nil {
+				server.logf("Failed to relay transaction %x to peer %s: %v", txHash[:8], peer.Address, err)
+			} else {
+				relayCount++
+			}
+		}
+
+		if relayCount > 0 {
+			server.logf("Relayed transaction %x to %d peers", txHash[:8], relayCount)
+		}
+	}()
+
+	return complete
+}
+
 // RelayBlockHeader broadcasts a block header to all connected peers (headers-first), optionally excluding specific peers
 // Returns a completion channel that will be closed when the relay operation completes
 func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePeerAddrs ...string) <-chan struct{} {
@@ -202,54 +256,6 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 	return complete
 }
 
-// RelayTransaction relays a transaction to all connected peers, optionally excluding specific peers
-// Returns a completion channel that will be closed when the relay operation completes
-func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAddrs ...string) <-chan struct{} {
-	complete := make(chan struct{})
-
-	go func() {
-		defer close(complete)
-
-		// Create the transaction payload
-		txPayload := NewTxPayload{Transaction: tx}
-		msg, err := NewMessage(MessageTypeNewTx, txPayload)
-		if err != nil {
-			server.logf("Failed to create transaction message: %v", err)
-			return
-		}
-
-		// Create map for quick exclusion lookup
-		excludeMap := make(map[string]bool)
-		for _, addr := range excludePeerAddrs {
-			excludeMap[addr] = true
-		}
-
-		// Log what we're doing
-		if len(excludePeerAddrs) == 0 {
-			server.logf("Relaying transaction to all peers")
-		} else {
-			server.logf("Relaying transaction to other peers (excluding %d peers)", len(excludePeerAddrs))
-		}
-
-		// Send to all connected peers
-		sentCount := 0
-		for _, peer := range server.peerManager.GetConnectedPeers() {
-			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
-				// Use SendNotification for fire-and-forget broadcast
-				if err := server.reqRespClient.SendNotification(peer.Address, msg); err != nil {
-					server.logf("Failed to send transaction to peer %s: %v", peer.Address, err)
-				} else {
-					server.logf("Sent transaction to peer %s", peer.Address)
-					sentCount++
-				}
-			}
-		}
-
-		server.logf("Successfully sent transaction to %d peers", sentCount)
-	}()
-
-	return complete
-}
 
 // RequestPeers requests peers from multiple connected peers using smart selection
 func RequestPeers(server *Server, maxPeers int) ([]string, error) {
@@ -1186,17 +1192,46 @@ func (s *Server) ProcessSharedPeers(msg *Message, peer *Peer) {
 
 // ProcessNewTransaction handles incoming transaction announcements
 func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
-	var txPayload NewTxPayload
-	if err := msg.ParsePayload(&txPayload); err != nil {
-		s.logf("Failed to parse transaction payload: %v", err)
+	// First, try to parse as direct transaction (for new relay)
+	var tx *blockchain.Transaction
+	if err := msg.ParsePayload(&tx); err != nil {
+		// Try legacy format with wrapper
+		var txPayload NewTxPayload
+		if err := msg.ParsePayload(&txPayload); err != nil {
+			s.logf("Failed to parse transaction payload: %v", err)
+			return
+		}
+		tx = txPayload.Transaction
+	}
+
+	if tx == nil {
+		s.logf("Received nil transaction from peer %s", peer.Address)
 		return
 	}
 
-	s.logf("Received new transaction from peer %s", peer.Address)
+	txHash := blockchain.HashTransaction(tx)
 
-	// TODO: Add transaction to mempool and validate
-	// For now, just relay to other peers
-	go func() { <-RelayTransaction(s, txPayload.Transaction, peer.Address) }()
+	// Check if we've recently seen this transaction (prevent loops)
+	if s.IsRecentTransaction(txHash) {
+		s.logf("Already seen transaction %x, skipping", txHash[:8])
+		return
+	}
+
+	s.logf("Received new transaction %x from peer %s", txHash[:8], peer.Address)
+
+	// Mark as seen to prevent loops
+	s.MarkTransactionSeen(txHash)
+
+	// Add to our mempool if we have a transaction processor
+	if s.config.TransactionProcessor != nil {
+		if err := s.config.TransactionProcessor(tx); err != nil {
+			s.logf("Transaction %x rejected by mempool: %v", txHash[:8], err)
+			return // Don't relay invalid transactions
+		}
+	}
+
+	// Relay to other peers (excluding the sender)
+	go func() { <-RelayTransaction(s, tx, peer.Address) }()
 }
 
 // ProcessSubmitBlock handles one-off block submissions from miners (no peer relationship required)

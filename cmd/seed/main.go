@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,7 @@ func main() {
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
 	dbname := flag.String("dbname", "seeddb", "Name of the Pebble DB")
 	minerport := flag.String("minerport", "8080", "HTTP port for miners")
+	seeds := flag.String("seeds", "", "Comma-separated list of seed nodes (e.g., localhost:9371,192.168.1.100:9372)")
 	flag.Parse()
 
 	// Auto-generate seed node ID if not provided
@@ -21,11 +23,23 @@ func main() {
 		*nodeID = fmt.Sprintf("seed-%s-%d", *port, time.Now().Unix()%10000)
 	}
 
-	// Create seed node configuration (no seed peers - this IS the seed!)
+	// Parse seed peers if provided
+	var seedPeers []string
+	if *seeds != "" {
+		// Split comma-separated seed list
+		for _, seed := range strings.Split(*seeds, ",") {
+			seed = strings.TrimSpace(seed)
+			if seed != "" {
+				seedPeers = append(seedPeers, seed)
+			}
+		}
+	}
+
+	// Create seed node configuration
 	config := node.Config{
 		Port:      *port,
 		NodeID:    *nodeID,
-		SeedPeers: []string{}, // Seeds don't connect to other seeds
+		SeedPeers: seedPeers,
 		DBName:    *dbname,
 		QueryPort: *minerport,
 	}
@@ -34,7 +48,12 @@ func main() {
 	seedNode := node.NewFullNode(config)
 
 	log.Printf("%s\tStarting SEED node: Network on :%s", *nodeID, *port)
-	log.Printf("%s\tOther nodes should connect to this address", *nodeID)
+	if len(seedPeers) > 0 {
+		log.Printf("%s\tConnecting to %d seed peers: %v", *nodeID, len(seedPeers), seedPeers)
+	} else {
+		log.Printf("%s\tStarting as primary seed (no peers)", *nodeID)
+	}
+	log.Printf("%s\tOther nodes should connect to localhost:%s", *nodeID, *port)
 
 	// Start the node and wait for it to be ready
 	ready := seedNode.Start()

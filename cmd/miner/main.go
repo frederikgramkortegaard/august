@@ -3,9 +3,10 @@ package main
 import (
 	"august/blockchain"
 	"august/miner"
+	"august/node/queryapi"
 	"bytes"
 	"crypto/ed25519"
-	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,31 +19,37 @@ func main() {
 	// Command line flags
 	nodeAddr := flag.String("node", "localhost:8080", "Node HTTP API address to mine for")
 	minerID := flag.String("id", "", "Miner ID (auto-generated if not provided)")
+	privKey := flag.String("privkey", "", "Private key encoded as Hex")
 	flag.Parse()
+
+	if *privKey == "" {
+		log.Fatal("No private key was supplied")
+	}
 
 	// Auto-generate miner ID if not provided
 	if *minerID == "" {
 		*minerID = fmt.Sprintf("miner-%d", time.Now().Unix()%10000)
 	}
-
-	// Generate a simple mining key (in real life, this would be persistent)
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	// Decode hex → bytes
+	privBytes, err := hex.DecodeString(*privKey)
 	if err != nil {
-		log.Fatalf("Failed to generate mining key: %v", err)
+		log.Fatal(err)
 	}
+	// Create ed25519 private key
+	priv := ed25519.PrivateKey(privBytes)
 
-	var minerAddress blockchain.PublicKey
-	copy(minerAddress[:], publicKey)
+	// Derive public key
+	pub := priv.Public().(ed25519.PublicKey)
 
-	log.Printf("%s\tMiner starting, address: %x", *minerID, minerAddress[:8])
+	log.Printf("%s\tMiner starting, address: %x", *minerID, pub)
 	log.Printf("%s\tConnecting to node: %s", *minerID, *nodeAddr)
 
 	// Create miner
 	miner := &SimpleMiner{
 		ID:           *minerID,
 		NodeAddr:     *nodeAddr,
-		MinerAddress: minerAddress,
-		PrivateKey:   privateKey,
+		MinerAddress: blockchain.PublicKey(pub),
+		PrivateKey:   priv,
 	}
 
 	// Start mining loop
@@ -90,7 +97,7 @@ func (m *SimpleMiner) StartMining() {
 		}
 
 		// Small delay before next mining attempt
-		time.Sleep(1 * time.Second)
+		time.Sleep(30 * time.Second)
 	}
 }
 
@@ -126,6 +133,15 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Signature: blockchain.Signature{}, // Empty for coinbase
 	}
 
+	// Get pending transactions from mempool
+	mempoolTxs, err := m.getMempoolTransactions()
+	if err != nil {
+		log.Printf("%s\tWarning: Failed to get mempool transactions: %v", m.ID, err)
+		mempoolTxs = []blockchain.Transaction{} // Continue with empty mempool
+	}
+
+	log.Printf("%s\tIncluding %d transactions from mempool", m.ID, len(mempoolTxs))
+
 	// Use the actual chain head hash
 	previousHash := chainInfo.Hash
 
@@ -136,14 +152,34 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Height:       chainInfo.Height + 1,
 		PreviousWork: chainInfo.TotalWork,
 		Coinbase:     coinbase,
-		Transactions: []blockchain.Transaction{}, // No other transactions
+		Transactions: mempoolTxs, // Include mempool transactions
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.MaxTargetCompact,
+		TargetBits:   blockchain.TestTargetCompact, // Use easy difficulty for testing
 	}
 
 	// Mine the block (this will take some time!)
 	log.Printf("%s\tMining block at height %d...", m.ID, params.Height)
 	return miner.NewBlock(params)
+}
+
+func (m *SimpleMiner) getMempoolTransactions() ([]blockchain.Transaction, error) {
+	url := fmt.Sprintf("http://%s/mempool", m.NodeAddr)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mempool: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status)
+	}
+
+	var mempoolResp queryapi.MempoolResponse
+	if err := json.NewDecoder(resp.Body).Decode(&mempoolResp); err != nil {
+		return nil, fmt.Errorf("failed to decode mempool response: %w", err)
+	}
+
+	return mempoolResp.Transactions, nil
 }
 
 func (m *SimpleMiner) submitBlock(block *blockchain.Block) error {

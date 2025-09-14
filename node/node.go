@@ -4,6 +4,7 @@ import (
 	"august/blockchain"
 	"august/mempool"
 	"august/networking"
+	"august/node/queryapi"
 	store "august/storage"
 	"encoding/base64"
 	"fmt"
@@ -100,7 +101,7 @@ func (n *FullNode) Start() <-chan bool {
 		if n.Config.QueryPort != "" {
 			go func() {
 				port, _ := strconv.Atoi(n.Config.QueryPort)
-				if err := n.StartQueryAPI(port); err != nil {
+				if err := queryapi.StartQueryAPI(n, port); err != nil {
 					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
 				}
 			}()
@@ -235,6 +236,7 @@ func (n *FullNode) startNetworking() <-chan bool {
 			SeedPeers:         n.Config.SeedPeers,
 			ReqRespConfig:     networking.DefaultReqRespConfig(),
 			PeerRequestConfig: networking.DefaultPeerRequestConfig(),
+			TransactionProcessor: n.SubmitTransaction, // Process incoming transactions through mempool
 		}
 		n.NetworkServer = networking.NewServer(networkConfig)
 
@@ -307,8 +309,7 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 
 	// Broadcast the transaction to all connected peers
 	go func() {
-		// @TODO: Implement RelayTransaction in networking package
-		// <-networking.RelayTransaction(n.NetworkServer, tx)
+		<-networking.RelayTransaction(n.NetworkServer, tx)
 	}()
 
 	return nil
@@ -500,5 +501,15 @@ func (n *FullNode) GetChainHead() blockchain.ChainHead {
 		Hash:      hash,
 		TotalWork: lastBlock.Header.TotalWork,
 	}
+}
+
+// GetChain returns the current blockchain state (required by queryapi.Node interface)
+func (n *FullNode) GetChain() (*blockchain.Chain, error) {
+	return n.Store.GetChain()
+}
+
+// GetMempool returns the mempool instance (required by queryapi.Node interface)
+func (n *FullNode) GetMempool() interface{ GetTransactions(limit int) []blockchain.Transaction } {
+	return n.Mempool
 }
 

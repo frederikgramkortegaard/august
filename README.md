@@ -10,6 +10,8 @@ Built to understand distributed systems concepts including consensus algorithms,
 
 ## Quick Start
 
+### Start a Network
+
 Start a seed node with Query API:
 ```bash
 go run cmd/seed/main.go --port 9372 --minerport 8080
@@ -17,10 +19,32 @@ go run cmd/seed/main.go --port 9372 --minerport 8080
 
 Start a miner:
 ```bash
-go run cmd/miner/main.go --node localhost:8080
+# Generate keys first
+go run cmd/keygen/main.go
+
+# Start mining with your private key
+go run cmd/miner/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080
 ```
 
-Query blockchain data:
+### Use the Wallet
+
+Generate wallet keys:
+```bash
+go run cmd/keygen/main.go
+```
+
+Check balance:
+```bash
+go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 balance
+```
+
+Send transaction:
+```bash
+go run cmd/wallet/main.go --privkey SENDER_PRIVATE_KEY --node localhost:8080 send --amount 100 --to RECIPIENT_PUBLIC_KEY
+```
+
+### Query Blockchain Data
+
 ```bash
 # Check account balance
 curl http://localhost:8080/balance/993fe6a36d19ed527890a7698e940c3c1c629ca06443837871cb0ed19435229b
@@ -35,8 +59,12 @@ curl http://localhost:8080/block/000046f22dc6219e1234...
 curl http://localhost:8080/mempool
 ```
 
-Run tests:
+### Run Tests
+
 ```bash
+# Run end-to-end test (tests complete node/wallet/mining flow)
+go test ./tests/e2e/single_node_manual -v
+
 # All tests
 go test ./tests/...
 
@@ -44,6 +72,7 @@ go test ./tests/...
 go test ./tests/storage/...     # Persistence tests
 go test ./tests/mempool/...     # Transaction pool tests
 go test ./tests/queryapi/...    # HTTP API tests
+
 ```
 
 ## Technical Features
@@ -63,14 +92,21 @@ go test ./tests/queryapi/...    # HTTP API tests
 
 ```
 blockchain/          Core blockchain logic (validation, mining, difficulty)
-cmd/                 Node and miner executables
+cmd/                 Command-line tools and executables
+  ├── keygen/        Ed25519 key pair generation utility
+  ├── miner/         Standalone CPU miner with mempool transaction inclusion
+  ├── seed/          Seed node (full node + HTTP API server)
+  └── wallet/        Transaction creation and balance checking tool
 mempool/             Transaction pool with fee-based priority queue
 miner/               Proof-of-work mining algorithms
 networking/          P2P protocol implementation and message handling
 node/                Full node orchestration and lifecycle management
-  ├── queryapi.go    HTTP API for blockchain queries and miner operations
+  └── queryapi/      HTTP API package with shared types and handlers
+    ├── api.go       HTTP request handlers
+    └── types.go     Shared request/response structures
 storage/             Persistent storage layer with PebbleDB
 tests/               Comprehensive testing suite
+  ├── e2e/           End-to-end integration tests
   ├── storage/       Persistence and chain validation tests
   ├── mempool/       Transaction pool functionality tests
   └── queryapi/      HTTP API endpoint tests

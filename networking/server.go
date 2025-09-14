@@ -16,12 +16,13 @@ import (
 
 // Config holds network server configuration
 type Config struct {
-	Port              string
-	NodeID            string
-	Store             store.ChainStore
-	SeedPeers         []string          // Seed peers for discovery
-	ReqRespConfig     ReqRespConfig     // Request-response configuration
-	PeerRequestConfig PeerRequestConfig // Bitcoin-style peer request configuration
+	Port                 string
+	NodeID               string
+	Store                store.ChainStore
+	SeedPeers            []string                                    // Seed peers for discovery
+	ReqRespConfig        ReqRespConfig                               // Request-response configuration
+	PeerRequestConfig    PeerRequestConfig                           // Bitcoin-style peer request configuration
+	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
 }
 
 // Note: CandidateBlock and CandidateChain types moved to august/consensus package
@@ -39,6 +40,11 @@ type Server struct {
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
+
+	// Transaction relay tracking (same pattern as blocks)
+	recentTransactions    map[blockchain.Hash32]time.Time
+	recentTransactionsTTL time.Duration
+	recentTransactionsMu  sync.RWMutex
 
 	// Consensus management
 	consensusManager *consensus.CandidateManager
@@ -58,17 +64,39 @@ func (s *Server) logf(format string, args ...interface{}) {
 	log.Printf("%s\t%s", s.config.NodeID, message)
 }
 
+// IsRecentTransaction checks if we've recently seen this transaction (to prevent relay loops)
+func (s *Server) IsRecentTransaction(txHash blockchain.Hash32) bool {
+	s.recentTransactionsMu.RLock()
+	defer s.recentTransactionsMu.RUnlock()
+
+	if seenTime, exists := s.recentTransactions[txHash]; exists {
+		// Check if it's still within TTL
+		return time.Since(seenTime) < s.recentTransactionsTTL
+	}
+	return false
+}
+
+// MarkTransactionSeen records that we've seen this transaction
+func (s *Server) MarkTransactionSeen(txHash blockchain.Hash32) {
+	s.recentTransactionsMu.Lock()
+	defer s.recentTransactionsMu.Unlock()
+
+	s.recentTransactions[txHash] = time.Now()
+}
+
 // NewServer creates a new network server
 func NewServer(config Config) *Server {
 	server := &Server{
-		config:           config,
-		peerManager:      NewPeerManager([]string{}), // Will be set by discovery
-		peerConnections:  make(map[string]net.Conn),
-		shutdown:         make(chan bool),
-		shutdownComplete: make(chan bool),
-		recentBlocks:     make(map[blockchain.Hash32]time.Time),
-		recentBlocksTTL:  5 * time.Minute,
-		cleanupInterval:  30 * time.Second,
+		config:                config,
+		peerManager:           NewPeerManager([]string{}), // Will be set by discovery
+		peerConnections:       make(map[string]net.Conn),
+		shutdown:              make(chan bool),
+		shutdownComplete:      make(chan bool),
+		recentBlocks:          make(map[blockchain.Hash32]time.Time),
+		recentBlocksTTL:       5 * time.Minute,
+		cleanupInterval:       30 * time.Second,
+		recentTransactions:    make(map[blockchain.Hash32]time.Time),
+		recentTransactionsTTL: 5 * time.Minute,
 	}
 
 	// Initialize consensus management
@@ -169,7 +197,10 @@ func (s *Server) performCleanupTasks() {
 	// 1. Clean up recent blocks (existing logic)
 	s.cleanRecentBlocks(now)
 
-	// 2. Candidate chain and block cleanup is now handled by the consensus manager
+	// 2. Clean up recent transactions (prevent memory leak)
+	s.cleanRecentTransactions(now)
+
+	// 3. Candidate chain and block cleanup is now handled by the consensus manager
 	// (No cleanup needed here - consensus manager handles its own lifecycle)
 
 	// 4. Log current chain status
@@ -212,6 +243,23 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 
 	if cleaned > 0 {
 		s.logf("Cleaned up %d old recent blocks", cleaned)
+	}
+}
+
+func (s *Server) cleanRecentTransactions(now time.Time) {
+	s.recentTransactionsMu.Lock()
+	defer s.recentTransactionsMu.Unlock()
+
+	cleaned := 0
+	for hash, addedTime := range s.recentTransactions {
+		if now.Sub(addedTime) > s.recentTransactionsTTL {
+			delete(s.recentTransactions, hash)
+			cleaned++
+		}
+	}
+
+	if cleaned > 0 {
+		s.logf("Cleaned up %d old recent transactions", cleaned)
 	}
 }
 

@@ -37,3 +37,10 @@
    - `/address/<addr>/transactions` - transaction history for address
    - `/stats` - network statistics (chain height, difficulty, etc.)
    - WebSocket support for real-time updates
+
+6. **Implement GUI block explorer (probably Python or Vue/JS)**
+   - Web-based block explorer interface using the Query API
+   - Block and transaction browsing with search functionality
+   - Real-time mempool and chain updates
+   - Network statistics dashboard
+   - Address balance and transaction history viewer

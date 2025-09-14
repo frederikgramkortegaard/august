@@ -18,7 +18,7 @@ type PersistentChainStore struct {
 func NewPersistentChainStore(dbname string) *PersistentChainStore {
 	db, err := CreateOrLoadDatabase(dbname, &pebble.Options{})
 	if err != nil {
-		return nil
+		panic(fmt.Sprintf("Failed to open database '%s': %v", dbname, err))
 	}
 
 	// Load existing chain from disk if present
