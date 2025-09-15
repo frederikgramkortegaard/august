@@ -118,10 +118,6 @@ func (ins Instruction) ValidateInstruction() error {
 		if ins.Value != nil {
 			return ErrUnexpectedInstructionParameter
 		}
-		// SWAP parameter validation (already uint16, just check range)
-		if ins.Param > 1023 { // Reasonable stack depth limit
-			return ErrInvalidSwapParameter
-		}
 
 	case POP, DUP, NOOP, EMIT, STOP:
 		// These instructions should not have Value or Param

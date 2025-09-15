@@ -236,10 +236,9 @@ func TestInstructionValidation(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:        "SWAP with too large param",
+			name:        "valid SWAP with large param",
 			instruction: avm.MakeInstructionWithParam(avm.SWAP, 2000),
-			shouldError: true,
-			expectedErr: avm.ErrInvalidSwapParameter,
+			shouldError: false,
 		},
 		{
 			name:        "SWAP with unexpected value",
@@ -295,10 +294,10 @@ func TestValidationPreventsExecution(t *testing.T) {
 			expectedErr: avm.ErrNegativeValue,
 		},
 		{
-			name: "invalid swap parameter caught after valid push",
+			name: "invalid swap parameter caught during execution",
 			instructions: []avm.Instruction{
 				avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // Valid - consumes gas
-				avm.MakeInstructionWithParam(avm.SWAP, 2000),     // Invalid - fails validation
+				avm.MakeInstructionWithParam(avm.SWAP, 2000),     // Invalid - fails during execution
 			},
 			expectedErr: avm.ErrInvalidSwapParameter,
 		},
@@ -339,8 +338,8 @@ func TestValidationPreventsExecution(t *testing.T) {
 				if gasUsed != 0 {
 					t.Errorf("Expected 0 gas consumed (first instruction invalid), got %d", gasUsed)
 				}
-			case "invalid swap parameter caught after valid push":
-				// PUSH should consume 3 gas before SWAP fails
+			case "invalid swap parameter caught during execution":
+				// PUSH should consume 3 gas before SWAP fails during execution
 				if gasUsed != 3 {
 					t.Errorf("Expected 3 gas consumed (PUSH succeeded), got %d", gasUsed)
 				}
@@ -1060,6 +1059,94 @@ func TestMemoryOperations(t *testing.T) {
 
 		if err.Error() != "Empty Stack" {
 			t.Errorf("Expected 'Empty Stack', got '%s'", err.Error())
+		}
+	})
+}
+
+func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
+	t.Run("SWAP param valid for current stack size", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // Stack: [A]
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // Stack: [A, B]
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // Stack: [A, B, C]
+			avm.MakeInstructionWithParam(avm.SWAP, 2),        // Valid: swap with 2nd from top (stack has 3 elements)
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err != nil {
+			t.Errorf("Expected success but got error: %v", err)
+		}
+	})
+
+	t.Run("SWAP param invalid for current stack size", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // Stack: [A]
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // Stack: [A, B]
+			avm.MakeInstructionWithParam(avm.SWAP, 2),        // Invalid: trying to swap with 2nd from top when stack only has 2 elements (indexes 0,1)
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Error("Expected ErrInvalidSwapParameter but got no error")
+		}
+
+		if err != avm.ErrInvalidSwapParameter {
+			t.Errorf("Expected ErrInvalidSwapParameter, got %v", err)
+		}
+	})
+
+	t.Run("SWAP param at boundary of current stack size", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // Stack: [A]
+			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // Stack: [A, B]
+			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // Stack: [A, B, C]
+			avm.MakeInstructionWithParam(avm.SWAP, 3),        // Invalid: param equals stack size (indexes 0,1,2 but trying to access 3)
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Error("Expected ErrInvalidSwapParameter but got no error")
+		}
+
+		if err != avm.ErrInvalidSwapParameter {
+			t.Errorf("Expected ErrInvalidSwapParameter, got %v", err)
+		}
+	})
+
+	t.Run("SWAP param 0 always valid with non-empty stack", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // Stack: [A]
+			avm.MakeInstructionWithParam(avm.SWAP, 0),        // Valid: swap with self
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err != nil {
+			t.Errorf("Expected success but got error: %v", err)
+		}
+	})
+
+	t.Run("SWAP with empty stack", func(t *testing.T) {
+		instructions := []avm.Instruction{
+			avm.MakeInstructionWithParam(avm.SWAP, 0), // Invalid: no elements on stack
+		}
+
+		r := avm.NewRuntime(100, instructions, defaultConfig())
+		_, err := r.StartExecution()
+
+		if err == nil {
+			t.Error("Expected ErrInvalidSwapParameter but got no error")
+		}
+
+		if err != avm.ErrInvalidSwapParameter {
+			t.Errorf("Expected ErrInvalidSwapParameter, got %v", err)
 		}
 	})
 }

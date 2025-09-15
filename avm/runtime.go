@@ -185,7 +185,10 @@ func (r *Runtime) ExecuteInstruction() error {
 			err = r.Stack.Push(val)
 		}
 	case SWAP:
-		// Validation already done, safe to convert from uint16
+		// Validate swap parameter against current stack size
+		if int(ins.Param) >= len(r.Stack.s) {
+			return ErrInvalidSwapParameter
+		}
 		err = r.Stack.Swap(int(ins.Param))
 	case ADD:
 		v1, v2, popErr := r.Stack.Pop2()
