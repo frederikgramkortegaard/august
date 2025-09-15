@@ -250,8 +250,8 @@ func TestQueryAPIWithData(t *testing.T) {
 	tx := blockchain.Transaction{
 		From:      keyA,
 		To:        keyB,
-		Amount:    100,
-		Fee:       10,
+		Amount:    100 * blockchain.Leaf,
+		Fee:       10 * blockchain.Leaf,
 		Nonce:     1,
 		Timestamp: uint64(time.Now().Unix()),
 	}

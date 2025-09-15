@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"august/blockchain"
 	"august/node"
 	"august/node/queryapi"
 	"crypto/ed25519"
@@ -88,7 +89,7 @@ func TestSingleNodeNetwork(t *testing.T) {
 	t.Logf("Miner balance correct: %d", minerBalance.Balance)
 
 	// 5. Send transaction from miner to recipient using existing wallet functionality
-	sendAmount := uint64(25)
+	sendAmount := uint64(25) * blockchain.Leaf
 	if minerBalance.Balance < sendAmount {
 		sendAmount = minerBalance.Balance / 2 // Send half if balance is small
 	}

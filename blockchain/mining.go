@@ -4,10 +4,14 @@ import "fmt"
 
 type NonceType = uint64
 
+// Currency multipliers (like time package)
 const (
-	// Currency units: 1 AUG = 10^6 leaf
-	LeafPerAUG      = uint64(1_000_000)     // 10^6
-	BlockReward     = 50 * LeafPerAUG       // 50 AUG in leaf units
+	Leaf = uint64(1)                        // Base unit
+	AUG  = uint64(1_000_000) * Leaf        // 1 AUG = 1M leaf units
+)
+
+const (
+	BlockReward     = 50 * AUG              // 50 AUG block reward
 	HalvingInterval = 210000                // Blocks between reward halvings
 	MaxAmount       = ^uint64(0)            // Maximum uint64 value for overflow checks
 )

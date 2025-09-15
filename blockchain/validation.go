@@ -469,10 +469,10 @@ func ValidateCompleteChain(candidateChain *Chain) error {
 		AccountStates: make(map[PublicKey]*AccountState),
 	}
 
-	// Initialize with genesis account (FirstUser gets 10M coins)
+	// Initialize with genesis account (FirstUser gets 10 AUG)
 	validationChain.AccountStates[FirstUser] = &AccountState{
 		Address: FirstUser,
-		Balance: 10_000_000,
+		Balance: 10 * AUG,
 		Nonce:   0,
 	}
 

@@ -14,7 +14,7 @@ func init() {
 	genesisCoinbase := Transaction{
 		From:      PublicKey{}, // Coinbase (empty)
 		To:        FirstUser,   // Send to FirstUser
-		Amount:    10000000,    // 10 million initial coins
+		Amount:    10 * AUG,    // 10 AUG initial coins
 		Fee:       0,           // No fee for coinbase
 		Nonce:     0,           // Coinbase doesn't need nonce
 		Signature: Signature{}, // Coinbase doesn't need signature
@@ -40,5 +40,5 @@ func init() {
 	}
 
 	log.Printf("Genesis block loaded (hardcoded) - hash: 00000db1b197dba918877f28230252126e7f2fd4e883941f1be04961e8504b35")
-	log.Printf("FirstUser %x receives 10M initial coins\n", FirstUser[:8])
+	log.Printf("FirstUser %x receives 10 AUG initial coins\n", FirstUser[:8])
 }
