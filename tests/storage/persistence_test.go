@@ -94,7 +94,8 @@ func TestBlockchainSaveLoad(t *testing.T) {
 			From:      blockchain.PublicKey{}, // Empty for coinbase
 			To:        blockchain.FirstUser,   // Mine to first user
 			Amount:    blockchain.BlockReward,
-			Fee:       0,
+			GasLimit:  0,  // Coinbase transactions use no gas
+			GasPrice:  0,
 			Nonce:     0,
 			Timestamp: uint64(time.Now().Unix()),
 			Signature: blockchain.Signature{}, // Empty for coinbase

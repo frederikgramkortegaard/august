@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"august/avm"
 	"crypto/ed25519"
 	"fmt"
 	"log"
@@ -185,7 +186,11 @@ func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 
 	// Then apply
 	debugLog("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
-	ApplyTransaction(tsx, accountStates)
+	_, err := ApplyTransaction(tsx, accountStates)
+	if err != nil {
+		debugLog("VALIDATION\tTRANSACTION APPLICATION FAILED: %v", err)
+		return false
+	}
 	return true
 }
 
@@ -196,13 +201,24 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	if err := ValidateAmount(tsx.Amount); err != nil {
 		return fmt.Errorf("invalid transaction amount: %w", err)
 	}
-	if err := ValidateAmount(tsx.Fee); err != nil {
-		return fmt.Errorf("invalid transaction fee: %w", err)
+	if err := ValidateAmount(tsx.GasLimit); err != nil {
+		return fmt.Errorf("invalid transaction gas limit: %w", err)
+	}
+	if err := ValidateAmount(tsx.GasPrice); err != nil {
+		return fmt.Errorf("invalid transaction gas price: %w", err)
 	}
 
 	// Coinbase transactions - always valid (no sender validation needed)
 	if tsx.From == (PublicKey{}) {
 		return nil
+	}
+
+	// Basic gas validation for non-coinbase transactions
+	if tsx.GasLimit == 0 {
+		return fmt.Errorf("gas limit cannot be zero")
+	}
+	if tsx.GasPrice == 0 {
+		return fmt.Errorf("gas price cannot be zero")
 	}
 
 	// Regular transactions - validate only
@@ -218,14 +234,39 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 		return fmt.Errorf("sender account does not exist: %x", tsx.From[:8])
 	}
 
-	// Check for overflow in amount + fee using safe arithmetic
-	total, err := SafeAdd(tsx.Amount, tsx.Fee)
+	// Calculate maximum possible gas cost (gasLimit * gasPrice)
+	maxGasCost := tsx.GasLimit * tsx.GasPrice
+	// Check for overflow in gas cost calculation
+	if tsx.GasLimit != 0 && maxGasCost/tsx.GasLimit != tsx.GasPrice {
+		return fmt.Errorf("gas cost overflow: gasLimit=%d * gasPrice=%d", tsx.GasLimit, tsx.GasPrice)
+	}
+
+	// Calculate total cost: amount + max gas cost
+	total, err := SafeAdd(tsx.Amount, maxGasCost)
 	if err != nil {
-		return fmt.Errorf("transaction amount + fee overflow: %w", err)
+		return fmt.Errorf("transaction total with gas cost overflow: %w", err)
+	}
+
+	// Check if this is a contract deployment (To is empty and has instructions)
+	isContractDeployment := tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0
+	if isContractDeployment {
+		// Add deployment fee to total cost
+		total, err = SafeAdd(total, ContractDeploymentFee)
+		if err != nil {
+			return fmt.Errorf("transaction total with deployment fee overflow: %w", err)
+		}
 	}
 
 	if fromState.Balance < total {
-		return fmt.Errorf("insufficient balance: has %d, needs %d", fromState.Balance, total)
+		return fmt.Errorf("insufficient balance: has %d, needs %d (amount=%d, maxGas=%d, deployment=%d)",
+			fromState.Balance, total, tsx.Amount, maxGasCost,
+			func() uint64 {
+				if isContractDeployment {
+					return ContractDeploymentFee
+				} else {
+					return 0
+				}
+			}())
 	}
 
 	// 3. Nonce validation (prevent double-spend)
@@ -245,7 +286,8 @@ func ValidateStandaloneTransaction(tsx *Transaction, chain *Chain) error {
 }
 
 // ApplyTransaction applies a valid transaction to account states (assumes already validated)
-func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) {
+// Returns error and gas consumed
+func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) (uint64, error) {
 	debugLog("APPLY\tApplying transaction: %x -> %x, amount=%d, nonce=%d",
 		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
 
@@ -269,40 +311,216 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			}
 			fmt.Printf("Created new account via coinbase: %x\n", tsx.To[:])
 		}
-		return
+		return 0, nil // Coinbase uses no gas
 	}
 
 	// Regular transactions
-	fromState := accountStates[tsx.From] // Should exist (validated earlier)
-
-	// Deduct from sender (amount + fee) - overflow already checked in validation
-	total, err := SafeAdd(tsx.Amount, tsx.Fee)
-	if err != nil {
-		panic(fmt.Sprintf("transaction total overflow during apply: %v", err))
+	fromState, exists := accountStates[tsx.From]
+	if !exists {
+		return 0, fmt.Errorf("sender account %x does not exist", tsx.From[:8])
 	}
-	newFromBalance, err := SafeSubtract(fromState.Balance, total)
-	if err != nil {
-		panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
-	}
-	fromState.Balance = newFromBalance
-	fromState.Nonce += 1
-	debugLog("APPLY\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
 
-	// Credit recipient
-	if toState, ok := accountStates[tsx.To]; ok {
-		newToBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+	// We'll calculate actual costs as we go, starting with amount
+	totalCostSoFar := tsx.Amount
+
+	// Check if this is a contract deployment
+	isContractDeployment := tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0
+	if isContractDeployment {
+		// Add deployment fee to total cost
+		var err error
+		totalCostSoFar, err = SafeAdd(totalCostSoFar, ContractDeploymentFee)
 		if err != nil {
-			panic(fmt.Sprintf("recipient balance overflow during apply: %v", err))
+			panic(fmt.Sprintf("deployment fee overflow during apply: %v", err))
 		}
-		toState.Balance = newToBalance
-	} else {
-		accountStates[tsx.To] = &AccountState{
-			Balance: tsx.Amount,
-			Address: tsx.To,
-			Nonce:   0,
-		}
-		fmt.Printf("Created new account: %x\n", tsx.To[:])
 	}
+
+	// Handle contract deployment or regular transfer
+	if isContractDeployment {
+		// Generate contract address from sender + nonce
+		contractAddr := GenerateContractAddress(tsx.From, fromState.Nonce)
+
+		// Create initial contract state (only stored if init succeeds)
+		contractState := &AccountState{
+			Balance:      tsx.Amount, // Initial balance sent to contract
+			Address:      contractAddr,
+			Nonce:        0,
+			Instructions: tsx.Instructions, // Runtime code
+			Persistent:   make(map[string]string),
+			StorageRoot:  ComputeStorageRoot(nil),
+			CodeHash:     ComputeCodeHash(tsx.Instructions),
+		}
+
+		// Track whether contract deployment succeeds
+		contractDeployed := false
+
+		gasUsed := GasContractDeploy // Base gas for contract deployment
+
+		// Execute initialization instructions if present
+		if len(tsx.InitInstructions) > 0 {
+			// Check if we have enough gas remaining for init execution
+			remainingGas := tsx.GasLimit - gasUsed
+			if remainingGas == 0 {
+				return gasUsed, fmt.Errorf("no gas remaining for contract initialization")
+			}
+
+			// Create AVM runtime for initialization using remaining gas
+			config := avm.RuntimeConfig{
+				StackSize:  1024,
+				MemorySize: 65536,
+			}
+			runtime := avm.NewRuntime(remainingGas, tsx.InitInstructions, config)
+
+			// Execute initialization code
+			initGasUsed, err := runtime.StartExecution()
+
+			// Gas is consumed regardless of success/failure
+			gasUsed += initGasUsed
+
+			// Check execution result
+			if err != nil && err != avm.ErrProgramStopped {
+				// Init execution failed (could be out of gas or other error)
+				fmt.Printf("Contract initialization failed: %v, gas used: %d\n", err, initGasUsed)
+				// Contract deployment failed - don't store it
+				contractDeployed = false
+			} else {
+				// Apply persistent storage changes from init execution
+				for key, value := range runtime.Persistent {
+					contractState.Persistent[key] = value
+				}
+				// Update storage root to reflect persistent storage changes
+				contractState.StorageRoot = ComputeStorageRoot(contractState.Persistent)
+				fmt.Printf("Contract initialized successfully, gas used: %d, stored %d values\n", initGasUsed, len(runtime.Persistent))
+				contractDeployed = true
+			}
+		} else {
+			// No init instructions - deployment succeeds immediately
+			contractDeployed = true
+		}
+
+		// Only store the contract if deployment succeeded
+		if contractDeployed {
+			accountStates[contractAddr] = contractState
+			fmt.Printf("Deployed contract at: %x\n", contractAddr[:])
+		} else {
+			fmt.Printf("Contract deployment failed, no contract stored\n")
+		}
+
+		// Validate gas usage doesn't exceed limit (Shouldnt be possible)
+		if gasUsed > tsx.GasLimit {
+			return gasUsed, fmt.Errorf("gas used %d exceeds gas limit %d", gasUsed, tsx.GasLimit)
+		}
+
+		// Calculate actual gas cost and deduct from sender balance
+		actualGasCost := gasUsed * tsx.GasPrice
+		var err error
+		totalCostSoFar, err = SafeAdd(totalCostSoFar, actualGasCost)
+		if err != nil {
+			panic(fmt.Sprintf("total cost with gas overflow during apply: %v", err))
+		}
+
+		// Deduct total cost from sender
+		newFromBalance, err := SafeSubtract(fromState.Balance, totalCostSoFar)
+		if err != nil {
+			panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
+		}
+		fromState.Balance = newFromBalance
+		fromState.Nonce += 1
+		debugLog("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
+
+		return gasUsed, nil
+	} else if tsx.To != (PublicKey{}) {
+		// Regular transfer to existing or new account
+		gasUsed := GasTransfer // Base gas for transfer
+
+		if toState, ok := accountStates[tsx.To]; ok {
+			// Transfer amount to recipient
+			newToBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+			if err != nil {
+				panic(fmt.Sprintf("recipient balance overflow during apply: %v", err))
+			}
+			toState.Balance = newToBalance
+
+			// Check if recipient is a contract (has runtime code)
+			if len(toState.Instructions) > 0 {
+				fmt.Printf("Executing contract at: %x\n", tsx.To[:])
+
+				// Check if we have enough gas remaining for contract execution
+				remainingGas := tsx.GasLimit - gasUsed
+				if remainingGas > 0 {
+					// Create AVM runtime for contract execution using remaining gas
+					config := avm.RuntimeConfig{
+						StackSize:  1024,
+						MemorySize: 65536,
+					}
+					runtime := avm.NewRuntime(remainingGas, toState.Instructions, config)
+
+					// Initialize runtime with existing persistent storage from contract
+					for key, value := range toState.Persistent {
+						runtime.Persistent[key] = value
+					}
+
+					// Execute contract runtime code
+					runtimeGasUsed, err := runtime.StartExecution()
+
+					// Gas is consumed regardless of success/failure
+					gasUsed += runtimeGasUsed
+
+					if err != nil && err != avm.ErrProgramStopped {
+						fmt.Printf("Contract execution failed: %v, gas used: %d\n", err, runtimeGasUsed)
+						// Contract execution failed but transaction still succeeds (money transferred)
+						// This matches Ethereum behavior - failed contract calls still deduct gas
+					} else {
+						fmt.Printf("Contract executed successfully, gas used: %d\n", runtimeGasUsed)
+						// Apply persistent storage changes from runtime execution
+						for key, value := range runtime.Persistent {
+							toState.Persistent[key] = value
+						}
+						// Update storage root to reflect persistent storage changes
+						toState.StorageRoot = ComputeStorageRoot(toState.Persistent)
+						fmt.Printf("Applied %d persistent storage updates\n", len(runtime.Persistent))
+					}
+				} else {
+					fmt.Printf("No gas remaining for contract execution\n")
+				}
+			}
+		} else {
+			// Create new account
+			accountStates[tsx.To] = &AccountState{
+				Balance:     tsx.Amount,
+				Address:     tsx.To,
+				Nonce:       0,
+				Persistent:  make(map[string]string),
+				StorageRoot: Hash32{},
+				CodeHash:    Hash32{},
+			}
+			fmt.Printf("Created new account: %x\n", tsx.To[:])
+		}
+
+		// Validate gas usage doesn't exceed limit
+		if gasUsed > tsx.GasLimit {
+			return gasUsed, fmt.Errorf("gas used %d exceeds gas limit %d", gasUsed, tsx.GasLimit)
+		}
+
+		// Calculate actual gas cost and deduct from sender balance
+		actualGasCost := gasUsed * tsx.GasPrice
+		var err error
+		totalCostSoFar, err = SafeAdd(totalCostSoFar, actualGasCost)
+		if err != nil {
+			panic(fmt.Sprintf("total cost with gas overflow during apply: %v", err))
+		}
+
+		// Deduct total cost from sender
+		newFromBalance, err := SafeSubtract(fromState.Balance, totalCostSoFar)
+		if err != nil {
+			panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
+		}
+		fromState.Balance = newFromBalance
+		fromState.Nonce += 1
+		debugLog("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
+
+		return gasUsed, nil
+	}
+	return GasTransfer, nil // Base gas for regular transfer
 }
 
 // ValidateBlock validates a block and its transactions WITHOUT applying changes
@@ -323,50 +541,105 @@ func ValidateBlock(block *Block, chain *Chain) error {
 	accountStatesCopy := make(map[PublicKey]*AccountState)
 	for k, v := range chain.AccountStates {
 		accountStatesCopy[k] = &AccountState{
-			Address: v.Address,
-			Balance: v.Balance,
-			Nonce:   v.Nonce,
+			Address:      v.Address,
+			Balance:      v.Balance,
+			Nonce:        v.Nonce,
+			Instructions: v.Instructions, // Include contract code
+			Persistent:   make(map[string]string),
+			StorageRoot:  v.StorageRoot,
+			CodeHash:     v.CodeHash,
+		}
+		// Copy persistent storage
+		for pk, pv := range v.Persistent {
+			accountStatesCopy[k].Persistent[pk] = pv
 		}
 	}
 
-	var tsxfeesum uint64 = 0
-	// Validate each transaction without applying changes
+	// Validate each transaction without executing contracts or modifying state
 	for i, tsx := range block.Transactions {
-		// Check for fee sum overflow
-		newFeeSum, err := SafeAdd(tsxfeesum, tsx.Fee)
-		if err != nil {
-			return fmt.Errorf("transaction fees sum overflow: %w", err)
-		}
-		tsxfeesum = newFeeSum
-
 		if err := ValidateTransaction(&tsx, accountStatesCopy); err != nil {
 			return fmt.Errorf("transaction %d failed validation: %w", i, err)
 		}
-		// Apply to the copy for subsequent transaction validation
-		ApplyTransaction(&tsx, accountStatesCopy)
+
+		// For sequential transaction validation, we need to simulate state changes
+		// without actually executing contracts (just update balances/nonces for validation)
+		if tsx.From != (PublicKey{}) {
+			fromState := accountStatesCopy[tsx.From]
+			fromState.Nonce += 1
+
+			// Deduct maximum possible cost for subsequent transaction validation
+			maxGasCost := tsx.GasLimit * tsx.GasPrice
+			maxCost := tsx.Amount + maxGasCost
+			if tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0 {
+				maxCost += ContractDeploymentFee
+			}
+			fromState.Balance -= maxCost
+		}
 	}
 
-	// Validate Coinbase tsx amount is Fee's + Block Reward
-	expectedCoinbaseAmount, err := SafeAdd(tsxfeesum, BlockReward)
-	if err != nil {
-		return fmt.Errorf("coinbase amount calculation overflow: %w", err)
+	// Use the gas usage reported in block header (trust but verify approach)
+	totalGasUsed := block.Header.GasUsed
+
+	// Validate block gas usage doesn't exceed limit
+	if totalGasUsed > block.Header.GasLimit {
+		return fmt.Errorf("block gas used %d exceeds gas limit %d", totalGasUsed, block.Header.GasLimit)
 	}
-	if block.Transactions[0].Amount != expectedCoinbaseAmount {
-		return fmt.Errorf("Coinbase transaction is not Transaction Fee's + BlockReward")
-	}
+
+	// For lightweight validation, we trust the miner's gas calculations
+	// Exact gas fees and coinbase validation will be done during ApplyBlock
+	// where we actually execute the transactions
 
 	return nil
 }
 
 // ApplyBlock applies a validated block to the chain (assumes already validated)
-func ApplyBlock(block *Block, chain *Chain) {
-	// Apply each transaction to the chain state
-	for _, tsx := range block.Transactions {
-		ApplyTransaction(&tsx, chain.AccountStates)
+func ApplyBlock(block *Block, chain *Chain) error {
+	var totalGasFees uint64 = 0
+	var totalGasUsed uint64 = 0
+
+	// Apply each transaction to the chain state and track actual gas usage
+	for i, tsx := range block.Transactions {
+		gasUsed, err := ApplyTransaction(&tsx, chain.AccountStates)
+		if err != nil {
+			return fmt.Errorf("failed to apply transaction %d: %w", i, err)
+		}
+
+		// Track total gas used
+		newGasUsed, err := SafeAdd(totalGasUsed, gasUsed)
+		if err != nil {
+			return fmt.Errorf("gas used sum overflow: %w", err)
+		}
+		totalGasUsed = newGasUsed
+
+		// Calculate gas fees for non-coinbase transactions
+		if tsx.From != (PublicKey{}) {
+			gasFee := gasUsed * tsx.GasPrice
+			newGasFees, err := SafeAdd(totalGasFees, gasFee)
+			if err != nil {
+				return fmt.Errorf("gas fees sum overflow: %w", err)
+			}
+			totalGasFees = newGasFees
+		}
+	}
+
+	// Validate that block reports correct gas usage
+	if totalGasUsed != block.Header.GasUsed {
+		return fmt.Errorf("block reports gas used %d but actual is %d", block.Header.GasUsed, totalGasUsed)
+	}
+
+	// Validate coinbase transaction amount based on actual gas fees
+	expectedCoinbaseAmount, err := SafeAdd(totalGasFees, BlockReward)
+	if err != nil {
+		return fmt.Errorf("coinbase amount calculation overflow: %w", err)
+	}
+	if block.Transactions[0].Amount != expectedCoinbaseAmount {
+		return fmt.Errorf("coinbase transaction amount %d != expected %d (gas fees %d + block reward %d)",
+			block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, BlockReward)
 	}
 
 	// Add the block to the chain and update tip/index
 	chain.AddBlock(block)
+	return nil
 }
 
 // ValidateAndApplyBlock validates block structure, applies transactions, and adds block to chain
@@ -377,7 +650,9 @@ func ValidateAndApplyBlock(block *Block, chain *Chain) error {
 	}
 
 	// Then apply
-	ApplyBlock(block, chain)
+	if err := ApplyBlock(block, chain); err != nil {
+		return fmt.Errorf("failed to apply block: %w", err)
+	}
 	return nil
 }
 

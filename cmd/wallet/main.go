@@ -1,6 +1,7 @@
 package main
 
 import (
+	"august/avm"
 	"august/blockchain"
 	"august/node/queryapi"
 	"bytes"
@@ -10,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"time"
@@ -42,7 +44,7 @@ func main() {
 	// Remaining args after global flags
 	args := flag.Args()
 	if len(args) < 1 {
-		fmt.Println("Error: expected a subcommand (balance or send)")
+		fmt.Println("Error: expected a subcommand (balance, send, or deploy)")
 		os.Exit(1)
 	}
 
@@ -70,6 +72,38 @@ func main() {
 
 		toPub := convertHexStringToPubKey(*to)
 		err := sendMoney(&pub, &priv, *amount, &toPub, *nodeAddr)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+	case "deploy":
+		deployCmd := flag.NewFlagSet("deploy", flag.ExitOnError)
+		amount := deployCmd.Uint64("amount", 0, "Amount to send to contract")
+		gasLimit := deployCmd.Uint64("gas-limit", 50000, "Gas limit for deployment")
+		gasPrice := deployCmd.Uint64("gas-price", 100, "Gas price")
+		deployCmd.Parse(args[1:])
+
+		err := deployContract(&pub, &priv, *amount, *gasLimit, *gasPrice, *nodeAddr)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+	case "call":
+		callCmd := flag.NewFlagSet("call", flag.ExitOnError)
+		contract := callCmd.String("contract", "", "Contract address to call")
+		amount := callCmd.Uint64("amount", 0, "Amount to send to contract")
+		gasLimit := callCmd.Uint64("gas-limit", 50000, "Gas limit for call")
+		gasPrice := callCmd.Uint64("gas-price", 100, "Gas price")
+		callCmd.Parse(args[1:])
+
+		if *contract == "" {
+			fmt.Println("Error: --contract is required for call")
+			callCmd.Usage()
+			os.Exit(1)
+		}
+
+		contractPub := convertHexStringToPubKey(*contract)
+		err := callContract(&pub, &priv, *amount, &contractPub, *gasLimit, *gasPrice, *nodeAddr)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -145,7 +179,11 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP error getting balance: %s", resp.Status)
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
 	}
 
 	var balanceResp queryapi.BalanceResponse
@@ -170,6 +208,8 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 		From:      blockchain.PublicKey(*pub),
 		To:        blockchain.PublicKey(*to),
 		Amount:    amount,
+		GasLimit:  25000, // Standard gas limit for transfers
+		GasPrice:  100,   // Standard gas price
 		Signature: blockchain.Signature{},
 		Nonce:     nextNonce,
 		Timestamp: uint64(time.Now().Unix()),
@@ -193,7 +233,11 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP error: %s", resp.Status)
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("Transaction submission failed %s: %s", resp.Status, errorBody)
 	}
 
 	// Read response
@@ -205,5 +249,209 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 	log.Printf("Transaction submitted successfully!")
 	log.Printf("Status: %s", response.Status)
 	log.Printf("Hash: %s", response.Hash)
+	return nil
+}
+
+// GetContract returns hardcoded contract bytecode that you can modify for testing
+// This is a simple storage contract that stores a value at address 1 and increments it
+func GetContract() ([]avm.Instruction, []avm.Instruction) {
+	// Initialization code - runs once when contract is deployed
+	initInstructions := []avm.Instruction{
+		{Opcode: avm.PUSH, Value: big.NewInt(42)}, // Initial value
+		{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Storage address
+		{Opcode: avm.PSTORE},                      // Store 42 at address 1
+	}
+
+	// Runtime code - runs every time contract is called
+	runtimeInstructions := []avm.Instruction{
+		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address
+		{Opcode: avm.PLOAD},                      // Load current value from address 1
+		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Increment amount
+		{Opcode: avm.ADD},                        // Add 1 to current value
+		{Opcode: avm.DUP},                        // Duplicate result for emit
+		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address
+		{Opcode: avm.SWAP, Param: 1}, // Swap to get incremented value on top
+		{Opcode: avm.PSTORE},                     // Store incremented value at address 1
+		{Opcode: avm.EMIT},                       // Emit the new value
+	}
+
+	return initInstructions, runtimeInstructions
+}
+
+func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string) error {
+	// Get current balance and nonce
+	keyAsHex := hex.EncodeToString(*pub)
+	url := fmt.Sprintf("http://%s/balance/%s", nodeaddr, keyAsHex)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to get balance: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
+	}
+
+	var balanceResp queryapi.BalanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
+		return fmt.Errorf("failed to decode balance response: %w", err)
+	}
+
+	if !balanceResp.Exists {
+		return fmt.Errorf("account does not exist")
+	}
+
+	// Calculate total cost including gas
+	maxGasCost := gasLimit * gasPrice
+	totalCost := amount + maxGasCost
+	if balanceResp.Balance < totalCost {
+		return fmt.Errorf("insufficient balance: have %d, need %d (amount=%d, maxGas=%d)",
+			balanceResp.Balance, totalCost, amount, maxGasCost)
+	}
+
+	// Get contract code
+	initInstructions, runtimeInstructions := GetContract()
+
+	// Create contract deployment transaction
+	nextNonce := balanceResp.Nonce + 1
+	log.Printf("Deploying contract: amount=%d, gasLimit=%d, gasPrice=%d, nonce=%d",
+		amount, gasLimit, gasPrice, nextNonce)
+
+	tsx := blockchain.Transaction{
+		From:             blockchain.PublicKey(*pub),
+		To:               blockchain.PublicKey{}, // Empty address = contract deployment
+		Amount:           amount,
+		GasLimit:         gasLimit,
+		GasPrice:         gasPrice,
+		Signature:        blockchain.Signature{},
+		Nonce:            nextNonce,
+		Timestamp:        uint64(time.Now().Unix()),
+		Instructions:     runtimeInstructions, // Runtime code
+		InitInstructions: initInstructions,    // Initialization code
+	}
+
+	blockchain.SignTransaction(&tsx, *priv)
+
+	// Submit transaction
+	txJSON, err := json.Marshal(tsx)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transaction: %w", err)
+	}
+
+	url = fmt.Sprintf("http://%s/submit-transaction", nodeaddr)
+	resp, err = http.Post(url, "application/json", bytes.NewBuffer(txJSON))
+	if err != nil {
+		return fmt.Errorf("failed to submit transaction: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("Contract deployment failed %s: %s", resp.Status, errorBody)
+	}
+
+	// Read response
+	var response queryapi.SubmitTransactionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	log.Printf("Contract deployment submitted successfully!")
+	log.Printf("Status: %s", response.Status)
+	log.Printf("Transaction Hash: %s", response.Hash)
+	log.Printf("Contract will be deployed when transaction is mined")
+	return nil
+}
+
+func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, contract *ed25519.PublicKey, gasLimit, gasPrice uint64, nodeaddr string) error {
+	// Get current balance and nonce
+	keyAsHex := hex.EncodeToString(*pub)
+	url := fmt.Sprintf("http://%s/balance/%s", nodeaddr, keyAsHex)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to get balance: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
+	}
+
+	var balanceResp queryapi.BalanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
+		return fmt.Errorf("failed to decode balance response: %w", err)
+	}
+
+	if !balanceResp.Exists {
+		return fmt.Errorf("account does not exist")
+	}
+
+	// Calculate total cost including gas
+	maxGasCost := gasLimit * gasPrice
+	totalCost := amount + maxGasCost
+	if balanceResp.Balance < totalCost {
+		return fmt.Errorf("insufficient balance: have %d, need %d (amount=%d, maxGas=%d)",
+			balanceResp.Balance, totalCost, amount, maxGasCost)
+	}
+
+	// Create contract call transaction
+	nextNonce := balanceResp.Nonce + 1
+	log.Printf("Calling contract: contract=%x, amount=%d, gasLimit=%d, gasPrice=%d, nonce=%d",
+		*contract, amount, gasLimit, gasPrice, nextNonce)
+
+	tsx := blockchain.Transaction{
+		From:      blockchain.PublicKey(*pub),
+		To:        blockchain.PublicKey(*contract),
+		Amount:    amount,
+		GasLimit:  gasLimit,
+		GasPrice:  gasPrice,
+		Signature: blockchain.Signature{},
+		Nonce:     nextNonce,
+		Timestamp: uint64(time.Now().Unix()),
+	}
+
+	blockchain.SignTransaction(&tsx, *priv)
+
+	// Submit transaction
+	txJSON, err := json.Marshal(tsx)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transaction: %w", err)
+	}
+
+	url = fmt.Sprintf("http://%s/submit-transaction", nodeaddr)
+	resp, err = http.Post(url, "application/json", bytes.NewBuffer(txJSON))
+	if err != nil {
+		return fmt.Errorf("failed to submit transaction: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the error response body to get the actual error message
+		bodyBytes := make([]byte, 1024) // Read up to 1KB of error message
+		n, _ := resp.Body.Read(bodyBytes)
+		errorBody := string(bodyBytes[:n])
+		return fmt.Errorf("Contract call failed %s: %s", resp.Status, errorBody)
+	}
+
+	// Read response
+	var response queryapi.SubmitTransactionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	log.Printf("Contract call submitted successfully!")
+	log.Printf("Status: %s", response.Status)
+	log.Printf("Transaction Hash: %s", response.Hash)
 	return nil
 }

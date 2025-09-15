@@ -122,16 +122,6 @@ func (m *SimpleMiner) getChainInfo() (*blockchain.ChainHead, error) {
 }
 
 func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (blockchain.Block, error) {
-	// Create coinbase transaction
-	coinbase := blockchain.Transaction{
-		From:      blockchain.PublicKey{}, // Empty for coinbase
-		To:        m.MinerAddress,
-		Amount:    blockchain.BlockReward,
-		Fee:       0,
-		Nonce:     0,
-		Timestamp: uint64(time.Now().Unix()),
-		Signature: blockchain.Signature{}, // Empty for coinbase
-	}
 
 	// Get pending transactions from mempool
 	mempoolTxs, err := m.getMempoolTransactions()
@@ -140,21 +130,86 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		mempoolTxs = []blockchain.Transaction{} // Continue with empty mempool
 	}
 
+	// Get current chain state for transaction validation
+	currentStates, err := m.getChainState()
+	if err != nil {
+		log.Printf("%s\tWarning: Failed to get chain state: %v", m.ID, err)
+		currentStates = make(map[blockchain.PublicKey]*blockchain.AccountState) // Continue with empty state
+	}
+
 	log.Printf("%s\tIncluding %d transactions from mempool", m.ID, len(mempoolTxs))
+	log.Printf("%s\tCurrent chain state has %d accounts", m.ID, len(currentStates))
+
+	// Calculate total gas fees by simulating transaction execution
+	var totalGasFees uint64
+	for _, tx := range mempoolTxs {
+		// Skip coinbase transactions
+		if tx.From == (blockchain.PublicKey{}) {
+			continue
+		}
+
+		// Create a copy of states for simulation
+		tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
+		for pubKey, state := range currentStates {
+			if state != nil {
+				tempStates[pubKey] = &blockchain.AccountState{
+					Address:      state.Address,
+					Balance:      state.Balance,
+					Nonce:        state.Nonce,
+					Instructions: state.Instructions,
+					Persistent:   make(map[string]string),
+					StorageRoot:  state.StorageRoot,
+					CodeHash:     state.CodeHash,
+				}
+				for k, v := range state.Persistent {
+					tempStates[pubKey].Persistent[k] = v
+				}
+			}
+		}
+
+		// Try to execute the transaction to see if it's valid and get gas usage
+		gasUsed, err := blockchain.ApplyTransaction(&tx, tempStates)
+		if err != nil {
+			log.Printf("%s\tSkipping invalid transaction: %v", m.ID, err)
+			continue
+		}
+
+		gasFee := gasUsed * tx.GasPrice
+		totalGasFees += gasFee
+	}
+
+	log.Printf("%s\tCalculated total gas fees: %d", m.ID, totalGasFees)
+
+	// Create coinbase transaction with block reward + gas fees
+	coinbaseAmount := blockchain.BlockReward + totalGasFees
+	coinbase := blockchain.Transaction{
+		From:             blockchain.PublicKey{}, // Empty for coinbase
+		To:               m.MinerAddress,
+		Amount:           coinbaseAmount,
+		Nonce:            0,
+		Timestamp:        uint64(time.Now().Unix()),
+		Signature:        blockchain.Signature{}, // Empty for coinbase
+		ChainID:          blockchain.MainnetChainID,
+		Instructions:     nil,
+		InitInstructions: nil,
+		GasLimit:         0, // Coinbase doesn't consume gas
+		GasPrice:         0, // Coinbase doesn't pay gas
+	}
 
 	// Use the actual chain head hash
 	previousHash := chainInfo.Hash
 
 	// Create mining parameters
 	params := miner.BlockCreationParams{
-		Version:      1,
-		PreviousHash: previousHash,
-		Height:       chainInfo.Height + 1,
-		PreviousWork: chainInfo.TotalWork,
-		Coinbase:     coinbase,
-		Transactions: mempoolTxs, // Include mempool transactions
-		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact, // Use easy difficulty for testing
+		Version:       1,
+		PreviousHash:  previousHash,
+		Height:        chainInfo.Height + 1,
+		PreviousWork:  chainInfo.TotalWork,
+		Coinbase:      coinbase,
+		Transactions:  mempoolTxs, // Include mempool transactions
+		Timestamp:     uint64(time.Now().Unix()),
+		TargetBits:    blockchain.TestTargetCompact, // Use easy difficulty for testing
+		CurrentStates: currentStates,                // Include current account states for validation
 	}
 
 	// Mine the block (this will take some time!)
@@ -180,6 +235,45 @@ func (m *SimpleMiner) getMempoolTransactions() ([]blockchain.Transaction, error)
 	}
 
 	return mempoolResp.Transactions, nil
+}
+
+func (m *SimpleMiner) getChainState() (map[blockchain.PublicKey]*blockchain.AccountState, error) {
+	url := fmt.Sprintf("http://%s/chain-state", m.NodeAddr)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain state: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status)
+	}
+
+	var chainStateResp queryapi.ChainStateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chainStateResp); err != nil {
+		return nil, fmt.Errorf("failed to decode chain state response: %w", err)
+	}
+
+	// Convert hex string keys back to PublicKey
+	accountStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
+	for keyHex, state := range chainStateResp.AccountStates {
+		keyBytes, err := hex.DecodeString(keyHex)
+		if err != nil {
+			log.Printf("%s\tWarning: invalid public key hex %s: %v", m.ID, keyHex, err)
+			continue
+		}
+
+		if len(keyBytes) != 32 {
+			log.Printf("%s\tWarning: invalid public key length %d for %s", m.ID, len(keyBytes), keyHex)
+			continue
+		}
+
+		var pubKey blockchain.PublicKey
+		copy(pubKey[:], keyBytes)
+		accountStates[pubKey] = state
+	}
+
+	return accountStates, nil
 }
 
 func (m *SimpleMiner) submitBlock(block *blockchain.Block) error {

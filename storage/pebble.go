@@ -96,7 +96,11 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 			// Coinbase transaction
 			if tx.From == (blockchain.PublicKey{}) {
 				if toState, ok := chain.AccountStates[tx.To]; ok {
-					toState.Balance += tx.Amount
+					newBalance, err := blockchain.SafeAdd(toState.Balance, tx.Amount)
+					if err != nil {
+						return nil, fmt.Errorf("coinbase balance overflow: %w", err)
+					}
+					toState.Balance = newBalance
 				} else {
 					chain.AccountStates[tx.To] = &blockchain.AccountState{
 						Address: tx.To,
@@ -108,12 +112,31 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 				// Regular transaction
 				fromState := chain.AccountStates[tx.From]
 				if fromState != nil {
-					fromState.Balance -= (tx.Amount + tx.Fee)
+					// Calculate estimated gas cost for this transaction
+					estimatedGas := blockchain.GasTransfer
+					if tx.To == (blockchain.PublicKey{}) && len(tx.Instructions) > 0 {
+						estimatedGas = blockchain.GasContractDeploy
+					}
+					estimatedGasCost := estimatedGas * tx.GasPrice
+
+					total, err := blockchain.SafeAdd(tx.Amount, estimatedGasCost)
+					if err != nil {
+						return nil, fmt.Errorf("transaction total overflow: %w", err)
+					}
+					newBalance, err := blockchain.SafeSubtract(fromState.Balance, total)
+					if err != nil {
+						return nil, fmt.Errorf("sender balance underflow: %w", err)
+					}
+					fromState.Balance = newBalance
 					fromState.Nonce += 1
 				}
 
 				if toState, ok := chain.AccountStates[tx.To]; ok {
-					toState.Balance += tx.Amount
+					newBalance, err := blockchain.SafeAdd(toState.Balance, tx.Amount)
+					if err != nil {
+						return nil, fmt.Errorf("recipient balance overflow: %w", err)
+					}
+					toState.Balance = newBalance
 				} else {
 					chain.AccountStates[tx.To] = &blockchain.AccountState{
 						Address: tx.To,

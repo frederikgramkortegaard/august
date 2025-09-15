@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"august/avm"
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
@@ -8,9 +9,9 @@ import (
 
 // ChainHead represents the current head of the blockchain
 type ChainHead struct {
-	Height    uint64  `json:"height"`
-	Hash      Hash32  `json:"hash"`
-	TotalWork string  `json:"total_work"`
+	Height    uint64 `json:"height"`
+	Hash      Hash32 `json:"hash"`
+	TotalWork string `json:"total_work"`
 }
 
 const (
@@ -77,13 +78,17 @@ func (sig *Signature) UnmarshalJSON(data []byte) error {
 }
 
 type Transaction struct {
-	From      PublicKey `json:"from"`
-	To        PublicKey `json:"to"`
-	Fee       uint64    `json:"fee"`
-	Amount    uint64    `json:"amount"`
-	Signature Signature `json:"signature"`
-	Nonce     uint64    `json:"nonce"`
-	Timestamp uint64    `json:"timestamp"` // Unix timestamp when transaction was created
+	From             PublicKey         `json:"from"`
+	To               PublicKey         `json:"to"`
+	Amount           uint64            `json:"amount"`
+	Signature        Signature         `json:"signature"`
+	Nonce            uint64            `json:"nonce"`
+	Timestamp        uint64            `json:"timestamp"`         // Unix timestamp when transaction was created
+	ChainID          uint64            `json:"chain_id"`          // Chain identifier for replay protection
+	Instructions     []avm.Instruction `json:"instructions"`      // Contract runtime code (empty for regular transfers)
+	InitInstructions []avm.Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
+	GasLimit         uint64            `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
+	GasPrice         uint64            `json:"gas_price"`         // Price per unit of gas in leaf units
 }
 
 type Hash32 [32]byte
@@ -112,14 +117,19 @@ func (h *Hash32) UnmarshalJSON(data []byte) error {
 }
 
 type BlockHeader struct {
-	Version      uint64 `json:"version"`
-	PreviousHash Hash32 `json:"previous_hash"`
-	Height       uint64 `json:"height"`
-	Timestamp    uint64 `json:"timestamp"`
-	Nonce        uint64 `json:"nonce"`
-	MerkleRoot   Hash32 `json:"merkle_root"`
-	Bits         uint32 `json:"bits"`       // Target in compact format (Bitcoin-style)
-	TotalWork    string `json:"total_work"` // Cumulative work from genesis to this block (big.Int as string)
+	Version      uint64    `json:"version"`
+	PreviousHash Hash32    `json:"previous_hash"`
+	Height       uint64    `json:"height"`
+	Timestamp    uint64    `json:"timestamp"`
+	Nonce        uint64    `json:"nonce"`
+	MerkleRoot   Hash32    `json:"merkle_root"`     // Transaction merkle root
+	StateRoot    Hash32    `json:"state_root"`      // Account state merkle root
+	ReceiptRoot  Hash32    `json:"receipt_root"`    // Transaction receipts merkle root
+	Bits         uint32    `json:"bits"`            // Target in compact format (Bitcoin-style)
+	TotalWork    string    `json:"total_work"`      // Cumulative work from genesis to this block (big.Int as string)
+	GasLimit     uint64    `json:"gas_limit"`       // Maximum gas allowed in this block
+	GasUsed      uint64    `json:"gas_used"`        // Total gas used by all transactions
+	Beneficiary  PublicKey `json:"beneficiary"`     // Miner/validator address receiving rewards
 }
 
 type Block struct {
@@ -128,9 +138,13 @@ type Block struct {
 }
 
 type AccountState struct {
-	Address PublicKey `json:"address"`
-	Balance uint64    `json:"balance"`
-	Nonce   uint64    `json:"nonce"`
+	Address      PublicKey         `json:"address"`
+	Balance      uint64            `json:"balance"`
+	Nonce        uint64            `json:"nonce"`
+	Instructions []avm.Instruction `json:"instructions"`
+	Persistent   map[string]string `json:"persistent"`
+	StorageRoot  Hash32            `json:"storage_root"` // Merkle Patricia trie root of contract storage
+	CodeHash     Hash32            `json:"code_hash"`    // Hash of the contract code (Instructions)
 }
 
 type Chain struct {
@@ -189,11 +203,11 @@ func (c *Chain) DeepCopy() *Chain {
 func (c *Chain) AddBlock(block *Block) {
 	c.Blocks = append(c.Blocks, block)
 	c.Tip = block
-	
+
 	if c.BlockIndex == nil {
 		c.BlockIndex = make(map[Hash32]*Block)
 	}
-	
+
 	blockHash := HashBlockHeader(&block.Header)
 	c.BlockIndex[blockHash] = block
 }
@@ -210,12 +224,12 @@ func (c *Chain) GetBlockByHash(hash Hash32) (*Block, bool) {
 // InitializeIndexes builds the block index and sets tip for existing chains
 func (c *Chain) InitializeIndexes() {
 	c.BlockIndex = make(map[Hash32]*Block)
-	
+
 	for _, block := range c.Blocks {
 		blockHash := HashBlockHeader(&block.Header)
 		c.BlockIndex[blockHash] = block
 	}
-	
+
 	if len(c.Blocks) > 0 {
 		c.Tip = c.Blocks[len(c.Blocks)-1]
 	}

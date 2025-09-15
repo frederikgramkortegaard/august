@@ -27,6 +27,7 @@ func StartQueryAPI(node Node, port int) error {
 
 	// Miner and transaction endpoints
 	mux.HandleFunc("/chain-info", handleChainInfo(node))
+	mux.HandleFunc("/chain-state", handleChainState(node))
 	mux.HandleFunc("/submit-block", handleSubmitBlock(node))
 	mux.HandleFunc("/submit-transaction", handleSubmitTransaction(node))
 	mux.HandleFunc("/mempool", handleGetMempool(node))
@@ -35,6 +36,7 @@ func StartQueryAPI(node Node, port int) error {
 	mux.HandleFunc("/balance/", handleBalance(node))
 	mux.HandleFunc("/transaction/", handleTransaction(node))
 	mux.HandleFunc("/block/", handleBlock(node))
+	mux.HandleFunc("/contract/", handleContract(node))
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("Starting Query API server on %s\n", addr)
@@ -53,6 +55,38 @@ func handleChainInfo(node Node) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chainHead)
+	}
+}
+
+// GET /chain-state - Returns the current account states for miners
+func handleChainState(node Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get current chain state
+		chain, err := node.GetChain()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get chain state: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Convert map keys from PublicKey to hex string for JSON serialization
+		accountStatesJSON := make(map[string]*blockchain.AccountState)
+		for pubKey, state := range chain.AccountStates {
+			keyHex := hex.EncodeToString(pubKey[:])
+			accountStatesJSON[keyHex] = state
+		}
+
+		response := ChainStateResponse{
+			AccountStates: accountStatesJSON,
+			AccountCount:  len(chain.AccountStates),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -370,6 +404,79 @@ func handleSubmitTransaction(node Node) http.HandlerFunc {
 		response := SubmitTransactionResponse{
 			Status: "submitted",
 			Hash:   hex.EncodeToString(txHash[:]),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+}
+
+// GET /contract/<address> - Get contract information and persistent storage
+func handleContract(node Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Extract address from URL path
+		path := strings.TrimPrefix(r.URL.Path, "/contract/")
+		if path == "" {
+			http.Error(w, "Contract address required", http.StatusBadRequest)
+			return
+		}
+
+		// Parse address (assume hex encoding)
+		addressBytes, err := hex.DecodeString(path)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid address format: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		if len(addressBytes) != 32 {
+			http.Error(w, "Address must be 32 bytes", http.StatusBadRequest)
+			return
+		}
+
+		// Convert to PublicKey
+		var publicKey blockchain.PublicKey
+		copy(publicKey[:], addressBytes)
+
+		// Get current chain state
+		chain, err := node.GetChain()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get chain state: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Look up account state
+		accountState, exists := chain.AccountStates[publicKey]
+
+		response := ContractResponse{
+			Found:   exists,
+			Address: path,
+		}
+
+		if exists {
+			response.Balance = accountState.Balance
+			response.Nonce = accountState.Nonce
+			response.IsContract = len(accountState.Instructions) > 0
+			response.HasInstructions = len(accountState.Instructions) > 0
+			response.StorageEntries = len(accountState.Persistent)
+
+			// Include persistent storage data if it exists
+			if len(accountState.Persistent) > 0 {
+				response.PersistentData = make(map[string]string)
+				for k, v := range accountState.Persistent {
+					response.PersistentData[k] = v
+				}
+			}
+
+			// Add code hash and storage root if available
+			response.CodeHash = hex.EncodeToString(accountState.CodeHash[:])
+			response.StorageRoot = hex.EncodeToString(accountState.StorageRoot[:])
+		} else {
+			response.IsContract = false
 		}
 
 		w.Header().Set("Content-Type", "application/json")

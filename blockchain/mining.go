@@ -11,9 +11,17 @@ const (
 )
 
 const (
-	BlockReward     = 50 * AUG              // 50 AUG block reward
-	HalvingInterval = 210000                // Blocks between reward halvings
-	MaxAmount       = ^uint64(0)            // Maximum uint64 value for overflow checks
+	BlockReward           = 50 * AUG              // 50 AUG block reward
+	HalvingInterval       = 210000                // Blocks between reward halvings
+	MaxAmount             = ^uint64(0)            // Maximum uint64 value for overflow checks
+	MainnetChainID        = uint64(1)             // Main network chain ID
+	TestnetChainID        = uint64(2)             // Test network chain ID
+	ContractDeploymentFee = 1 * AUG               // 1 AUG deployment fee
+
+	// Gas constants
+	GasTransfer          = uint64(21000)          // Base gas for regular transfer
+	GasContractDeploy    = uint64(21000)          // Base gas for contract deployment (before init execution)
+	GasContractInitLimit = uint64(1000000)        // Max gas for contract init execution
 )
 
 // SafeAdd performs addition with overflow check

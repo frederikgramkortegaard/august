@@ -220,7 +220,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	}
 
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 20 * blockchain.AUG, // 20 AUG = 20M Leaf units, enough for transaction + gas
 		Nonce:   0,
 	}
 
@@ -240,18 +240,20 @@ func TestQueryAPIWithData(t *testing.T) {
 	if resp["exists"].(bool) != true {
 		t.Fatalf("Expected keyA to exist")
 	}
-	if resp["balance"].(float64) != 1000 {
-		t.Fatalf("Expected balance 1000, got %v", resp["balance"])
+	expectedBalance := float64(20 * blockchain.AUG)
+	if resp["balance"].(float64) != expectedBalance {
+		t.Fatalf("Expected balance %v, got %v", expectedBalance, resp["balance"])
 	}
 
-	log.Printf("✓ /balance endpoint correctly shows account with balance 1000")
+	log.Printf("✓ /balance endpoint correctly shows account with balance %v", expectedBalance)
 
 	// Create and add a transaction to mempool
 	tx := blockchain.Transaction{
 		From:      keyA,
 		To:        keyB,
 		Amount:    100 * blockchain.Leaf,
-		Fee:       10 * blockchain.Leaf,
+		GasLimit:  25000,  // 25k gas limit
+		GasPrice:  400,    // 400 leaf per gas (25k * 400 = 10M leaf total)
 		Nonce:     1,
 		Timestamp: uint64(time.Now().Unix()),
 	}
@@ -295,23 +297,63 @@ func TestQueryAPIWithData(t *testing.T) {
 
 	log.Printf("✓ /transaction endpoint finds pending transaction")
 
+	// Get actual gas used by applying transaction first
+	chain, err = nodeA.GetChain()
+	if err != nil {
+		t.Fatalf("Failed to get chain: %v", err)
+	}
+
+	// Create temp states for gas calculation
+	tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
+	for pubKey, state := range chain.AccountStates {
+		if state != nil {
+			tempStates[pubKey] = &blockchain.AccountState{
+				Address:      state.Address,
+				Balance:      state.Balance,
+				Nonce:        state.Nonce,
+				Instructions: state.Instructions,
+				Persistent:   make(map[string]string),
+				StorageRoot:  state.StorageRoot,
+				CodeHash:     state.CodeHash,
+			}
+			for k, v := range state.Persistent {
+				tempStates[pubKey].Persistent[k] = v
+			}
+		}
+	}
+
+	actualGasUsed, err := blockchain.ApplyTransaction(&tx, tempStates)
+	if err != nil {
+		t.Fatalf("Failed to apply transaction for gas calculation: %v", err)
+	}
+	t.Logf("Actual gas used for transaction: %d", actualGasUsed)
+
 	// Mine a block containing the transaction
 	chainHead := nodeA.GetChainHead()
 
 	params := miner.BlockCreationParams{
-		Version:      1,
-		PreviousHash: chainHead.Hash,
-		Height:       chainHead.Height + 1,
-		PreviousWork: chainHead.TotalWork,
-		Coinbase: blockchain.Transaction{
-			From:      blockchain.PublicKey{},
-			To:        blockchain.FirstUser,
-			Amount:    blockchain.BlockReward + tx.Fee,
-			Fee:       0,
-			Nonce:     0,
-			Timestamp: uint64(time.Now().Unix()),
-			Signature: blockchain.Signature{},
-		},
+		Version:       1,
+		PreviousHash:  chainHead.Hash,
+		Height:        chainHead.Height + 1,
+		PreviousWork:  chainHead.TotalWork,
+		CurrentStates: chain.AccountStates,
+		Coinbase: func() blockchain.Transaction {
+			txFee := actualGasUsed * tx.GasPrice
+			coinbaseAmount, err := blockchain.SafeAdd(blockchain.BlockReward, txFee)
+			if err != nil {
+				panic(fmt.Sprintf("coinbase amount overflow in test: %v", err))
+			}
+			return blockchain.Transaction{
+				From:      blockchain.PublicKey{},
+				To:        blockchain.FirstUser,
+				Amount:    coinbaseAmount,
+				GasLimit:  0,  // Coinbase transactions use no gas
+				GasPrice:  0,
+				Nonce:     0,
+				Timestamp: uint64(time.Now().Unix()),
+				Signature: blockchain.Signature{},
+			}
+		}(),
 		Transactions: []blockchain.Transaction{tx},
 		Timestamp:    uint64(time.Now().Unix()),
 		TargetBits:   blockchain.TestTargetCompact,

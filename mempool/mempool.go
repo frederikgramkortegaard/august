@@ -11,32 +11,32 @@ import (
 type MempoolEntry struct {
 	Transaction blockchain.Transaction
 	AddedAt     time.Time
-	Fee         uint64 // Cached for sorting
+	GasPrice    uint64 // Cached for sorting (gas price determines priority)
 }
 
-// FeeQueue implements a priority queue ordered by transaction fee (highest first)
-type FeeQueue []*MempoolEntry
+// GasPriceQueue implements a priority queue ordered by gas price (highest first)
+type GasPriceQueue []*MempoolEntry
 
-func (pq FeeQueue) Len() int { return len(pq) }
+func (pq GasPriceQueue) Len() int { return len(pq) }
 
-func (pq FeeQueue) Less(i, j int) bool {
-	// Higher fee has higher priority (max heap)
-	if pq[i].Fee != pq[j].Fee {
-		return pq[i].Fee > pq[j].Fee
+func (pq GasPriceQueue) Less(i, j int) bool {
+	// Higher gas price has higher priority (max heap)
+	if pq[i].GasPrice != pq[j].GasPrice {
+		return pq[i].GasPrice > pq[j].GasPrice
 	}
-	// If fees are equal, older transaction has higher priority
+	// If gas prices are equal, older transaction has higher priority
 	return pq[i].AddedAt.Before(pq[j].AddedAt)
 }
 
-func (pq FeeQueue) Swap(i, j int) {
+func (pq GasPriceQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }
 
-func (pq *FeeQueue) Push(x interface{}) {
+func (pq *GasPriceQueue) Push(x interface{}) {
 	*pq = append(*pq, x.(*MempoolEntry))
 }
 
-func (pq *FeeQueue) Pop() interface{} {
+func (pq *GasPriceQueue) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	item := old[n-1]
@@ -50,10 +50,10 @@ type Config struct {
 	MaxExpiry  time.Duration // Maximum age before expiry (default: 7 days)
 }
 
-// Mempool manages pending transactions with fee-based prioritization
+// Mempool manages pending transactions with gas price-based prioritization
 type Mempool struct {
 	mu           sync.RWMutex
-	queue        *FeeQueue
+	queue        *GasPriceQueue
 	transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
 	config       Config
 }
@@ -67,7 +67,7 @@ func NewMempool(config Config) *Mempool {
 		config.MaxExpiry = 7 * 24 * time.Hour // 7 days
 	}
 
-	queue := &FeeQueue{}
+	queue := &GasPriceQueue{}
 	heap.Init(queue)
 
 	return &Mempool{
@@ -100,22 +100,22 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 	entry := &MempoolEntry{
 		Transaction: tx,
 		AddedAt:     time.Now(),
-		Fee:         tx.Fee,
+		GasPrice:    tx.GasPrice,
 	}
 
-	// If mempool is full, check if we should evict lowest fee transaction
+	// If mempool is full, check if we should evict lowest gas price transaction
 	if len(mp.transactions) >= mp.config.MaxSize {
-		// Find the lowest fee transaction (last in max heap)
+		// Find the lowest gas price transaction (last in max heap)
 		if mp.queue.Len() > 0 {
-			lowestFeeEntry := (*mp.queue)[mp.queue.Len()-1]
+			lowestGasPriceEntry := (*mp.queue)[mp.queue.Len()-1]
 
-			// Only add if new transaction has higher fee
-			if tx.Fee <= lowestFeeEntry.Fee {
-				return false // Rejected: fee too low
+			// Only add if new transaction has higher gas price
+			if tx.GasPrice <= lowestGasPriceEntry.GasPrice {
+				return false // Rejected: gas price too low
 			}
 
-			// Remove lowest fee transaction
-			mp.removeLowestFee()
+			// Remove lowest gas price transaction
+			mp.removeLowestGasPrice()
 		}
 	}
 
@@ -142,7 +142,7 @@ func (mp *Mempool) GetTransactions(limit int) []blockchain.Transaction {
 	}
 
 	// Create a copy of the queue for iteration without modifying original
-	tempQueue := make(FeeQueue, len(*mp.queue))
+	tempQueue := make(GasPriceQueue, len(*mp.queue))
 	copy(tempQueue, *mp.queue)
 
 	for i := 0; i < count && len(tempQueue) > 0; i++ {
@@ -216,20 +216,20 @@ func (mp *Mempool) cleanExpiredTransactions() int {
 	return removed
 }
 
-// removeLowestFee removes the transaction with lowest fee (must hold lock)
-func (mp *Mempool) removeLowestFee() {
+// removeLowestGasPrice removes the transaction with lowest gas price (must hold lock)
+func (mp *Mempool) removeLowestGasPrice() {
 	if mp.queue.Len() == 0 {
 		return
 	}
 
-	// Find the entry with lowest fee (linear search through heap)
+	// Find the entry with lowest gas price (linear search through heap)
 	lowestIdx := 0
-	lowestFee := (*mp.queue)[0].Fee
+	lowestGasPrice := (*mp.queue)[0].GasPrice
 
 	for i, entry := range *mp.queue {
-		if entry.Fee < lowestFee || (entry.Fee == lowestFee && entry.AddedAt.After((*mp.queue)[lowestIdx].AddedAt)) {
+		if entry.GasPrice < lowestGasPrice || (entry.GasPrice == lowestGasPrice && entry.AddedAt.After((*mp.queue)[lowestIdx].AddedAt)) {
 			lowestIdx = i
-			lowestFee = entry.Fee
+			lowestGasPrice = entry.GasPrice
 		}
 	}
 
@@ -276,7 +276,7 @@ func (mp *Mempool) RevalidateTransactions(accountStates map[blockchain.PublicKey
 
 // rebuildHeap reconstructs the heap from current transactions
 func (mp *Mempool) rebuildHeap() {
-	newQueue := &FeeQueue{}
+	newQueue := &GasPriceQueue{}
 
 	for _, entry := range mp.transactions {
 		*newQueue = append(*newQueue, entry)

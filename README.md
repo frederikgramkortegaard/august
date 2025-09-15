@@ -6,6 +6,14 @@ Built to understand distributed systems concepts including consensus algorithms,
 
 **Note**: This is a learning project, not production software.
 
+## 📖 Documentation
+
+- **[Wallet Guide](docs/WALLET.md)** - Send transactions, deploy contracts, manage accounts
+- **[Miner Guide](docs/MINER.md)** - Set up mining, handle mempool transactions
+- **[QueryAPI Reference](docs/QUERYAPI.md)** - HTTP endpoints for blockchain queries
+- **[Contract Development](docs/CONTRACTS.md)** - Deploy and interact with smart contracts
+- **[Network Setup](docs/NETWORKING.md)** - Run multi-node networks, peer discovery
+
 ---
 
 ## Quick Start

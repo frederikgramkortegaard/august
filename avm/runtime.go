@@ -331,19 +331,32 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 		}
 	case PSTORE:
-		value, address, popErr := r.Stack.Pop2()
+		// PSTORE pops address and value from stack (same as MSTORE pattern)
+		address, value, popErr := r.Stack.Pop2()
 		if popErr != nil {
 			err = popErr
 		} else {
 			// Store value at address in persistent storage
-			r.Persistent[fmt.Sprintf("%d", address.Uint64())] = value.String()
+			key := fmt.Sprintf("%d", address.Uint64())
+			valueStr := value.String()
+			r.Persistent[key] = valueStr
+			fmt.Printf("PSTORE: storing key='%s' value='%s'\n", key, valueStr)
 		}
 	case PLOAD:
+		// PLOAD pops address from stack, pushes value to stack (same as MLOAD pattern)
 		address, popErr := r.Stack.Pop()
 		if popErr != nil {
 			err = popErr
 		} else {
-			valueStr, ok := r.Persistent[fmt.Sprintf("%d", address.Uint64())]
+			key := fmt.Sprintf("%d", address.Uint64())
+			valueStr, ok := r.Persistent[key]
+			fmt.Printf("PLOAD: looking for key='%s', found=%t", key, ok)
+			if ok {
+				fmt.Printf(", value='%s'\n", valueStr)
+			} else {
+				fmt.Printf("\n")
+			}
+
 			if !ok {
 				// Return 0 if key doesn't exist (like Ethereum)
 				err = r.Stack.Push(big.NewInt(0))

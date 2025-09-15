@@ -6,6 +6,7 @@ import (
 	"august/miner"
 	"august/node"
 	"crypto/ed25519"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -64,7 +65,8 @@ func createTestTransaction(from, to blockchain.PublicKey, amount, fee uint64, no
 		From:      from,
 		To:        to,
 		Amount:    amount,
-		Fee:       fee,
+		GasLimit:  25000,  // 25k gas limit (enough for basic transfer)
+		GasPrice:  fee,    // Fee is now gas price directly (simplified for tests)
 		Nonce:     nonce,
 		Timestamp: uint64(time.Now().Unix()),
 	}
@@ -110,7 +112,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 
 	// Set up some initial balances (simulate mining rewards)
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -160,7 +162,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 
 	// Set up balance for second user
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -188,11 +190,13 @@ func TestMempoolBasicOperations(t *testing.T) {
 	}
 
 	// Higher fee transaction should come first
-	if transactions[0].Fee != 20 {
-		t.Fatalf("Expected first transaction to have fee 20, got %d", transactions[0].Fee)
+	expectedFee0 := transactions[0].GasLimit * transactions[0].GasPrice
+	if expectedFee0 != 500000 { // 25000 * 20
+		t.Fatalf("Expected first transaction to have fee 500000, got %d", expectedFee0)
 	}
-	if transactions[1].Fee != 10 {
-		t.Fatalf("Expected second transaction to have fee 10, got %d", transactions[1].Fee)
+	expectedFee1 := transactions[1].GasLimit * transactions[1].GasPrice
+	if expectedFee1 != 250000 { // 25000 * 10
+		t.Fatalf("Expected second transaction to have fee 250000, got %d", expectedFee1)
 	}
 
 	log.Printf("Transaction fee ordering works correctly")
@@ -232,7 +236,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 		t.Fatalf("Failed to get chain: %v", err)
 	}
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -248,7 +252,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	copy(keyC[:], pubC)
 
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -280,22 +284,56 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 
 	// Create and mine a block containing one of the transactions
 	chainHead := nodeA.GetChainHead()
+	currentChain, err := nodeA.Store.GetChain()
+	if err != nil {
+		t.Fatalf("Failed to get current chain state: %v", err)
+	}
 
 	// Use the miner package to create a proper block
 	params := miner.BlockCreationParams{
-		Version:      1,
-		PreviousHash: chainHead.Hash,
-		Height:       chainHead.Height + 1,
-		PreviousWork: chainHead.TotalWork,
-		Coinbase: blockchain.Transaction{
-			From:      blockchain.PublicKey{}, // Empty for coinbase
-			To:        blockchain.FirstUser,   // Mine to first user
-			Amount:    blockchain.BlockReward + tx1.Fee, // Block reward + transaction fees
-			Fee:       0,
-			Nonce:     0,
-			Timestamp: uint64(time.Now().Unix()),
-			Signature: blockchain.Signature{}, // Empty for coinbase
-		},
+		Version:       1,
+		PreviousHash:  chainHead.Hash,
+		Height:        chainHead.Height + 1,
+		PreviousWork:  chainHead.TotalWork,
+		CurrentStates: currentChain.AccountStates, // Add current states for gas calculation
+		Coinbase: func() blockchain.Transaction {
+			// Get actual gas used by applying transaction first
+			tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
+			for pubKey, state := range currentChain.AccountStates {
+				if state != nil {
+					tempStates[pubKey] = &blockchain.AccountState{
+						Balance:      state.Balance,
+						Nonce:        state.Nonce,
+						Instructions: state.Instructions,
+						Persistent:   make(map[string]string),
+						StorageRoot:  state.StorageRoot,
+						CodeHash:     state.CodeHash,
+					}
+					for k, v := range state.Persistent {
+						tempStates[pubKey].Persistent[k] = v
+					}
+				}
+			}
+			actualGasUsed, err := blockchain.ApplyTransaction(&tx1, tempStates)
+			if err != nil {
+				t.Fatalf("Failed to apply transaction for gas calculation: %v", err)
+			}
+			txFee := actualGasUsed * tx1.GasPrice
+			coinbaseAmount, err := blockchain.SafeAdd(blockchain.BlockReward, txFee)
+			if err != nil {
+				panic(fmt.Sprintf("coinbase amount overflow in test: %v", err))
+			}
+			return blockchain.Transaction{
+				From:      blockchain.PublicKey{}, // Empty for coinbase
+				To:        blockchain.FirstUser,   // Mine to first user
+				Amount:    coinbaseAmount,         // Block reward + transaction fees
+				GasLimit:  0,  // Coinbase transactions use no gas
+				GasPrice:  0,
+				Nonce:     0,
+				Timestamp: uint64(time.Now().Unix()),
+				Signature: blockchain.Signature{}, // Empty for coinbase
+			}
+		}(),
 		Transactions: []blockchain.Transaction{tx1}, // Include tx1 in the block
 		Timestamp:    uint64(time.Now().Unix()),
 		TargetBits:   blockchain.TestTargetCompact, // Easy difficulty for testing
@@ -321,8 +359,9 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 
 	// Verify the remaining transaction is tx2
 	remaining := nodeA.Mempool.GetTransactions(1)
-	if len(remaining) != 1 || remaining[0].Fee != 15 {
-		t.Fatalf("Expected remaining transaction to have fee 15, got %v", remaining)
+	expectedRemaining := remaining[0].GasLimit * remaining[0].GasPrice
+	if len(remaining) != 1 || expectedRemaining != 375000 { // 25000 * 15
+		t.Fatalf("Expected remaining transaction to have fee 375000, got %d", expectedRemaining)
 	}
 
 	log.Printf("SUCCESS: Mempool correctly cleaned up after block processing")
@@ -364,7 +403,7 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 		t.Fatalf("Failed to get chain: %v", err)
 	}
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -380,7 +419,7 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 	copy(keyC[:], pubC)
 
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -415,11 +454,13 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 	}
 
 	// Verify fee ordering (highest first)
-	if transactions[0].Fee != 25 {
-		t.Fatalf("Expected first transaction fee 25, got %d", transactions[0].Fee)
+	fee0 := transactions[0].GasLimit * transactions[0].GasPrice
+	if fee0 != 625000 { // 25000 * 25
+		t.Fatalf("Expected first transaction fee 625000, got %d", fee0)
 	}
-	if transactions[1].Fee != 5 {
-		t.Fatalf("Expected second transaction fee 5, got %d", transactions[1].Fee)
+	fee1 := transactions[1].GasLimit * transactions[1].GasPrice
+	if fee1 != 125000 { // 25000 * 5
+		t.Fatalf("Expected second transaction fee 125000, got %d", fee1)
 	}
 
 	log.Printf("SUCCESS: Mempool API returns correctly ordered transactions")
@@ -470,15 +511,15 @@ func TestMempoolSizeLimits(t *testing.T) {
 
 	// Set up balances for all users
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 	chain.AccountStates[keyD] = &blockchain.AccountState{
-		Balance: 1000,
+		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -524,12 +565,12 @@ func TestMempoolSizeLimits(t *testing.T) {
 		t.Fatalf("Expected 2 transactions after eviction, got %d", len(transactions))
 	}
 
-	// Should have transactions with fees 20 and 10 (tx1 with fee 5 should be evicted)
-	fees := []uint64{transactions[0].Fee, transactions[1].Fee}
-	expectedFees := []uint64{20, 10}
+	// Should have transactions with fees 500000 and 250000 (tx1 with fee 125000 should be evicted)
+	fees := []uint64{transactions[0].GasLimit * transactions[0].GasPrice, transactions[1].GasLimit * transactions[1].GasPrice}
+	expectedFees := []uint64{500000, 250000} // 25000 * 20, 25000 * 10
 
 	if fees[0] != expectedFees[0] || fees[1] != expectedFees[1] {
-		t.Fatalf("Expected fees [20, 10], got %v", fees)
+		t.Fatalf("Expected fees [500000, 250000], got %v", fees)
 	}
 
 	log.Printf("SUCCESS: Mempool correctly evicts low-fee transactions when full")
