@@ -119,6 +119,7 @@ type Runtime struct {
 	GasAvailable uint64
 	GasUsed      uint64
 	Instructions []Instruction
+	Persistent   map[string]string
 }
 
 func NewRuntime(gasAvailable uint64, instructions []Instruction, config RuntimeConfig) *Runtime {
@@ -130,6 +131,7 @@ func NewRuntime(gasAvailable uint64, instructions []Instruction, config RuntimeC
 		GasAvailable: gasAvailable,
 		GasUsed:      0,
 		Instructions: instructions,
+		Persistent:   make(map[string]string),
 	}
 }
 
@@ -325,6 +327,30 @@ func (r *Runtime) ExecuteInstruction() error {
 			if loadErr != nil {
 				err = loadErr
 			} else {
+				err = r.Stack.Push(value)
+			}
+		}
+	case PSTORE:
+		value, address, popErr := r.Stack.Pop2()
+		if popErr != nil {
+			err = popErr
+		} else {
+			// Store value at address in persistent storage
+			r.Persistent[fmt.Sprintf("%d", address.Uint64())] = value.String()
+		}
+	case PLOAD:
+		address, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+		} else {
+			valueStr, ok := r.Persistent[fmt.Sprintf("%d", address.Uint64())]
+			if !ok {
+				// Return 0 if key doesn't exist (like Ethereum)
+				err = r.Stack.Push(big.NewInt(0))
+			} else {
+				// Convert string back to big.Int
+				value := new(big.Int)
+				value.SetString(valueStr, 10)
 				err = r.Stack.Push(value)
 			}
 		}
