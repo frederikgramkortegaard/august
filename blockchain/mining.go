@@ -1,10 +1,37 @@
 package blockchain
 
+import "fmt"
+
 type NonceType = uint64
 
 const (
-	// Currency units: 1 AUG = 10^18 leaf
-	LeafPerAUG      = uint64(1_000_000_000_000_000_000) // 10^18
-	BlockReward     = uint64(5_000_000_000_000_000_000) // 5 AUG in leaf units (reduced to fit uint64)
-	HalvingInterval = 210000                            // Blocks between reward halvings
+	// Currency units: 1 AUG = 10^6 leaf
+	LeafPerAUG      = uint64(1_000_000)     // 10^6
+	BlockReward     = 50 * LeafPerAUG       // 50 AUG in leaf units
+	HalvingInterval = 210000                // Blocks between reward halvings
+	MaxAmount       = ^uint64(0)            // Maximum uint64 value for overflow checks
 )
+
+// SafeAdd performs addition with overflow check
+func SafeAdd(a, b uint64) (uint64, error) {
+	if a > MaxAmount-b {
+		return 0, fmt.Errorf("addition overflow: %d + %d exceeds maximum uint64", a, b)
+	}
+	return a + b, nil
+}
+
+// SafeSubtract performs subtraction with underflow check
+func SafeSubtract(a, b uint64) (uint64, error) {
+	if a < b {
+		return 0, fmt.Errorf("subtraction underflow: %d - %d would be negative", a, b)
+	}
+	return a - b, nil
+}
+
+// ValidateAmount checks if an amount is within valid range
+func ValidateAmount(amount uint64) error {
+	if amount > MaxAmount {
+		return fmt.Errorf("amount %d exceeds maximum allowed value %d", amount, MaxAmount)
+	}
+	return nil
+}

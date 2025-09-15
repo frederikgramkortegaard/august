@@ -192,6 +192,14 @@ func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 // ValidateTransaction validates a transaction against current state WITHOUT applying changes
 func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) error {
 
+	// Validate amounts are within range
+	if err := ValidateAmount(tsx.Amount); err != nil {
+		return fmt.Errorf("invalid transaction amount: %w", err)
+	}
+	if err := ValidateAmount(tsx.Fee); err != nil {
+		return fmt.Errorf("invalid transaction fee: %w", err)
+	}
+
 	// Coinbase transactions - always valid (no sender validation needed)
 	if tsx.From == (PublicKey{}) {
 		return nil
@@ -210,10 +218,10 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 		return fmt.Errorf("sender account does not exist: %x", tsx.From[:8])
 	}
 
-	// Check for overflow in amount + fee
-	total := tsx.Amount + tsx.Fee
-	if total < tsx.Amount || total < tsx.Fee {
-		return fmt.Errorf("transaction amount + fee overflow")
+	// Check for overflow in amount + fee using safe arithmetic
+	total, err := SafeAdd(tsx.Amount, tsx.Fee)
+	if err != nil {
+		return fmt.Errorf("transaction amount + fee overflow: %w", err)
 	}
 
 	if fromState.Balance < total {
@@ -247,7 +255,12 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
-			toState.Balance += tsx.Amount
+			newBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+			if err != nil {
+				// This should never happen in practice due to validation, but safety check
+				panic(fmt.Sprintf("coinbase balance overflow: %v", err))
+			}
+			toState.Balance = newBalance
 		} else {
 			accountStates[tsx.To] = &AccountState{
 				Balance: tsx.Amount,
@@ -263,14 +276,25 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	fromState := accountStates[tsx.From] // Should exist (validated earlier)
 
 	// Deduct from sender (amount + fee) - overflow already checked in validation
-	total := tsx.Amount + tsx.Fee
-	fromState.Balance -= total
+	total, err := SafeAdd(tsx.Amount, tsx.Fee)
+	if err != nil {
+		panic(fmt.Sprintf("transaction total overflow during apply: %v", err))
+	}
+	newFromBalance, err := SafeSubtract(fromState.Balance, total)
+	if err != nil {
+		panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
+	}
+	fromState.Balance = newFromBalance
 	fromState.Nonce += 1
 	debugLog("APPLY\tSender %x new balance=%d, nonce=%d", tsx.From[:4], fromState.Balance, fromState.Nonce)
 
 	// Credit recipient
 	if toState, ok := accountStates[tsx.To]; ok {
-		toState.Balance += tsx.Amount
+		newToBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+		if err != nil {
+			panic(fmt.Sprintf("recipient balance overflow during apply: %v", err))
+		}
+		toState.Balance = newToBalance
 	} else {
 		accountStates[tsx.To] = &AccountState{
 			Balance: tsx.Amount,
@@ -308,7 +332,13 @@ func ValidateBlock(block *Block, chain *Chain) error {
 	var tsxfeesum uint64 = 0
 	// Validate each transaction without applying changes
 	for i, tsx := range block.Transactions {
-		tsxfeesum += tsx.Fee
+		// Check for fee sum overflow
+		newFeeSum, err := SafeAdd(tsxfeesum, tsx.Fee)
+		if err != nil {
+			return fmt.Errorf("transaction fees sum overflow: %w", err)
+		}
+		tsxfeesum = newFeeSum
+
 		if err := ValidateTransaction(&tsx, accountStatesCopy); err != nil {
 			return fmt.Errorf("transaction %d failed validation: %w", i, err)
 		}
@@ -317,7 +347,11 @@ func ValidateBlock(block *Block, chain *Chain) error {
 	}
 
 	// Validate Coinbase tsx amount is Fee's + Block Reward
-	if block.Transactions[0].Amount != tsxfeesum+BlockReward {
+	expectedCoinbaseAmount, err := SafeAdd(tsxfeesum, BlockReward)
+	if err != nil {
+		return fmt.Errorf("coinbase amount calculation overflow: %w", err)
+	}
+	if block.Transactions[0].Amount != expectedCoinbaseAmount {
 		return fmt.Errorf("Coinbase transaction is not Transaction Fee's + BlockReward")
 	}
 
