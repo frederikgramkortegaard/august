@@ -5,47 +5,47 @@ import (
 )
 
 // ProcessMessage handles different types of network messages
-func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
+func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 	// First check if this is a response to a pending request
-	if handled := server.HandleResponse(msg); handled {
-		server.logf("Delivered response for request %s", msg.ReplyTo)
+	if handled := s.HandleResponse(msg); handled {
+		s.logf("Delivered response for request %s", msg.ReplyTo)
 		return
 	}
 
 	switch msg.Type {
 	case MessageTypeHandshake:
-		server.ProcessHandshake(msg, peer, conn)
+		s.ProcessHandshake(msg, peer, conn)
 	case MessageTypeNewBlockHeader:
-		server.ProcessNewBlockHeader(msg, peer)
+		s.ProcessNewBlockHeader(msg, peer)
 	case MessageTypeNewBlock:
-		server.ProcessNewBlock(msg, peer)
+		s.ProcessNewBlock(msg, peer)
 	case MessageTypePing:
-		server.SendPongResponse(conn)
+		s.SendPongResponse(conn)
 	case MessageTypePong:
-		server.ProcessPong(peer)
+		s.ProcessPong(peer)
 	case MessageTypeRequestPeers:
-		server.SendPeerList(conn, msg, peer.Address)
+		s.SendPeerList(conn, msg, peer.Address)
 	case MessageTypeSharePeers:
-		server.ProcessSharedPeers(msg, peer)
+		s.ProcessSharedPeers(msg, peer)
 	case MessageTypeRequestBlock:
-		server.SendBlockResponse(conn, msg, peer)
+		s.SendBlockResponse(conn, msg, peer)
 	case MessageTypeNewTx:
-		server.ProcessNewTransaction(msg, peer)
+		s.ProcessNewTransaction(msg, peer)
 	case MessageTypeRequestChainHead:
-		server.SendChainHeadResponse(conn, msg, peer)
+		s.SendChainHeadResponse(conn, msg, peer)
 	case MessageTypeChainHead:
-		server.ProcessChainHead(msg, peer)
+		s.ProcessChainHead(msg, peer)
 	case MessageTypeRequestHeaders:
-		server.SendHeadersResponse(conn, msg, peer)
+		s.SendHeadersResponse(conn, msg, peer)
 	case MessageTypeHeaders:
-		server.ProcessHeaders(msg, peer)
+		s.ProcessHeaders(msg, peer)
 	case MessageTypeRequestBlocks:
-		server.SendBlocksResponse(conn, msg, peer)
+		s.SendBlocksResponse(conn, msg, peer)
 	case MessageTypeBlocks:
-		server.ProcessBlocks(msg, peer)
+		s.ProcessBlocks(msg, peer)
 	case MessageTypeSubmitBlock:
-		server.ProcessSubmitBlock(msg, conn)
+		s.ProcessSubmitBlock(msg, conn)
 	default:
-		server.logf("Unknown message type: %s", msg.Type)
+		s.logf("Unknown message type: %s", msg.Type)
 	}
 }

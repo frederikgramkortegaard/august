@@ -261,7 +261,7 @@ func (s *Server) handleMessages(conn net.Conn, peer *Peer) {
 		}
 
 		s.logf("Received message type %s from %s", msg.Type, peer.Address)
-		ProcessMessage(s, &msg, peer, conn)
+		s.ProcessMessage(&msg, peer, conn)
 	}
 }
 
