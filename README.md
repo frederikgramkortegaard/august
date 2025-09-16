@@ -1,8 +1,29 @@
 # August - Blockchain Implementation
 
-A complete blockchain implementation written in Go from scratch. Features Bitcoin-style proof-of-work consensus, longest-chain fork resolution, decentralized P2P networking with peer discovery, persistent storage, fee-based transaction mempool, and HTTP query API for blockchain exploration.
+A complete blockchain implementation with smart contract virtual machine, written in Go from scratch. Features Bitcoin-style proof-of-work consensus, Ethereum-inspired smart contracts, and a custom stack-based virtual machine (AVM) for bytecode execution.
 
-Built to understand distributed systems concepts including consensus algorithms, network protocols, cryptographic validation, transaction management, and blockchain architecture.
+## Key Features
+
+**Blockchain Core:**
+- Proof-of-work consensus with SHA-256 and difficulty adjustment
+- Longest-chain fork resolution with decentralized P2P networking
+- Persistent storage with PebbleDB and fee-based transaction mempool
+- HTTP query API for blockchain exploration
+
+**Smart Contracts & Virtual Machine:**
+- **AVM (August Virtual Machine)** - Custom stack-based bytecode runtime
+- **Gas-metered execution** with 256-bit arithmetic and memory management
+- **Persistent contract storage** with PSTORE/PLOAD instructions
+- **Human-readable bytecode** - Write contracts in `.avmbc` text files
+- **Contract deployment** with separate init and runtime code
+
+**Developer Experience:**
+- Command-line tools for wallet, mining, and contract deployment
+- Bytecode parser with validation and round-trip conversion
+- Comprehensive test suite and debugging scripts
+- File-based contract development with hex notation
+
+Built to understand distributed systems, virtual machines, consensus algorithms, and smart contract execution.
 
 **Note**: This is a learning project, not production software.
 
