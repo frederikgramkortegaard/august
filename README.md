@@ -6,15 +6,6 @@ Built to understand distributed systems concepts including consensus algorithms,
 
 **Note**: This is a learning project, not production software.
 
-## 📖 Documentation
-
-- **[Wallet Guide](docs/WALLET.md)** - Send transactions, deploy contracts, manage accounts
-- **[Miner Guide](docs/MINER.md)** - Set up mining, handle mempool transactions
-- **[QueryAPI Reference](docs/QUERYAPI.md)** - HTTP endpoints for blockchain queries
-- **[Contract Development](docs/CONTRACTS.md)** - Deploy and interact with smart contracts
-- **[Network Setup](docs/NETWORKING.md)** - Run multi-node networks, peer discovery
-
----
 
 ## Quick Start
 
@@ -76,14 +67,29 @@ go run cmd/avm/main.go
 
 ### Deploy and Call Smart Contracts
 
-Deploy a contract:
+Deploy a contract using bytecode files:
 ```bash
-go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 deploy --amount 1000000 --gas-limit 50000 --gas-price 100
+go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 deploy \
+  --init contracts/counter_init.avmbc --body contracts/counter_runtime.avmbc \
+  --amount 1000000 --gas-limit 50000 --gas-price 100
 ```
 
 Call a deployed contract:
 ```bash
 go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 call --contract CONTRACT_ADDRESS --amount 0 --gas-limit 50000 --gas-price 100
+```
+
+### Parse and Validate Bytecode
+
+Test bytecode parsing:
+```bash
+go run cmd/parser/main.go contracts/counter_runtime.avmbc
+```
+
+Parse custom bytecode from file:
+```bash
+echo "PUSH 0x2A PUSH 0x1 ADD EMIT" > my_contract.avmbc
+go run cmd/parser/main.go my_contract.avmbc
 ```
 
 ### Run Tests
@@ -128,6 +134,7 @@ go test ./tests/queryapi/...    # HTTP API tests
 ```
 avm/                 August Virtual Machine - Stack-based bytecode runtime
   ├── bytecode.go    Instruction definitions and validation
+  ├── parser.go      Bytecode parsing and export functions
   ├── runtime.go     VM execution engine with stack and memory
   └── errors.go      VM-specific error types
 blockchain/          Core blockchain logic (validation, mining, difficulty)
@@ -135,8 +142,12 @@ cmd/                 Command-line tools and executables
   ├── avm/           AVM bytecode execution demo
   ├── keygen/        Ed25519 key pair generation utility
   ├── miner/         Standalone CPU miner with mempool transaction inclusion
+  ├── parser/        Bytecode parsing and validation tool
   ├── seed/          Seed node (full node + HTTP API server)
   └── wallet/        Transaction creation and balance checking tool
+contracts/           Smart contract bytecode files (.avmbc format)
+  ├── counter_init.avmbc    Example counter initialization code
+  └── counter_runtime.avmbc Example counter runtime code
 mempool/             Transaction pool with fee-based priority queue
 miner/               Proof-of-work mining algorithms
 networking/          P2P protocol implementation and message handling
@@ -184,10 +195,10 @@ go test ./tests/avm/ -v
 ### Instruction Set
 
 **Stack Operations:**
-- `PUSH <value>` - Push 256-bit value onto stack (3 gas)
+- `PUSH <hex_value>` - Push 256-bit hex value onto stack (3 gas)
 - `POP` - Remove top stack item (2 gas)
 - `DUP` - Duplicate top stack item (3 gas)
-- `SWAP <n>` - Swap top with nth item from top (3 gas)
+- `SWAP` - Swap top with second item (gets swap index from stack) (3 gas)
 
 **Arithmetic:**
 - `ADD`, `SUB`, `MUL`, `DIV` - Basic arithmetic (3-5 gas)
@@ -200,8 +211,8 @@ go test ./tests/avm/ -v
 - `MLOAD` - Load value from memory address (15 gas)
 
 **Control Flow:**
-- `JUMP <address>` - Unconditional jump to instruction (8 gas)
-- `JUMPC <address>` - Conditional jump if top of stack is 1 (10 gas)
+- `JUMP` - Unconditional jump (gets target from stack) (8 gas)
+- `JUMPC` - Conditional jump if second stack item is 1 (gets target from stack) (10 gas)
 - `STOP` - Halt execution (0 gas)
 
 **I/O:**
@@ -209,26 +220,44 @@ go test ./tests/avm/ -v
 
 ### Runtime Configuration
 
-```go
-config := avm.RuntimeConfig{
-    StackSize:  1024, // Maximum stack depth (0 = unlimited)
-    MemorySize: 1024, // Maximum memory slots (0 = unlimited)
-}
+Runtime limits are configured in `config/config.go`:
 
-runtime := avm.NewRuntime(gasLimit, instructions, config)
+```go
+// AVM runtime limits (configured globally)
+AVMMaxStackSize  = 1024  // Maximum stack depth
+AVMMaxMemorySize = 1024  // Maximum memory slots
+
+// Create runtime with gas limit and instructions
+runtime := avm.NewRuntime(gasLimit, instructions)
 gasUsed, err := runtime.StartExecution()
 ```
 
 ### Example Program
 
+**Using Go API:**
 ```go
 // Calculate 5 + 3 and emit result
 instructions := []avm.Instruction{
-    avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(5)),
-    avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)),
-    avm.MakeInstruction(avm.ADD),
-    avm.MakeInstruction(avm.EMIT), // Outputs: 0x08
+    avm.MakePushInstruction("0x5"), // Push 5
+    avm.MakePushInstruction("0x3"), // Push 3
+    avm.MakeInstruction(avm.ADD),   // Add
+    avm.MakeInstruction(avm.EMIT),  // Outputs: 0x08
 }
+```
+
+**Using .avmbc bytecode files:**
+```
+PUSH 0x5 PUSH 0x3 ADD EMIT
+```
+
+**Parse and execute bytecode:**
+```go
+instructions, err := avm.ParseInstructionsFromString("PUSH 0x5 PUSH 0x3 ADD EMIT")
+if err != nil {
+    log.Fatal(err)
+}
+runtime := avm.NewRuntime(1000, instructions)
+gasUsed, err := runtime.StartExecution()
 ```
 
 ### Features
@@ -263,23 +292,21 @@ Storage keys and values are 256-bit integers stored as strings.
 Simple counter that increments on each call:
 
 **Init Code (runs once at deployment):**
-```go
-// Initialize counter to 42 at storage address 1
-{Opcode: avm.PUSH, Value: big.NewInt(42)}, // Value 42
-{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Storage address 1
-{Opcode: avm.PSTORE},                      // Store 42 at address 1
 ```
+PUSH 0x2A PUSH 0x1 PSTORE
+```
+*Initialize counter to 42 (0x2A) at storage address 1*
 
 **Runtime Code (runs on each call):**
-```go
-{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address 1
-{Opcode: avm.PLOAD},                      // Load current value
-{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Increment amount
-{Opcode: avm.ADD},                        // Add 1 to current value
-{Opcode: avm.DUP},                        // Duplicate for storage + emit
-{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address 1
-{Opcode: avm.PSTORE},                     // Store incremented value
-{Opcode: avm.EMIT},                       // Emit the new value
+```
+PUSH 0x1 PLOAD PUSH 0x1 ADD DUP PUSH 0x1 PSTORE EMIT
+```
+*Load counter, increment by 1, store back, and emit new value*
+
+**File Structure:**
+```
+contracts/counter_init.avmbc    - Contains: PUSH 0x2A PUSH 0x1 PSTORE
+contracts/counter_runtime.avmbc - Contains: PUSH 0x1 PLOAD PUSH 0x1 ADD DUP PUSH 0x1 PSTORE EMIT
 ```
 
 ### Contract Deployment
@@ -301,8 +328,9 @@ Simple counter that increments on each call:
 ### Contract Interaction Workflow
 
 ```bash
-# 1. Deploy contract (automatically includes simple counter example)
+# 1. Deploy contract using bytecode files
 go run cmd/wallet/main.go --privkey $PRIVATE_KEY --node localhost:8080 deploy \
+  --init contracts/counter_init.avmbc --body contracts/counter_runtime.avmbc \
   --amount 1000000 --gas-limit 50000 --gas-price 100
 
 # 2. Mine block to include deployment
@@ -321,6 +349,25 @@ curl http://localhost:8080/chain-state | jq '.account_states["$CONTRACT_ADDRESS"
 # Alternative: Use debug script for automated deployment and testing
 python3 scripts/deploy_and_call_contract.py        # Full workflow
 python3 scripts/deploy_and_call_contract.py -step  # Interactive mode
+```
+
+### Bytecode Development
+
+**Create custom contracts:**
+```bash
+# Create init code file
+echo "PUSH 0x64 PUSH 0x2 PSTORE" > my_init.avmbc
+
+# Create runtime code file
+echo "PUSH 0x2 PLOAD PUSH 0x1 ADD DUP PUSH 0x2 PSTORE EMIT" > my_runtime.avmbc
+
+# Test parsing
+go run cmd/parser/main.go my_runtime.avmbc
+
+# Deploy your custom contract
+go run cmd/wallet/main.go --privkey $PRIVATE_KEY --node localhost:8080 deploy \
+  --init my_init.avmbc --body my_runtime.avmbc \
+  --amount 1000000 --gas-limit 50000 --gas-price 100
 ```
 
 ### Gas Costs
