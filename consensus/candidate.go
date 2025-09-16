@@ -2,7 +2,7 @@ package consensus
 
 import (
 	"august/blockchain"
-	store "august/storage"
+	"august/storage"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -21,7 +21,7 @@ type CandidateBlock struct {
 type CandidateChain struct {
 	ID            string
 	PeerSource    string               // Address of peer advertising this chain
-	ChainStore    store.ChainStore     // Isolated storage for candidate blocks
+	ChainStore    storage.ChainStore     // Isolated storage for candidate blocks
 	Headers       []blockchain.BlockHeader // Headers to validate against
 	StartedAt     time.Time
 	ExpectedWork  string               // Expected total work when complete
@@ -34,12 +34,12 @@ type CandidateChain struct {
 type CandidateManager struct {
 	candidateBlocks *sync.Map  // map[string]*CandidateBlock
 	candidateChains *sync.Map  // map[string]*CandidateChain
-	store          store.ChainStore
+	store          storage.ChainStore
 	mu             sync.RWMutex
 }
 
 // NewCandidateManager creates a new candidate manager
-func NewCandidateManager(chainStore store.ChainStore) *CandidateManager {
+func NewCandidateManager(chainStore storage.ChainStore) *CandidateManager {
 	return &CandidateManager{
 		candidateBlocks: &sync.Map{},
 		candidateChains: &sync.Map{},
@@ -67,7 +67,7 @@ func (cm *CandidateManager) CreateCandidateChain(peerAddr string, headers []bloc
 	candidateID := fmt.Sprintf("%s-%d-%s", peerAddr, chainHead.Height, chainHead.HeadHash[:16])
 
 	// Create candidate chain with isolated storage
-	candidateStore := store.NewMemoryChainStore()
+	candidateStore := storage.NewMemoryChainStore()
 
 	candidate := &CandidateChain{
 		ID:           candidateID,

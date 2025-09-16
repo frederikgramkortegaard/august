@@ -4,7 +4,7 @@ import (
 	"august/blockchain"
 	"august/config"
 	"august/consensus"
-	store "august/storage"
+	"august/storage"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +19,7 @@ import (
 type NetworkConfig struct {
 	Port                 string
 	NodeID               string
-	Store                store.ChainStore
+	Store                storage.ChainStore
 	SeedPeers            []string                                    // Seed peers for discovery
 	PeerRequestConfig    PeerRequestConfig                           // Bitcoin-style peer request configuration
 	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
@@ -57,8 +57,6 @@ type Server struct {
 	// Block processing callback (set by node)
 	blockProcessor func(*blockchain.Block, ...string) <-chan struct{}
 
-	// Unified cleanup system
-	cleanupTicker   *time.Ticker
 }
 
 // logf logs with node ID prefix
@@ -140,16 +138,6 @@ func (s *Server) StartListener() error {
 	return nil
 }
 
-// StartPeriodicProcesses starts the periodic cleanup and sync processes
-func (s *Server) StartPeriodicProcesses() error {
-	// Start unified periodic cleanup system
-	s.cleanupTicker = time.NewTicker(config.CleanupInterval)
-	go s.unifiedPeriodicCleanup()
-
-	go s.periodicChainSync()
-
-	return nil
-}
 
 // Start begins listening for network connections and starts all periodic processes
 func (s *Server) Start() error {
@@ -160,133 +148,8 @@ func (s *Server) Start() error {
 	return s.StartPeriodicProcesses()
 }
 
-// unifiedPeriodicCleanup handles all periodic cleanup tasks in one place
-func (s *Server) unifiedPeriodicCleanup() {
-	for {
-		select {
-		case <-s.cleanupTicker.C:
-			s.performCleanupTasks()
-		case <-s.shutdown:
-			if s.cleanupTicker != nil {
-				s.cleanupTicker.Stop()
-			}
-			return
-		}
-	}
-}
 
-func (s *Server) performCleanupTasks() {
-	now := time.Now()
 
-	// 1. Clean up recent blocks (existing logic)
-	s.cleanRecentBlocks(now)
-
-	// 2. Clean up recent transactions (prevent memory leak)
-	s.cleanRecentTransactions(now)
-
-	// 3. Candidate chain and block cleanup is now handled by the consensus manager
-	// (No cleanup needed here - consensus manager handles its own lifecycle)
-
-	// 4. Log current chain status
-	s.logChainStatus()
-
-	s.logf("Periodic cleanup completed")
-}
-
-func (s *Server) logChainStatus() {
-	chain, err := s.config.Store.GetChain()
-	if err != nil {
-		s.logf("Failed to get chain for status: %v", err)
-		return
-	}
-
-	if len(chain.Blocks) == 0 {
-		s.logf("CHAIN STATUS: No blocks")
-		return
-	}
-
-	latestBlock := chain.Blocks[len(chain.Blocks)-1]
-	blockHash := latestBlock.Header.GetHash()
-	s.logf("CHAIN STATUS: Height %d, Head %x, TxCount %d",
-		latestBlock.Header.Height,
-		blockHash[:8],
-		len(latestBlock.Transactions))
-}
-
-func (s *Server) cleanRecentBlocks(now time.Time) {
-	s.recentBlocksMu.Lock()
-	defer s.recentBlocksMu.Unlock()
-
-	cleaned := 0
-	for hash, addedTime := range s.recentBlocks {
-		if now.Sub(addedTime) > config.RecentBlocksTTL {
-			delete(s.recentBlocks, hash)
-			cleaned++
-		}
-	}
-
-	if cleaned > 0 {
-		s.logf("Cleaned up %d old recent blocks", cleaned)
-	}
-}
-
-func (s *Server) cleanRecentTransactions(now time.Time) {
-	s.recentTransactionsMu.Lock()
-	defer s.recentTransactionsMu.Unlock()
-
-	cleaned := 0
-	for hash, addedTime := range s.recentTransactions {
-		if now.Sub(addedTime) > config.RecentTransactionsTTL {
-			delete(s.recentTransactions, hash)
-			cleaned++
-		}
-	}
-
-	if cleaned > 0 {
-		s.logf("Cleaned up %d old recent transactions", cleaned)
-	}
-}
-
-// periodicChainSync periodically requests chain heads from peers to detect if we need to sync
-func (s *Server) periodicChainSync() {
-	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			s.checkPeerChains()
-		case <-s.shutdown:
-			return
-		}
-	}
-}
-
-// checkPeerChains requests chain heads from all connected peers to see if we need to sync
-func (s *Server) checkPeerChains() {
-	connectedPeers := s.GetConnectedPeers()
-	if len(connectedPeers) == 0 {
-		return // No peers to sync with
-	}
-
-	s.logf("Checking chain heads from %d peers", len(connectedPeers))
-
-	for _, peer := range connectedPeers {
-		go func(p *Peer) {
-			// Request chain head from peer
-			msg, err := NewMessage(MessageTypeRequestChainHead, RequestChainHeadPayload{})
-			if err != nil {
-				s.logf("Failed to create chain head request for %s: %v", p.Address, err)
-				return
-			}
-
-			// Use SendNotification since we'll handle the response in handleChainHead
-			if err := s.SendNotification(p, msg); err != nil {
-				s.logf("Failed to request chain head from %s: %v", p.Address, err)
-			}
-		}(peer)
-	}
-}
 
 // acceptConnections handles incoming peer connections
 func (s *Server) acceptConnections() {
@@ -422,7 +285,7 @@ func (s *Server) SetBlockProcessor(processor func(*blockchain.Block, ...string) 
 // Use server.consensusManager to access candidate functionality
 
 // GetChainStore returns the chain store for testing purposes
-func (s *Server) GetChainStore() store.ChainStore {
+func (s *Server) GetChainStore() storage.ChainStore {
 	return s.config.Store
 }
 
@@ -460,8 +323,7 @@ func (s *Server) StartDiscovery() <-chan bool {
 		// Connect to seed peers
 		go s.connectToSeeds()
 
-		// Periodic peer discovery
-		go s.periodicDiscovery()
+		// Periodic peer discovery is now handled by task scheduler
 
 		s.logf("Peer discovery started successfully")
 		ready <- true
@@ -718,17 +580,6 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 	}()
 
 	return result
-}
-
-// periodicDiscovery runs periodic peer discovery
-func (s *Server) periodicDiscovery() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		// Just trigger a manual discovery round
-		<-s.RunDiscoveryRound()
-	}
 }
 
 // RunDiscoveryRound manually triggers one round of peer discovery

@@ -167,7 +167,7 @@ func TestSeedConnection(t *testing.T) {
 
 	// Verify connections: non-seed nodes should have peer connections
 	for idx, n := range nodes {
-		peerCount := len(n.GetNetworkServer().GetPeerManager().GetConnectedPeers())
+		peerCount := len(n.GetNetworkServer().GetConnectedPeers())
 		if idx == 0 {
 			// Seed should have connections from other nodes
 			if peerCount != NUM_NODES-1 {
@@ -209,7 +209,7 @@ func TestDiscovery(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 
 	for idx, n := range nodes {
-		connectedPeers := n.GetNetworkServer().GetPeerManager().GetConnectedPeers()
+		connectedPeers := n.GetNetworkServer().GetConnectedPeers()
 		if (NUM_NODES-1)-len(connectedPeers) > _MAX_MISSING_PEERS {
 			t.Fatalf("Node %d only had %d connections but expected %d\n", idx, len(connectedPeers), NUM_NODES-1)
 		} else {

@@ -5,7 +5,7 @@ import (
 	"august/mempool"
 	"august/networking"
 	"august/node/queryapi"
-	store "august/storage"
+	"august/storage"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -29,7 +29,7 @@ type NodeConfig struct {
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
 type FullNode struct {
 	// Core blockchain storage
-	Store store.ChainStore
+	Store storage.ChainStore
 
 	// Configuration
 	Config NodeConfig
@@ -47,7 +47,7 @@ type FullNode struct {
 // NewFullNode creates a node that runs all services
 func NewFullNode(config NodeConfig) *FullNode {
 	// Create shared store
-	chainStore := store.NewPersistentChainStore(config.DBName)
+	chainStore := storage.NewPersistentChainStore(config.DBName)
 
 	// Create mempool with configuration
 	mempoolConfig := mempool.MempoolConfig{
