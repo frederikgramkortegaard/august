@@ -21,8 +21,8 @@ type FullNode struct {
 	Config NodeConfig
 
 	// Components (each package handles its own concern)
-	NetworkServer *Network          // Network message handling
-	Mempool       interface{}  // Transaction pool
+	NetworkServer interface{} // Network message handling
+	Mempool       interface{} // Transaction pool
 	ChainStorage  interface{} // Blockchain Interactions
 
 	// Goroutine management

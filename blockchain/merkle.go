@@ -1,4 +1,4 @@
-package crypt
+package blockchain
 
 import (
 	"august/types"
@@ -6,7 +6,7 @@ import (
 )
 
 // MerkleTransactions computes a Merkle root for a list of transactions
-func MerkleTransactions(transactions []types.Transaction) types.Hash32 {
+func MerkleTransactions(transactions []Transaction) types.Hash32 {
 	if len(transactions) == 0 {
 		return types.Hash32{}
 	}

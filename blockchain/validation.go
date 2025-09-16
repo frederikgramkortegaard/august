@@ -3,9 +3,7 @@ package blockchain
 import (
 	"august/avm"
 	"august/config"
-	"august/crypt"
 	"august/types"
-	. "august/types"
 	"crypto/ed25519"
 	"fmt"
 	"log"
@@ -72,7 +70,7 @@ func ValidateBlockStructure(block *Block) error {
 	}
 
 	// 2. Merkle root validation
-	merkle := crypt.MerkleTransactions(block.Transactions)
+	merkle := MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
 		return fmt.Errorf("merkle root mismatch")
 	}
@@ -122,7 +120,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	} else {
 		// Check if we have the parent block using O(1) lookup
 		var parentExists bool
-		prevBlock, parentExists = GetBlockByHash(chain, block.Header.PreviousHash)
+		prevBlock, parentExists = chain.GetBlockByHash(block.Header.PreviousHash)
 
 		// Parent block not found - this is an orphan
 		if !parentExists {
@@ -151,7 +149,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	}
 
 	// 3. Merkle Root
-	merkle := crypt.MerkleTransactions(block.Transactions)
+	merkle := MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
 		return fmt.Errorf("merkle root is not correct")
 	}
@@ -341,7 +339,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	// Handle contract deployment or regular transfer
 	if isContractDeployment {
 		// Generate contract address from sender + nonce
-		contractAddr := crypt.GenerateContractAddress(tsx.From, fromState.Nonce)
+		contractAddr := GenerateContractAddress(tsx.From, fromState.Nonce)
 
 		// Create initial contract state (only stored if init succeeds)
 		contractState := &AccountState{
@@ -350,8 +348,8 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			Nonce:        0,
 			Instructions: tsx.Instructions, // Runtime code
 			Persistent:   make(map[string]string),
-			StorageRoot:  crypt.ComputeStorageRoot(nil),
-			CodeHash:     crypt.ComputeCodeHash(tsx.Instructions),
+			StorageRoot:  ComputeStorageRoot(nil),
+			CodeHash:     ComputeCodeHash(tsx.Instructions),
 		}
 
 		// Track whether contract deployment succeeds
@@ -392,7 +390,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 					contractState.Persistent[key] = value
 				}
 				// Update storage root to reflect persistent storage changes
-				contractState.StorageRoot = crypt.ComputeStorageRoot(contractState.Persistent)
+				contractState.StorageRoot = ComputeStorageRoot(contractState.Persistent)
 				fmt.Printf("Contract initialized successfully, gas used: %d, stored %d values\n", initGasUsed, len(runtime.Persistent))
 				contractDeployed = true
 			}
@@ -480,7 +478,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 							toState.Persistent[key] = value
 						}
 						// Update storage root to reflect persistent storage changes
-						toState.StorageRoot = crypt.ComputeStorageRoot(toState.Persistent)
+						toState.StorageRoot = ComputeStorageRoot(toState.Persistent)
 						fmt.Printf("Applied %d persistent storage updates\n", len(runtime.Persistent))
 					}
 				} else {
@@ -494,8 +492,8 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 				Address:     tsx.To,
 				Nonce:       0,
 				Persistent:  make(map[string]string),
-				StorageRoot: Hash32{},
-				CodeHash:    Hash32{},
+				StorageRoot: types.Hash32{},
+				CodeHash:    types.Hash32{},
 			}
 			fmt.Printf("Created new account (not a contract): %x\n", tsx.To[:])
 		}
@@ -655,7 +653,7 @@ func ApplyBlock(block *Block, chain *Chain) error {
 	}
 
 	// Add the block to the chain and update tip/index
-	AddBlock(chain, block)
+	chain.AddBlock(block)
 	return nil
 }
 

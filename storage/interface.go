@@ -2,6 +2,7 @@ package storage
 
 import (
 	"august/blockchain"
+	"august/types"
 )
 
 type ChainStore interface {
@@ -11,7 +12,7 @@ type ChainStore interface {
 	ReplaceChain(newChain *blockchain.Chain) error
 
 	// Getters
-	GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error)
+	GetBlockByHash(hash types.Hash32) (*blockchain.Block, error)
 	GetHeadBlock() (*blockchain.Block, error)
 	GetAccountState(pubkey blockchain.PublicKey) (*blockchain.AccountState, error)
 	GetChainHeight() (uint64, error)

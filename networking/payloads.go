@@ -1,4 +1,6 @@
-package types
+package networking
+
+import "august/blockchain"
 
 // HandshakePayload is sent when nodes first connect
 type HandshakePayload struct {
@@ -10,12 +12,12 @@ type HandshakePayload struct {
 
 // NewBlockHeaderPayload broadcasts a new block header to peers (headers-first)
 type NewBlockHeaderPayload struct {
-	Header BlockHeader `json:"header"`
+	Header blockchain.BlockHeader `json:"header"`
 }
 
 // NewBlockPayload broadcasts a new block to peers (full block, used for responses)
 type NewBlockPayload struct {
-	Block *Block `json:"block"`
+	Block *blockchain.Block `json:"block"`
 }
 
 // RequestBlockPayload requests a specific block
@@ -25,7 +27,7 @@ type RequestBlockPayload struct {
 
 // NewTxPayload broadcasts a new transaction
 type NewTxPayload struct {
-	Transaction *Transaction `json:"transaction"`
+	Transaction *blockchain.Transaction `json:"transaction"`
 }
 
 // PingPayload for keepalive
@@ -55,10 +57,10 @@ type RequestChainHeadPayload struct {
 
 // ChainHeadPayload represents the current chain head information
 type ChainHeadPayload struct {
-	HeadHash  string      `json:"head_hash"`
-	Height    uint64      `json:"height"`
-	TotalWork string      `json:"total_work"`
-	Header    BlockHeader `json:"header"`
+	HeadHash  string                 `json:"head_hash"`
+	Height    uint64                 `json:"height"`
+	TotalWork string                 `json:"total_work"`
+	Header    blockchain.BlockHeader `json:"header"`
 }
 
 // RequestHeadersPayload requests block headers in a range or by specific hashes
@@ -71,7 +73,7 @@ type RequestHeadersPayload struct {
 
 // HeadersPayload contains a batch of block headers
 type HeadersPayload struct {
-	Headers []BlockHeader `json:"headers"`
+	Headers []blockchain.BlockHeader `json:"headers"`
 }
 
 // RequestBlocksPayload requests full blocks in a range or by hashes
@@ -83,10 +85,10 @@ type RequestBlocksPayload struct {
 
 // BlocksPayload contains a batch of full blocks
 type BlocksPayload struct {
-	Blocks []*Block `json:"blocks"`
+	Blocks []*blockchain.Block `json:"blocks"`
 }
 
 // SubmitBlockPayload contains a mined block for submission
 type SubmitBlockPayload struct {
-	Block *Block `json:"block"`
+	Block *blockchain.Block `json:"block"`
 }

@@ -19,7 +19,7 @@ func CalculateDifficulty(targetBits uint32) *big.Float {
 }
 
 // GetTargetBits calculates the next target in compact format
-func GetTargetBits(height int, blocks []*types.Block) uint32 {
+func GetTargetBits(height int, blocks []*Block) uint32 {
 	if height == 0 || len(blocks) == 0 {
 		return config.TestTargetCompact // Use easy difficulty for testing
 	}

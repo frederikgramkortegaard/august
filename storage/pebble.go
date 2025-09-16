@@ -2,6 +2,7 @@ package storage
 
 import (
 	"august/blockchain"
+	"august/types"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -25,7 +26,7 @@ func StoreBlock(db *pebble.DB, block *blockchain.Block) error {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
 
-	hash := blockchain.HashBlockHeader(&block.Header)
+	hash := block.Header.GetHash()
 	blockKey := append([]byte("block:"), hash[:]...)
 
 	if err := db.Set(blockKey, jsonData, pebble.NoSync); err != nil {
@@ -36,7 +37,7 @@ func StoreBlock(db *pebble.DB, block *blockchain.Block) error {
 }
 
 // GetBlock retrieves a complete block by hash
-func GetBlock(db *pebble.DB, blockHash blockchain.Hash32) (*blockchain.Block, error) {
+func GetBlock(db *pebble.DB, blockHash types.Hash32) (*blockchain.Block, error) {
 	key := append([]byte("block:"), blockHash[:]...)
 
 	val, closer, err := db.Get(key)
@@ -73,7 +74,7 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 	defer closer.Close()
 
 	// Parse the manifest (JSON array of hashes)
-	var blockHashes []blockchain.Hash32
+	var blockHashes []types.Hash32
 	if err := json.Unmarshal(manifestData, &blockHashes); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal chain manifest: %w", err)
 	}
@@ -157,9 +158,9 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 // StoreChainManifest stores the list of block hashes that make up the current chain
 func StoreChainManifest(db *pebble.DB, chain *blockchain.Chain) error {
 	// Build list of block hashes
-	blockHashes := make([]blockchain.Hash32, len(chain.Blocks))
+	blockHashes := make([]types.Hash32, len(chain.Blocks))
 	for i, block := range chain.Blocks {
-		blockHashes[i] = blockchain.HashBlockHeader(&block.Header)
+		blockHashes[i] = block.Header.GetHash()
 	}
 
 	// Marshal to JSON
@@ -198,7 +199,7 @@ func getCurrentHeight(tipData []byte) uint64 {
 }
 
 // StoreChainTip stores just the tip reference for quick access
-func StoreChainTip(db *pebble.DB, tipHash blockchain.Hash32, height uint64) error {
+func StoreChainTip(db *pebble.DB, tipHash types.Hash32, height uint64) error {
 	tipKey := []byte("chain:tip")
 	heightBytes := uint64ToBytes(height)
 	tipData := append(tipHash[:], heightBytes...)
@@ -221,7 +222,7 @@ func GetChainTip(db *pebble.DB) (*blockchain.Block, error) {
 	}
 	defer closer.Close()
 
-	var tipHash blockchain.Hash32
+	var tipHash types.Hash32
 	copy(tipHash[:], tipData[:32])
 
 	return GetBlock(db, tipHash)

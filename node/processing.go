@@ -3,7 +3,6 @@ package node
 import (
 	"august/blockchain"
 	"august/networking"
-	"august/types"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -12,7 +11,7 @@ import (
 // ProcessBlock attempts to add a block to the main chain, handling orphans
 // Returns a completion channel that will be closed when processing completes
 // excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
-func (n *FullNode) ProcessBlock(block *types.Block, excludePeerAddr ...string) <-chan struct{} {
+func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{} {
 	complete := make(chan struct{})
 
 	go func() {
@@ -185,7 +184,7 @@ func (n *FullNode) ProcessBlock(block *types.Block, excludePeerAddr ...string) <
 }
 
 // ProcessTransaction handles incoming transaction processing
-func (n *FullNode) ProcessTransaction(tx *types.Transaction, excludePeerAddr ...string) error {
+func (n *FullNode) ProcessTransaction(tx *blockchain.Transaction, excludePeerAddr ...string) error {
 	if tx == nil {
 		return fmt.Errorf("received nil transaction")
 	}
@@ -224,7 +223,7 @@ func (n *FullNode) ProcessTransaction(tx *types.Transaction, excludePeerAddr ...
 }
 
 // ProcessHeaders handles incoming header chain processing
-func (n *FullNode) ProcessHeaders(headers []types.BlockHeader, peer string) error {
+func (n *FullNode) ProcessHeaders(headers []blockchain.BlockHeader, peer string) error {
 	if len(headers) == 0 {
 		return nil
 	}
@@ -299,7 +298,7 @@ func (n *FullNode) ProcessHeaders(headers []types.BlockHeader, peer string) erro
 }
 
 // ProcessNewBlockHeader handles a single new block header announcement
-func (n *FullNode) ProcessNewBlockHeader(header *types.BlockHeader, peer string) error {
+func (n *FullNode) ProcessNewBlockHeader(header *blockchain.BlockHeader, peer string) error {
 	if header == nil {
 		return fmt.Errorf("received nil block header")
 	}
@@ -351,7 +350,7 @@ func (n *FullNode) ProcessNewBlockHeader(header *types.BlockHeader, peer string)
 }
 
 // ProcessChainHead handles chain head information from peers
-func (n *FullNode) ProcessChainHead(chainHead *types.ChainHeadPayload, peer string) error {
+func (n *FullNode) ProcessChainHead(chainHead *networking.ChainHeadPayload, peer string) error {
 	if chainHead == nil {
 		return fmt.Errorf("received nil chain head")
 	}

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math/big"
 
@@ -71,4 +72,23 @@ func SafeSubtract(a, b uint64) (uint64, error) {
 // GenerateUUID generates a random UUID v4
 func GenerateUUID() string {
 	return uuid.New().String()
+}
+
+// Byte conversion utilities
+func Uint64ToBytes(n uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, n)
+	return b
+}
+
+func Uint32ToBytes(n uint32) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, n)
+	return b
+}
+
+func Uint16ToBytes(n uint16) []byte {
+	b := make([]byte, 2)
+	binary.BigEndian.PutUint16(b, n)
+	return b
 }

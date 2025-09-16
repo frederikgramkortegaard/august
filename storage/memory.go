@@ -2,6 +2,7 @@ package storage
 
 import (
 	"august/blockchain"
+	"august/types"
 	"errors"
 	"fmt"
 	"sync"
@@ -38,9 +39,9 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 
 	// Update block index
 	if chain.BlockIndex == nil {
-		chain.BlockIndex = make(map[blockchain.Hash32]*blockchain.Block)
+		chain.BlockIndex = make(map[types.Hash32]*blockchain.Block)
 	}
-	blockHash := blockchain.HashBlockHeader(&block.Header)
+	blockHash := block.Header.GetHash()
 	chain.BlockIndex[blockHash] = block
 
 	// Update tip
@@ -118,7 +119,7 @@ func (m *MemoryChainStore) GetAccountStates() (map[blockchain.PublicKey]*blockch
 	return chain.AccountStates, nil
 }
 
-func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error) {
+func (m *MemoryChainStore) GetBlockByHash(hash types.Hash32) (*blockchain.Block, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -132,7 +133,7 @@ func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.B
 	}
 
 	for _, block := range chain.Blocks {
-		if blockchain.HashBlockHeader(&block.Header) == hash {
+		if block.Header.GetHash() == hash {
 			return block, nil
 		}
 	}

@@ -1,19 +1,17 @@
 package networking
 
 import (
-	"august/types"
 	"fmt"
+	"net"
 )
 
 // ProcessMessage handles different types of network messages
-func (network *types.Network) ProcessMessage(msg *types.Message) {
+func (network *Network) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 	// First check if this is a response to a pending request
 	if handled := network.HandleResponse(msg); handled {
 		fmt.Printf("Delivered response for request %s\n", msg.ReplyTo)
 		return
 	}
-
-	// Find Peer & Con from the Message
 
 	switch msg.Type {
 	case MessageTypeHandshake:

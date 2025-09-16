@@ -97,4 +97,3 @@ func (n *Network) Reply(conn net.Conn, originalMsg *Message, response *Message) 
 	response.ReplyTo = originalMsg.RequestID
 	return n.sendMessage(conn, response)
 }
-

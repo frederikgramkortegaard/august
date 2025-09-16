@@ -2,6 +2,7 @@ package storage
 
 import (
 	"august/blockchain"
+	"august/types"
 	"fmt"
 	"sync"
 
@@ -88,7 +89,7 @@ func (s *PersistentChainStore) ReplaceChain(newChain *blockchain.Chain) error {
 }
 
 // GetBlockByHash retrieves a block by hash (from memory, fallback to disk)
-func (s *PersistentChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.Block, error) {
+func (s *PersistentChainStore) GetBlockByHash(hash types.Hash32) (*blockchain.Block, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

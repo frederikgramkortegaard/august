@@ -1,29 +1,76 @@
 package networking
 
 import (
+	"august/blockchain"
 	"august/config"
-	. "august/types"
+	"august/types"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"strings"
+	"sync"
 	"time"
 )
 
+// NodeInterface defines the interface that a node must implement for networking
+type NodeInterface interface {
+	ProcessBlock(block *blockchain.Block, excludePeer ...string) <-chan struct{}
+	ProcessTransaction(tx *blockchain.Transaction, excludePeer ...string) error
+	ProcessHeaders(headers []blockchain.BlockHeader, peer string) error
+	ProcessNewBlockHeader(header *blockchain.BlockHeader, peer string) error
+	ProcessChainHead(chainHead *ChainHeadPayload, peer string) error
+	GetChainHeight() (uint64, error)
+	GetChain() (*blockchain.Chain, error)
+}
+
+// Network handles network communication and message passing
+type Network struct {
+	networkConfig NetworkConfig
+	listener      net.Listener
+
+	// Reference to node for processing delegation
+	node NodeInterface
+
+	peers   map[string]Peer // Peers based on their address
+	peersMu sync.RWMutex
+
+	peerConnections   map[string]net.Conn // Active connections by peer address
+	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
+
+	shutdown         chan bool // Signal to stop server
+	shutdownComplete chan bool // Signal that server has stopped
+
+	// Relay Tracking
+	// Block relay tracking
+	recentBlocks    map[types.Hash32]time.Time
+	recentBlocksTTL time.Duration
+	recentBlocksMu  sync.RWMutex
+
+	// Transaction relay tracking
+	recentTransactions    map[types.Hash32]time.Time
+	recentTransactionsTTL time.Duration
+	recentTransactionsMu  sync.RWMutex
+
+	// Request-response tracking
+	pendingRequests map[string]chan *Message // requestID -> response channel
+	pendingMu       sync.RWMutex
+}
+
 // IsRecentTransaction checks if we've recently seen this transaction (to prevent relay loops)
-func (n *Network) IsRecentTransaction(txHash Hash32) bool {
+func (n *Network) IsRecentTransaction(txHash types.Hash32) bool {
 	n.recentTransactionsMu.RLock()
 	defer n.recentTransactionsMu.RUnlock()
 
 	if seenTime, exists := n.recentTransactions[txHash]; exists {
 		// Check if it's still within TTL
-		return time.Since(seenTime) < config.recentTransactionsTTL
+		return time.Since(seenTime) < n.recentTransactionsTTL
 	}
 	return false
 }
 
 // MarkTransactionSeen records that we've seen this transaction
-func (n *Network) MarkTransactionSeen(txHash Hash32) {
+func (n *Network) MarkTransactionSeen(txHash types.Hash32) {
 	n.recentTransactionsMu.Lock()
 	defer n.recentTransactionsMu.Unlock()
 
@@ -31,11 +78,11 @@ func (n *Network) MarkTransactionSeen(txHash Hash32) {
 }
 
 // NewNetwork creates a new network instance
-func NewNetwork(config NetworkConfig, node interface{}) *Network {
+func NewNetwork(networkConfig NetworkConfig, node NodeInterface) *Network {
 	network := &Network{
-		config:   config,
-		listener: nil,  // Get's created on Network.Listen()
-		node:     node, // Just a reference to the owner of this Network
+		networkConfig: networkConfig,
+		listener:      nil,  // Get's created on Network.Listen()
+		node:          node, // Just a reference to the owner of this Network
 
 		peers:           make(map[string]Peer),
 		peerConnections: make(map[string]net.Conn),
@@ -43,10 +90,10 @@ func NewNetwork(config NetworkConfig, node interface{}) *Network {
 		shutdown:         make(chan bool),
 		shutdownComplete: make(chan bool),
 
-		recentBlocks:    make(map[Hash32]time.Time),
+		recentBlocks:    make(map[types.Hash32]time.Time),
 		recentBlocksTTL: config.RecentBlocksTTL,
 
-		recentTransactions:    make(map[Hash32]time.Time),
+		recentTransactions:    make(map[types.Hash32]time.Time),
 		recentTransactionsTTL: config.RecentTransactionsTTL,
 
 		pendingRequests: make(map[string]chan *Message),
@@ -57,7 +104,7 @@ func NewNetwork(config NetworkConfig, node interface{}) *Network {
 
 // StartListener begins listening for network connections (TCP only)
 func (n *Network) StartListener() error {
-	listener, err := net.Listen("tcp", ":"+n.config.Port)
+	listener, err := net.Listen("tcp", ":"+n.networkConfig.Port)
 	if err != nil {
 		return err
 	}
@@ -110,7 +157,7 @@ func (n *Network) acceptConnections() {
 
 // isNetworkClosedError checks if error is due to closed network connection
 func isNetworkClosedError(err error) bool {
-	return stringn.Contains(err.Error(), "use of closed network connection")
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 // HandlePeerConnection manages communication with a connected peer (public for discovery)
@@ -144,12 +191,12 @@ func (n *Network) HandlePeerConnection(conn net.Conn) {
 		}
 		n.peerConnectionsMu.Unlock()
 
-		// Mark peer as disconnected if it's in the manager
-		n.peerManager.mu.Lock()
-		if p, exists := n.peerManager.peers[peer.Address]; exists {
+		// Mark peer as disconnected if it exists
+		n.peersMu.Lock()
+		if p, exists := n.peers[peer.Address]; exists {
 			p.Status = PeerDisconnected
 		}
-		n.peerManager.mu.Unlock()
+		n.peersMu.Unlock()
 	}()
 
 	// Send handshake
@@ -163,17 +210,17 @@ func (n *Network) HandlePeerConnection(conn net.Conn) {
 
 // sendHandshake sends initial handshake to a peer
 func (n *Network) sendHandshake(peerAddr string) {
-	height, err := n.config.Store.GetChainHeight()
+	height, err := n.node.GetChainHeight()
 	if err != nil {
 		fmt.Printf("Failed to get chain height: %v", err)
 		height = 0
 	}
 
 	handshake := HandshakePayload{
-		NodeID:      n.config.NodeID,
+		NodeID:      n.networkConfig.NodeID,
 		ChainHeight: int(height),
 		Version:     "1.0",
-		ListenPort:  n.config.Port,
+		ListenPort:  n.networkConfig.Port,
 	}
 
 	msg, err := NewMessage(MessageTypeHandshake, handshake)
@@ -183,7 +230,7 @@ func (n *Network) sendHandshake(peerAddr string) {
 	}
 
 	fmt.Printf("Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
-	if err := n.reqRespClient.SendNotification(peerAddr, msg); err != nil {
+	if err := n.SendNotification(peerAddr, msg); err != nil {
 		fmt.Printf("Failed to send handshake: %v", err)
 	}
 }
@@ -208,7 +255,7 @@ func (n *Network) handleMessages(conn net.Conn, peer *Peer) {
 			if err == io.EOF {
 				fmt.Printf("Peer %s disconnected", peer.Address)
 				peer.Status = PeerDisconnected
-			} else if stringn.Contains(err.Error(), "connection reset") {
+			} else if strings.Contains(err.Error(), "connection reset") {
 				fmt.Printf("Peer %s connection reset", peer.Address)
 				peer.Status = PeerDisconnected
 			} else {
@@ -219,7 +266,7 @@ func (n *Network) handleMessages(conn net.Conn, peer *Peer) {
 		}
 
 		fmt.Printf("Received message type %s from %s", msg.Type, peer.Address)
-		ProcessMessage(s, &msg, peer, conn)
+		n.ProcessMessage(&msg, peer, conn)
 	}
 }
 
@@ -228,27 +275,18 @@ func (n *Network) GetListener() net.Listener {
 	return n.listener
 }
 
-// GetPeerManager returns the peer manager (for testing)
-func (n *Network) GetPeerManager() *PeerManager {
-	return n.peerManager
-}
+// GetConnectedPeers returns all connected peers
+func (n *Network) GetConnectedPeers() []*Peer {
+	n.peersMu.RLock()
+	defer n.peersMu.RUnlock()
 
-// GetConsensusManager returns the consensus manager
-func (n *Network) GetConsensusManager() *consensun.CandidateManager {
-	return n.consensusManager
-}
-
-// SetBlockProcessor sets the callback function for processing blocks
-func (n *Network) SetBlockProcessor(processor func(*Block, ...string) <-chan struct{}) {
-	n.blockProcessor = processor
-}
-
-// Note: Candidate chains and blocks are now managed by the consensus package
-// Use server.consensusManager to access candidate functionality
-
-// GetChainStore returns the chain store for testing purposes
-func (n *Network) GetChainStore() store.ChainStore {
-	return n.config.Store
+	var connectedPeers []*Peer
+	for _, peer := range n.peers {
+		if peer.Status == PeerConnected {
+			connectedPeers = append(connectedPeers, &peer)
+		}
+	}
+	return connectedPeers
 }
 
 // Stop gracefully shuts down the network server
@@ -280,13 +318,14 @@ func (n *Network) StartDiscovery() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		fmt.Printf("Starting peer discovery with %d seed peers", len(n.config.SeedPeers))
+		fmt.Printf("Starting peer discovery with %d seed peers", len(n.networkConfig.SeedPeers))
 
 		// Connect to seed peers
 		go n.connectToSeeds()
 
-		// Periodic peer discovery
-		go n.periodicDiscovery()
+		// Start periodic tasks
+		n.StartPeriodicDiscovery()
+		n.StartPeriodicCleanup()
 
 		fmt.Printf("Peer discovery started successfully")
 		ready <- true
@@ -300,26 +339,25 @@ func (n *Network) connectToSeeds() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		if len(n.config.SeedPeers) == 0 {
+		if len(n.networkConfig.SeedPeers) == 0 {
 			done <- true
 			return
 		}
 
 		// Get current peers to avoid duplicate connections
-		pm := n.GetPeerManager()
-		pm.mu.RLock()
+		n.peersMu.RLock()
 		currentPeers := make(map[string]bool)
-		for addr := range pm.peers {
+		for addr := range n.peers {
 			currentPeers[addr] = true
 		}
-		pm.mu.RUnlock()
+		n.peersMu.RUnlock()
 
 		var connectionTasks []<-chan bool
-		for _, seedAddr := range n.config.SeedPeers {
-			if !currentPeers[seedAddr] {
-				connectionTasks = append(connectionTasks, n.ConnectToPeer(seedAddr))
+		for _, seedPeer := range n.networkConfig.SeedPeers {
+			if !currentPeers[seedPeer.Address] {
+				connectionTasks = append(connectionTasks, n.ConnectToPeer(seedPeer.Address))
 			} else {
-				fmt.Printf("Skipping seed %s - already connected", seedAddr)
+				fmt.Printf("Skipping seed %s - already connected", seedPeer.Address)
 			}
 		}
 
@@ -331,7 +369,7 @@ func (n *Network) connectToSeeds() <-chan bool {
 			}
 		}
 
-		fmt.Printf("Seed connection attempts completed: %d/%d successful", successCount, len(n.config.SeedPeers))
+		fmt.Printf("Seed connection attempts completed: %d/%d successful", successCount, len(n.networkConfig.SeedPeers))
 		done <- true
 	}()
 
@@ -343,21 +381,22 @@ func (n *Network) connectToDiscoveredPeers() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		pm := n.GetPeerManager()
-		discoveredPeers := pm.GetDiscoveredPeers()
+		// TODO: Need to implement discovered peers tracking on Network
+		// For now, just use empty list
+		discoveredPeers := []string{}
 
 		// Get current peers to avoid duplicate connections
-		pm.mu.RLock()
+		n.peersMu.RLock()
 		currentPeers := make(map[string]bool)
-		for addr := range pm.peers {
+		for addr := range n.peers {
 			currentPeers[addr] = true
 		}
-		pm.mu.RUnlock()
+		n.peersMu.RUnlock()
 
 		// Try connecting to discovered peers we're not already connected to
 		var connectionTasks []<-chan bool
 		connected := 0
-		maxConnections := n.config.PeerRequestConfig.MaxPeersForRequest
+		maxConnections := config.MaxPeersForRequest
 		for _, addr := range discoveredPeers {
 			if !currentPeers[addr] && connected < maxConnections {
 				connectionTasks = append(connectionTasks, n.ConnectToPeer(addr))
@@ -384,40 +423,36 @@ func (n *Network) connectToDiscoveredPeers() <-chan bool {
 }
 
 func (n *Network) requestPeerSharing() {
-	pm := n.GetPeerManager()
-	if pm == nil {
-		return
-	}
-
 	// Get connected peers
-	connectedPeers := pm.GetConnectedPeers()
+	connectedPeers := n.GetConnectedPeers()
 	if len(connectedPeers) == 0 {
 		return
 	}
 
-	// Request peers from all connected peers and collect responses
-	allDiscoveredPeers := make([]string, 0)
+	// Request peers from all connected peers
 	successfulRequests := 0
 
-	// Use smart peer discovery instead of iterating through individual peers
-	peers, err := RequestPeers(s, 50)
-	if err != nil {
-		fmt.Printf("Failed to discover peers: %v", err)
-	} else {
-		allDiscoveredPeers = append(allDiscoveredPeers, peern...)
-		successfulRequests = 1 // Simplified since we're doing one aggregated request
+	// Request peers from connected peers using existing message system
+	for _, peer := range connectedPeers {
+		// Create peer request message
+		requestPayload := RequestPeersPayload{MaxPeers: 50}
+		msg, err := NewMessage(MessageTypeRequestPeers, requestPayload)
+		if err != nil {
+			fmt.Printf("Failed to create peer request message: %v", err)
+			continue
+		}
+
+		// Send request (this will be handled by the peer's SendPeerList method)
+		if err := n.SendNotification(peer.Address, msg); err != nil {
+			fmt.Printf("Failed to request peers from %s: %v", peer.Address, err)
+		} else {
+			successfulRequests++
+		}
 	}
 
 	if successfulRequests > 0 {
 		fmt.Printf("Successfully requested peers from %d peers", successfulRequests)
-
-		// Add all discovered peers to our peer manager
-		if len(allDiscoveredPeers) > 0 {
-			newPeerCount := pm.AddDiscoveredPeers(allDiscoveredPeers)
-			if newPeerCount > 0 {
-				fmt.Printf("Discovered %d new peers through peer sharing", newPeerCount)
-			}
-		}
+		// Note: Peer responses will be handled by ProcessSharedPeers in the message handler
 	}
 }
 
@@ -448,16 +483,15 @@ func (n *Network) ConnectToPeer(address string) <-chan bool {
 		defer func() { result <- false }() // Default to failure
 
 		// Check if we're already connected to this peer
-		pm := n.GetPeerManager()
-		pm.mu.RLock()
-		existingPeer, exists := pm.peers[address]
+		n.peersMu.RLock()
+		existingPeer, exists := n.peers[address]
 		if exists && existingPeer.Status == PeerConnected {
-			pm.mu.RUnlock()
+			n.peersMu.RUnlock()
 			fmt.Printf("Already connected to peer %s, skipping connection attempt", address)
 			result <- true // Already connected counts as success
 			return
 		}
-		pm.mu.RUnlock()
+		n.peersMu.RUnlock()
 
 		fmt.Printf("Attempting to connect to peer: %s", address)
 
@@ -475,78 +509,88 @@ func (n *Network) ConnectToPeer(address string) <-chan bool {
 			IsOutgoing: true, // We initiated this connection
 		}
 
-		// Add to peer manager
-		actualPeer := n.GetPeerManager().AddPeer(address)
-		if actualPeer != nil {
-			// Update the peer object with our info
-			actualPeer.ConnAddr = conn.LocalAddr().String()
-			actualPeer.IsOutgoing = true
-			peer = actualPeer
-			fmt.Printf("TCP connection established to peer: %s", address)
-
-			// For outgoing connections, we handle it differently
-			// Store the connection
-			n.peerConnectionsMu.Lock()
-			n.peerConnections[address] = conn
-			n.peerConnectionsMu.Unlock()
-
-			// Send handshake immediately
-			n.sendHandshake(address)
-
-			// Start message handler (but NOT HandlePeerConnection as that's for incoming)
-			go func() {
-				defer conn.Close()
-				defer func() {
-					n.peerConnectionsMu.Lock()
-					delete(n.peerConnections, address)
-					n.peerConnectionsMu.Unlock()
-					peer.Status = PeerDisconnected
-				}()
-
-				peer.Status = PeerConnected
-				n.handleMessages(conn, peer)
-			}()
-
-			// Wait for handshake to complete using channels
-			handshakeComplete := make(chan bool, 1)
-
-			go func() {
-				// Monitor for handshake completion
-				timeout := time.NewTimer(10 * time.Second) // Increased timeout for race conditions
-				defer timeout.Stop()
-
-				ticker := time.NewTicker(50 * time.Millisecond)
-				defer ticker.Stop()
-
-				for {
-					select {
-					case <-timeout.C:
-						fmt.Printf("Handshake timeout for peer %s", address)
-						handshakeComplete <- false
-						return
-					case <-ticker.C:
-						// Check if ANY connection to this peer exists (not just the one we initiated)
-						pm := n.GetPeerManager()
-						pm.mu.RLock()
-						if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
-							pm.mu.RUnlock()
-							fmt.Printf("Peer connection established: %s (may be incoming due to race)", address)
-							handshakeComplete <- true
-							return
-						}
-						pm.mu.RUnlock()
-					}
-				}
-			}()
-
-			// Wait for handshake result
-			if <-handshakeComplete {
-				result <- true
-				return
-			}
+		// Add peer directly to network
+		n.peersMu.Lock()
+		if existingPeer, exists := n.peers[address]; exists {
+			// Update existing peer
+			existingPeer.ConnAddr = conn.LocalAddr().String()
+			existingPeer.IsOutgoing = true
+			existingPeer.Status = PeerConnecting
+			n.peers[address] = existingPeer
+			peer = &existingPeer
 		} else {
-			// If we can't add the peer, close the connection
-			conn.Close()
+			// Create new peer
+			newPeer := Peer{
+				Address:    address,
+				ConnAddr:   conn.LocalAddr().String(),
+				Status:     PeerConnecting,
+				IsOutgoing: true,
+			}
+			n.peers[address] = newPeer
+			peer = &newPeer
+		}
+		n.peersMu.Unlock()
+
+		fmt.Printf("TCP connection established to peer: %s", address)
+
+		// For outgoing connections, we handle it differently
+		// Store the connection
+		n.peerConnectionsMu.Lock()
+		n.peerConnections[address] = conn
+		n.peerConnectionsMu.Unlock()
+
+		// Send handshake immediately
+		n.sendHandshake(address)
+
+		// Start message handler (but NOT HandlePeerConnection as that's for incoming)
+		go func() {
+			defer conn.Close()
+			defer func() {
+				n.peerConnectionsMu.Lock()
+				delete(n.peerConnections, address)
+				n.peerConnectionsMu.Unlock()
+				peer.Status = PeerDisconnected
+			}()
+
+			peer.Status = PeerConnected
+			n.handleMessages(conn, peer)
+		}()
+
+		// Wait for handshake to complete using channels
+		handshakeComplete := make(chan bool, 1)
+
+		go func() {
+			// Monitor for handshake completion
+			timeout := time.NewTimer(10 * time.Second) // Increased timeout for race conditions
+			defer timeout.Stop()
+
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-timeout.C:
+					fmt.Printf("Handshake timeout for peer %s", address)
+					handshakeComplete <- false
+					return
+				case <-ticker.C:
+					// Check if ANY connection to this peer exists (not just the one we initiated)
+					n.peersMu.RLock()
+					if peerObj, exists := n.peers[address]; exists && peerObj.Status == PeerConnected {
+						n.peersMu.RUnlock()
+						fmt.Printf("Peer connection established: %s (may be incoming due to race)", address)
+						handshakeComplete <- true
+						return
+					}
+					n.peersMu.RUnlock()
+				}
+			}
+		}()
+
+		// Wait for handshake result
+		if <-handshakeComplete {
+			result <- true
+			return
 		}
 	}()
 
@@ -561,16 +605,15 @@ func (n *Network) RunDiscoveryRound() <-chan bool {
 	go func() {
 		defer func() { done <- true }()
 
-		pm := n.GetPeerManager()
-		connected := pm.GetConnectedPeers()
+		connected := n.GetConnectedPeers()
 		var connectedAddrs []string
 		for _, peer := range connected {
 			connectedAddrs = append(connectedAddrs, peer.Address)
 		}
 		fmt.Printf("Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
 
-		// Clean up dead peers
-		removed := pm.CleanupDeadPeers()
+		// Clean up dead peers - implement this directly
+		removed := n.cleanupDeadPeers()
 		if removed > 0 {
 			fmt.Printf("Cleaned up %d dead peers", removed)
 		}
@@ -599,7 +642,7 @@ func (n *Network) RunDiscoveryRound() <-chan bool {
 func (n *Network) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer, remoteNodeID string) bool {
 	// Use lexicographic comparison of node IDs to make consistent decisions across nodes
 	// The node with the smaller ID keeps its outgoing connection
-	localNodeID := n.config.NodeID
+	localNodeID := n.networkConfig.NodeID
 
 	if localNodeID < remoteNodeID {
 		// We have the smaller ID, so we keep our outgoing connections
@@ -613,7 +656,7 @@ func (n *Network) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer
 // selectPeersForRequest implements Bitcoin-style peer selection with randomization and limits
 func (n *Network) selectPeersForRequest() []*Peer {
 	// Get all connected peers
-	availablePeers := n.GetPeerManager().GetConnectedPeers()
+	availablePeers := n.GetConnectedPeers()
 	if len(availablePeers) == 0 {
 		return nil
 	}

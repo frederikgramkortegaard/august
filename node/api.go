@@ -66,13 +66,13 @@ func (n *FullNode) handleChainState() http.HandlerFunc {
 		}
 
 		// Convert map keys from PublicKey to hex string for JSON serialization
-		accountStatesJSON := make(map[string]*types.AccountState)
+		accountStatesJSON := make(map[string]*blockchain.AccountState)
 		for pubKey, state := range chain.AccountStates {
 			keyHex := hex.EncodeToString(pubKey[:])
 			accountStatesJSON[keyHex] = state
 		}
 
-		response := types.ChainStateResponse{
+		response := ChainStateResponse{
 			AccountStates: accountStatesJSON,
 			AccountCount:  len(chain.AccountStates),
 		}
@@ -90,7 +90,7 @@ func (n *FullNode) handleSubmitBlock() http.HandlerFunc {
 			return
 		}
 
-		var block types.Block
+		var block blockchain.Block
 		if err := json.NewDecoder(r.Body).Decode(&block); err != nil {
 			http.Error(w, fmt.Sprintf("Invalid block format: %v", err), http.StatusBadRequest)
 			return
@@ -131,7 +131,7 @@ func (n *FullNode) handleGetMempool() http.HandlerFunc {
 		// Get transactions from mempool
 		transactions := n.GetMempool().GetTransactions(limit)
 
-		response := types.MempoolResponse{
+		response := MempoolResponse{
 			Count:        len(transactions),
 			Transactions: transactions,
 		}
@@ -149,7 +149,7 @@ func (n *FullNode) handleSubmitTransaction() http.HandlerFunc {
 			return
 		}
 
-		var tx types.Transaction
+		var tx blockchain.Transaction
 		if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
 			http.Error(w, fmt.Sprintf("Invalid transaction format: %v", err), http.StatusBadRequest)
 			return
@@ -162,8 +162,8 @@ func (n *FullNode) handleSubmitTransaction() http.HandlerFunc {
 		}
 
 		// Return success response with transaction hash
-		txHash := blockchain.HashTransaction(&tx)
-		response := types.SubmitTransactionResponse{
+		txHash := tx.GetHash()
+		response := SubmitTransactionResponse{
 			Status: "submitted",
 			Hash:   hex.EncodeToString(txHash[:]),
 		}
@@ -201,7 +201,7 @@ func (n *FullNode) handleBalance() http.HandlerFunc {
 		}
 
 		// Convert to PublicKey
-		var publicKey types.PublicKey
+		var publicKey blockchain.PublicKey
 		copy(publicKey[:], addressBytes)
 
 		// Get current chain state
@@ -214,7 +214,7 @@ func (n *FullNode) handleBalance() http.HandlerFunc {
 		// Look up account state
 		accountState, exists := chain.AccountStates[publicKey]
 
-		response := types.BalanceResponse{
+		response := BalanceResponse{
 			Address: path,
 			Exists:  exists,
 		}
@@ -279,11 +279,11 @@ func (n *FullNode) handleTransaction() http.HandlerFunc {
 		// Search for transaction in all blocks
 		for blockHeight, block := range chain.Blocks {
 			for txIndex, tx := range block.Transactions {
-				txHash := blockchain.HashTransaction(&tx)
+				txHash := tx.GetHash()
 				if txHash == targetHash {
 					// Found transaction
-					blockHash := blockchain.HashBlockHeader(&block.Header)
-					response := types.TransactionResponse{
+					blockHash := block.Header.GetHash()
+					response := TransactionResponse{
 						Found:       true,
 						Transaction: tx,
 						BlockHeight: blockHeight,
@@ -301,10 +301,10 @@ func (n *FullNode) handleTransaction() http.HandlerFunc {
 		// Check mempool for pending transaction
 		transactions := n.GetMempool().GetTransactions(1000) // Get all transactions
 		for _, tx := range transactions {
-			txHash := blockchain.HashTransaction(&tx)
+			txHash := tx.GetHash()
 			if txHash == targetHash {
 				// Found in mempool
-				response := types.TransactionResponse{
+				response := TransactionResponse{
 					Found:       true,
 					Transaction: tx,
 					Status:      "pending",
@@ -318,7 +318,7 @@ func (n *FullNode) handleTransaction() http.HandlerFunc {
 		}
 
 		// Transaction not found
-		response := types.TransactionResponse{
+		response := TransactionResponse{
 			Found: false,
 			Hash:  path,
 		}
@@ -374,10 +374,10 @@ func (n *FullNode) handleBlock() http.HandlerFunc {
 
 		// Search for block
 		for blockHeight, block := range chain.Blocks {
-			blockHash := blockchain.HashBlockHeader(&block.Header)
+			blockHash := block.Header.GetHash()
 			if blockHash == targetHash {
 				// Found block
-				response := types.BlockResponse{
+				response := BlockResponse{
 					Found:         true,
 					Block:         block,
 					Height:        blockHeight,
@@ -393,7 +393,7 @@ func (n *FullNode) handleBlock() http.HandlerFunc {
 		}
 
 		// Block not found
-		response := types.BlockResponse{
+		response := BlockResponse{
 			Found: false,
 			Hash:  path,
 		}
@@ -431,7 +431,7 @@ func (n *FullNode) handleContract() http.HandlerFunc {
 		}
 
 		// Convert to PublicKey
-		var publicKey types.PublicKey
+		var publicKey blockchain.PublicKey
 		copy(publicKey[:], addressBytes)
 
 		// Get current chain state
@@ -444,7 +444,7 @@ func (n *FullNode) handleContract() http.HandlerFunc {
 		// Look up account state
 		accountState, exists := chain.AccountStates[publicKey]
 
-		response := types.ContractResponse{
+		response := ContractResponse{
 			Found:   exists,
 			Address: path,
 		}
@@ -474,4 +474,66 @@ func (n *FullNode) handleContract() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}
+}
+
+// BalanceResponse represents the response from the balance API endpoint
+type BalanceResponse struct {
+	Address string `json:"address"`
+	Exists  bool   `json:"exists"`
+	Balance uint64 `json:"balance"`
+	Nonce   uint64 `json:"nonce"`
+}
+
+// SubmitTransactionResponse represents the response from submitting a transaction
+type SubmitTransactionResponse struct {
+	Status string `json:"status"`
+	Hash   string `json:"hash"`
+}
+
+// TransactionResponse represents the response from the transaction lookup API
+type TransactionResponse struct {
+	Found       bool                   `json:"found"`
+	Transaction blockchain.Transaction `json:"transaction,omitempty"`
+	BlockHeight int                    `json:"block_height,omitempty"`
+	BlockHash   string                 `json:"block_hash,omitempty"`
+	TxIndex     int                    `json:"tx_index,omitempty"`
+	Status      string                 `json:"status,omitempty"`
+	InMempool   bool                   `json:"in_mempool,omitempty"`
+	Hash        string                 `json:"hash,omitempty"`
+}
+
+// BlockResponse represents the response from the block lookup API
+type BlockResponse struct {
+	Found         bool              `json:"found"`
+	Block         *blockchain.Block `json:"block,omitempty"`
+	Height        int               `json:"height,omitempty"`
+	Hash          string            `json:"hash,omitempty"`
+	TxCount       int               `json:"tx_count,omitempty"`
+	Confirmations int               `json:"confirmations,omitempty"`
+}
+
+// MempoolResponse represents the response from the mempool API
+type MempoolResponse struct {
+	Count        int                      `json:"count"`
+	Transactions []blockchain.Transaction `json:"transactions"`
+}
+
+// ContractResponse represents the response from the contract inspection API
+type ContractResponse struct {
+	Found           bool              `json:"found"`
+	Address         string            `json:"address"`
+	Balance         uint64            `json:"balance,omitempty"`
+	Nonce           uint64            `json:"nonce,omitempty"`
+	IsContract      bool              `json:"is_contract"`
+	HasInstructions bool              `json:"has_instructions,omitempty"`
+	StorageEntries  int               `json:"storage_entries,omitempty"`
+	PersistentData  map[string]string `json:"persistent_data,omitempty"`
+	CodeHash        string            `json:"code_hash,omitempty"`
+	StorageRoot     string            `json:"storage_root,omitempty"`
+}
+
+// ChainStateResponse represents the response from the chain state API
+type ChainStateResponse struct {
+	AccountStates map[string]*blockchain.AccountState `json:"account_states"`
+	AccountCount  int                                 `json:"account_count"`
 }

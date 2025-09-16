@@ -2,24 +2,48 @@ package node
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/mempool"
 	"august/networking"
 	"august/storage"
-	. "august/types"
 	"context"
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 )
 
-// Type aliases for types from other packages
+// Config holds all configuration for a full node
+type NodeConfig struct {
+	Port         string
+	NodeID       string
+	SeedPeers    []string
+	DatabaseName string
+	QueryPort    string // HTTP port for query API and miners (optional)
+}
+
+// FullNode orchestrates all node services
+type FullNode struct {
+	// Configuration
+	Config NodeConfig
+
+	// Components
+	Store         storage.ChainStore
+	NetworkServer *networking.Network
+	Mempool       *mempool.Mempool
+
+	// Goroutine management
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+}
 
 // NewFullNode creates a node that runs all services
-func NewFullNode(config Config) *FullNode {
+func NewFullNode(nodeConfig NodeConfig) *FullNode {
 
 	// Create shared store
-	chainStore := storage.NewPersistentChainStore(config.DatabaseName)
+	chainStore := storage.NewPersistentChainStore(nodeConfig.DatabaseName)
 
 	// Create mempool with configuration
 	mempoolConfig := mempool.Config{
@@ -33,7 +57,7 @@ func NewFullNode(config Config) *FullNode {
 
 	return &FullNode{
 		Store:   chainStore,
-		Config:  config,
+		Config:  nodeConfig,
 		Mempool: nodeMempool,
 		ctx:     ctx,
 		cancel:  cancel,
@@ -48,35 +72,35 @@ func (n *FullNode) Start() <-chan bool {
 	go func() {
 		// 1. Initialize chain
 		if err := n.InitializeChain(); err != nil {
-			Log("CORE", n.Config.NodeID, "Failed to initialize chain: %v", err)
+			fmt.Printf("CORE", n.Config.NodeID, "Failed to initialize chain: %v", err)
 			ready <- false
 			return
 		}
 
 		// 2. Start networking
 		if !<-n.StartNetworking() {
-			Log("NET", n.Config.NodeID, "Failed to start networking")
+			fmt.Printf("NET", n.Config.NodeID, "Failed to start networking")
 			ready <- false
 			return
 		}
 
 		// 3. Connect to seeds
 		if !<-n.ConnectToSeeds() {
-			Log("NET", n.Config.NodeID, "Failed to connect to seeds")
+			fmt.Printf("NET", n.Config.NodeID, "Failed to connect to seeds")
 			ready <- false
 			return
 		}
 
 		// 4. Start discovery
 		if !<-n.StartDiscovery() {
-			Log("DISC", n.Config.NodeID, "Failed to start discovery")
+			fmt.Printf("DISC", n.Config.NodeID, "Failed to start discovery")
 			ready <- false
 			return
 		}
 
 		// 5. Start sync
 		if !<-n.StartSync() {
-			Log("SYNC", n.Config.NodeID, "Failed to start sync")
+			fmt.Printf("SYNC", n.Config.NodeID, "Failed to start sync")
 			ready <- false
 			return
 		}
@@ -91,7 +115,7 @@ func (n *FullNode) Start() <-chan bool {
 			}()
 		}
 
-		Log("CORE", n.Config.NodeID, "Full node started: Network on :%s", n.Config.Port)
+		fmt.Printf("CORE", n.Config.NodeID, "Full node started: Network on :%s", n.Config.Port)
 
 		// Signal ready
 		ready <- true
@@ -115,7 +139,7 @@ func (n *FullNode) InitializeChain() error {
 		if err := n.Store.AddBlock(blockchain.GenesisBlock); err != nil {
 			return fmt.Errorf("failed to add genesis block: %w", err)
 		}
-		Log("CORE", n.Config.NodeID, "Blockchain initialized with genesis block")
+		fmt.Printf("CORE", n.Config.NodeID, "Blockchain initialized with genesis block")
 	} else {
 		// Chain already exists, log current state
 		log.Printf("%s\tLoaded existing blockchain with %d blocks (height %d)",
@@ -200,39 +224,9 @@ func (n *FullNode) StartSync() <-chan bool {
 			return
 		}
 
-		Log("SYNC", n.Config.NodeID, "Chain synchronization active")
+		fmt.Printf("SYNC", n.Config.NodeID, "Chain synchronization active")
 		ready <- true
 	}()
-	return ready
-}
-
-// startNetworking starts network server and signals when ready
-func (n *FullNode) startNetworking() <-chan bool {
-	ready := make(chan bool, 1)
-
-	go func() {
-		Log("NET", n.Config.NodeID, "Starting network server on port %s", n.Config.Port)
-
-		networkConfig := networking.Config{
-			Port:                 n.Config.Port,
-			NodeID:               n.Config.NodeID,
-			Store:                n.Store,
-			SeedPeers:            n.Config.SeedPeers,
-			ReqRespConfig:        networking.DefaultReqRespConfig(),
-			PeerRequestConfig:    networking.DefaultPeerRequestConfig(),
-			TransactionProcessor: n.SubmitTransaction, // Process incoming transactions through mempool
-		}
-		n.NetworkServer = networking.NewNetwork(networkConfig, n)
-
-		err := n.NetworkServer.StartListener()
-		if err != nil {
-			log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
-			ready <- false
-		} else {
-			ready <- true
-		}
-	}()
-
 	return ready
 }
 
@@ -312,6 +306,18 @@ func (n *FullNode) GetChainHead() blockchain.ChainHead {
 // GetChain returns the current blockchain state (required by queryapi.Node interface)
 func (n *FullNode) GetChain() (*blockchain.Chain, error) {
 	return n.Store.GetChain()
+}
+
+// GetChainHeight returns the current height of the blockchain
+func (n *FullNode) GetChainHeight() (uint64, error) {
+	chain, err := n.Store.GetChain()
+	if err != nil {
+		return 0, err
+	}
+	if len(chain.Blocks) == 0 {
+		return 0, nil // Genesis state
+	}
+	return chain.Blocks[len(chain.Blocks)-1].Header.Height, nil
 }
 
 // GetMempool returns the mempool instance (required by queryapi.Node interface)
