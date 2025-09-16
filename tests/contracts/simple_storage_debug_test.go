@@ -4,8 +4,7 @@ import (
 	"august/avm"
 	"august/blockchain"
 	"august/config"
-		"crypto/ed25519"
-	"math/big"
+	"crypto/ed25519"
 	"testing"
 	"time"
 )
@@ -69,18 +68,17 @@ func TestSimpleStorageDebug(t *testing.T) {
 	}
 
 	// Create simple init that just stores and emits a value
-	initInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(123)}, // Push 123
-		{Opcode: avm.PUSH, Value: big.NewInt(5)},   // Push address 5
-		{Opcode: avm.PSTORE},                       // Store 123 at address 5
-		{Opcode: avm.PUSH, Value: big.NewInt(5)},   // Push address 5
-		{Opcode: avm.PLOAD},                        // Load from address 5 (should be 123)
-		{Opcode: avm.EMIT},                         // Emit it (should show 123)
+	initCode := "PUSH 0x7B PUSH 0x5 PSTORE PUSH 0x5 PLOAD EMIT"
+	initInstructions, err := avm.ParseInstructionsFromString(initCode)
+	if err != nil {
+		t.Fatalf("Failed to parse init code: %v", err)
 	}
 
 	// Runtime is just STOP
-	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.STOP},
+	runtimeCode := "STOP"
+	runtimeInstructions, err := avm.ParseInstructionsFromString(runtimeCode)
+	if err != nil {
+		t.Fatalf("Failed to parse runtime code: %v", err)
 	}
 
 	// Deploy contract

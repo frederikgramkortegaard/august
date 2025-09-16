@@ -1,6 +1,7 @@
 package avm
 
 import (
+	"august/config"
 	"errors"
 	"fmt"
 	"math/big"
@@ -105,14 +106,7 @@ func (m *memory) Load(address uint64) (*big.Int, error) {
 	return big.NewInt(0), nil
 }
 
-type RuntimeConfig struct {
-	StackSize  uint64 // [32]byte * StackSize
-	MemorySize uint64 // [32]byte * MemorySize
-
-}
-
 type Runtime struct {
-	Config       RuntimeConfig
 	Stack        *stack
 	Memory       *memory
 	IC           int // Instruction Counter
@@ -122,11 +116,10 @@ type Runtime struct {
 	Persistent   map[string]string
 }
 
-func NewRuntime(gasAvailable uint64, instructions []Instruction, config RuntimeConfig) *Runtime {
+func NewRuntime(gasAvailable uint64, instructions []Instruction) *Runtime {
 	return &Runtime{
-		Config:       config,
-		Stack:        NewStack(config.StackSize),
-		Memory:       NewMemory(config.MemorySize),
+		Stack:        NewStack(config.AVMMaxStackSize),
+		Memory:       NewMemory(config.AVMMaxMemorySize),
 		IC:           0,
 		GasAvailable: gasAvailable,
 		GasUsed:      0,
@@ -175,8 +168,13 @@ func (r *Runtime) ExecuteInstruction() error {
 	case NOOP:
 		// Nothing
 	case PUSH:
-		// Validation already done, safe to push
-		err = r.Stack.Push(ins.Value)
+		// Convert hex string to big.Int and push
+		value, convertErr := ins.GetValueAsBigInt()
+		if convertErr != nil {
+			err = convertErr
+		} else {
+			err = r.Stack.Push(value)
+		}
 	case POP:
 		_, err = r.Stack.Pop()
 	case DUP:
@@ -187,11 +185,18 @@ func (r *Runtime) ExecuteInstruction() error {
 			err = r.Stack.Push(val)
 		}
 	case SWAP:
-		// Validate swap parameter against current stack size
-		if int(ins.Param) >= len(r.Stack.s) {
-			return ErrInvalidSwapParameter
+		// Get swap index from stack
+		swapIndexVal, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+		} else {
+			swapIndex := int(swapIndexVal.Uint64())
+			if swapIndex >= len(r.Stack.s) {
+				err = ErrInvalidSwapParameter
+			} else {
+				err = r.Stack.Swap(swapIndex)
+			}
 		}
-		err = r.Stack.Swap(int(ins.Param))
 	case ADD:
 		v1, v2, popErr := r.Stack.Pop2()
 		if popErr != nil {
@@ -291,21 +296,31 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 		}
 	case JUMP:
-		if int(ins.Param) < 0 || int(ins.Param) >= len(r.Instructions) {
-			return ErrInvalidJump
-		}
-		r.IC = int(ins.Param)
-
-	case JUMPC:
-		if int(ins.Param) < 0 || int(ins.Param) >= len(r.Instructions) {
-			return ErrInvalidJump
-		}
-		val, popErr := r.Stack.Pop()
+		jumpTarget, popErr := r.Stack.Pop()
 		if popErr != nil {
 			err = popErr
 		} else {
-			if val.Cmp(big.NewInt(1)) == 0 {
-				r.IC = int(ins.Param)
+			target := int(jumpTarget.Uint64())
+			if target < 0 || target >= len(r.Instructions) {
+				err = ErrInvalidJump
+			} else {
+				r.IC = target
+			}
+		}
+
+	case JUMPC:
+		jumpTarget, popErr1 := r.Stack.Pop()
+		condition, popErr2 := r.Stack.Pop()
+		if popErr1 != nil {
+			err = popErr1
+		} else if popErr2 != nil {
+			err = popErr2
+		} else {
+			target := int(jumpTarget.Uint64())
+			if target < 0 || target >= len(r.Instructions) {
+				err = ErrInvalidJump
+			} else if condition.Cmp(big.NewInt(1)) == 0 {
+				r.IC = target
 			} else {
 				r.IC++ // Continue to next instruction if condition is false
 			}

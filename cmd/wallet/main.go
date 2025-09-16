@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"time"
@@ -81,9 +81,17 @@ func main() {
 		amount := deployCmd.Uint64("amount", 0, "Amount to send to contract")
 		gasLimit := deployCmd.Uint64("gas-limit", 50000, "Gas limit for deployment")
 		gasPrice := deployCmd.Uint64("gas-price", 100, "Gas price")
+		initFile := deployCmd.String("init", "", "Path to init bytecode file (.avmbc)")
+		bodyFile := deployCmd.String("body", "", "Path to runtime bytecode file (.avmbc)")
 		deployCmd.Parse(args[1:])
 
-		err := deployContract(&pub, &priv, *amount, *gasLimit, *gasPrice, *nodeAddr)
+		if *initFile == "" || *bodyFile == "" {
+			fmt.Println("Error: both --init and --body flags are required")
+			deployCmd.Usage()
+			os.Exit(1)
+		}
+
+		err := deployContract(&pub, &priv, *amount, *gasLimit, *gasPrice, *nodeAddr, *initFile, *bodyFile)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -252,32 +260,8 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 	return nil
 }
 
-// GetContract returns hardcoded contract bytecode that you can modify for testing
-// This is a simple storage contract that stores a value at address 1 and increments it
-func GetContract() ([]avm.Instruction, []avm.Instruction) {
-	// Initialization code - runs once when contract is deployed
-	initInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(42)}, // Initial value
-		{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Storage address
-		{Opcode: avm.PSTORE},                      // Store 42 at address 1
-	}
 
-	// Runtime code - runs every time contract is called
-	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address
-		{Opcode: avm.PLOAD},                      // Load current value from address 1
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Increment amount
-		{Opcode: avm.ADD},                        // Add 1 to current value
-		{Opcode: avm.DUP},                        // Duplicate result for emit
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address
-		{Opcode: avm.PSTORE},                     // Store incremented value at address 1 (stack: [value, address])
-		{Opcode: avm.EMIT},                       // Emit the new value
-	}
-
-	return initInstructions, runtimeInstructions
-}
-
-func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string) error {
+func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string, initFile, bodyFile string) error {
 	// Get current balance and nonce
 	keyAsHex := hex.EncodeToString(*pub)
 	url := fmt.Sprintf("http://%s/balance/%s", nodeaddr, keyAsHex)
@@ -313,7 +297,25 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 	}
 
 	// Get contract code
-	initInstructions, runtimeInstructions := GetContract()
+	// Load initialization code from file
+	initData, err := ioutil.ReadFile(initFile)
+	if err != nil {
+		return fmt.Errorf("failed to read init file %s: %v", initFile, err)
+	}
+	initInstructions, err := avm.ParseInstructionsFromString(string(initData))
+	if err != nil {
+		return fmt.Errorf("failed to parse init code: %v", err)
+	}
+
+	// Load runtime code from file
+	bodyData, err := ioutil.ReadFile(bodyFile)
+	if err != nil {
+		return fmt.Errorf("failed to read body file %s: %v", bodyFile, err)
+	}
+	runtimeInstructions, err := avm.ParseInstructionsFromString(string(bodyData))
+	if err != nil {
+		return fmt.Errorf("failed to parse runtime code: %v", err)
+	}
 
 	// Create contract deployment transaction
 	nextNonce := balanceResp.Nonce + 1

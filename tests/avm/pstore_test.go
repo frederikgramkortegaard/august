@@ -2,25 +2,20 @@ package avm
 
 import (
 	"august/avm"
-	"math/big"
 	"testing"
 )
 
 func TestPSTOREBasic(t *testing.T) {
 	// Test PSTORE instruction directly
-	config := avm.RuntimeConfig{
-		StackSize:  1024,
-		MemorySize: 65536,
-	}
 
 	instructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(999)}, // Push value 999
-		{Opcode: avm.PUSH, Value: big.NewInt(7)},   // Push address 7
-		{Opcode: avm.PSTORE},                       // Store 999 at address 7
-		{Opcode: avm.STOP},
+		avm.MakePushInstruction("0x3E7"), // Push value 999
+		avm.MakePushInstruction("0x7"),   // Push address 7
+		avm.MakeInstruction(avm.PSTORE),  // Store 999 at address 7
+		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(1010, instructions, config)
+	runtime := avm.NewRuntime(1010, instructions)
 	gasUsed, err := runtime.StartExecution()
 
 	if err != avm.ErrProgramStopped {
@@ -47,19 +42,15 @@ func TestPSTOREBasic(t *testing.T) {
 
 func TestPLOADBasic(t *testing.T) {
 	// Test PLOAD instruction directly
-	config := avm.RuntimeConfig{
-		StackSize:  1024,
-		MemorySize: 65536,
-	}
 
 	instructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(3)}, // Push address 3
-		{Opcode: avm.PLOAD},                      // Load from address 3 (should be 0)
-		{Opcode: avm.EMIT},                       // Emit the loaded value
-		{Opcode: avm.STOP},
+		avm.MakePushInstruction("0x3"), // Push address 3
+		avm.MakeInstruction(avm.PLOAD), // Load from address 3 (should be 0)
+		avm.MakeInstruction(avm.EMIT),  // Emit the loaded value
+		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(1110, instructions, config)
+	runtime := avm.NewRuntime(1110, instructions)
 
 	// Pre-populate persistent storage
 	runtime.Persistent["3"] = "555"
@@ -76,22 +67,18 @@ func TestPLOADBasic(t *testing.T) {
 
 func TestPSTOREAndPLOAD(t *testing.T) {
 	// Test both PSTORE and PLOAD together
-	config := avm.RuntimeConfig{
-		StackSize:  1024,
-		MemorySize: 65536,
-	}
 
 	instructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(777)}, // Push value 777
-		{Opcode: avm.PUSH, Value: big.NewInt(9)},   // Push address 9
-		{Opcode: avm.PSTORE},                       // Store 777 at address 9
-		{Opcode: avm.PUSH, Value: big.NewInt(9)},   // Push address 9
-		{Opcode: avm.PLOAD},                        // Load from address 9
-		{Opcode: avm.EMIT},                         // Emit the loaded value (should be 777)
-		{Opcode: avm.STOP},
+		avm.MakePushInstruction("0x309"), // Push value 777
+		avm.MakePushInstruction("0x9"),   // Push address 9
+		avm.MakeInstruction(avm.PSTORE),  // Store 777 at address 9
+		avm.MakePushInstruction("0x9"),   // Push address 9
+		avm.MakeInstruction(avm.PLOAD),   // Load from address 9
+		avm.MakeInstruction(avm.EMIT),    // Emit the loaded value (should be 777)
+		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(2110, instructions, config)
+	runtime := avm.NewRuntime(2110, instructions)
 	gasUsed, err := runtime.StartExecution()
 
 	if err != avm.ErrProgramStopped {

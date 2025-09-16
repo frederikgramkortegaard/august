@@ -121,9 +121,8 @@ func ComputeCodeHash(instructions []avm.Instruction) Hash32 {
 	for _, instruction := range instructions {
 		h.Write([]byte{byte(instruction.Opcode)})
 		if instruction.Value != nil {
-			h.Write(instruction.Value.Bytes())
+			h.Write([]byte(*instruction.Value))
 		}
-		h.Write(utils.Uint32ToBytes(uint32(instruction.Param)))
 	}
 
 	var hash Hash32

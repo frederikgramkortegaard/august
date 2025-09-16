@@ -117,7 +117,7 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 		t.Fatalf("Expected genesis height 0, got %v", resp["height"])
 	}
 
-	log.Printf("✓ /chain-info endpoint works")
+	log.Printf("/chain-info endpoint works")
 
 	// Test 2: Mempool endpoint (should be empty)
 	resp, err = httpGet(baseURL + "/mempool")
@@ -129,7 +129,7 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 		t.Fatalf("Expected empty mempool, got count %v", resp["count"])
 	}
 
-	log.Printf("✓ /mempool endpoint works")
+	log.Printf("/mempool endpoint works")
 
 	// Test 3: Balance endpoint (unknown address should return 0)
 	unknownAddr := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -145,7 +145,7 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 		t.Fatalf("Expected balance 0 for unknown address, got %v", resp["balance"])
 	}
 
-	log.Printf("✓ /balance endpoint works for unknown address")
+	log.Printf("/balance endpoint works for unknown address")
 
 	// Test 4: Transaction endpoint (unknown hash should return not found)
 	unknownHash := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -165,7 +165,7 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 		t.Fatalf("Expected unknown transaction to not be found")
 	}
 
-	log.Printf("✓ /transaction endpoint works for unknown hash")
+	log.Printf("/transaction endpoint works for unknown hash")
 
 	// Test 5: Block endpoint (unknown hash should return not found)
 	resp, err = httpGet(baseURL + "/block/" + unknownHash)
@@ -177,7 +177,7 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 		t.Fatalf("Expected unknown block to not be found")
 	}
 
-	log.Printf("✓ /block endpoint works for unknown hash")
+	log.Printf("/block endpoint works for unknown hash")
 
 	// Stop node
 	err = nodeA.Stop()
@@ -244,7 +244,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected balance %v, got %v", expectedBalance, resp["balance"])
 	}
 
-	log.Printf("✓ /balance endpoint correctly shows account with balance %v", expectedBalance)
+	log.Printf("/balance endpoint correctly shows account with balance %v", expectedBalance)
 
 	// Create and add a transaction to mempool
 	tx := blockchain.Transaction{
@@ -276,7 +276,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected 1 transaction in mempool, got %v", resp["count"])
 	}
 
-	log.Printf("✓ /mempool endpoint shows transaction in pool")
+	log.Printf("/mempool endpoint shows transaction in pool")
 
 	// Test transaction endpoint with pending transaction
 	txHash := tx.GetHash()
@@ -294,7 +294,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected transaction status 'pending', got %v", resp["status"])
 	}
 
-	log.Printf("✓ /transaction endpoint finds pending transaction")
+	log.Printf("/transaction endpoint finds pending transaction")
 
 	// Get actual gas used by applying transaction first
 	chain, err = nodeA.GetChain()
@@ -370,7 +370,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	// Wait for mempool cleanup
 	time.Sleep(100 * time.Millisecond)
 
-	log.Printf("✓ Block mined and processed")
+	log.Printf("Block mined and processed")
 
 	// Test transaction endpoint with confirmed transaction
 	resp, err = httpGet(baseURL + "/transaction/" + txHashHex)
@@ -388,7 +388,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected transaction at block height 1, got %v", resp["block_height"])
 	}
 
-	log.Printf("✓ /transaction endpoint finds confirmed transaction with block info")
+	log.Printf("/transaction endpoint finds confirmed transaction with block info")
 
 	// Test block endpoint with mined block
 	blockHash := block.Header.GetHash()
@@ -409,7 +409,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected 2 transactions in block, got %v", resp["tx_count"])
 	}
 
-	log.Printf("✓ /block endpoint finds mined block with transaction count")
+	log.Printf("/block endpoint finds mined block with transaction count")
 
 	// Test mempool is now empty
 	resp, err = httpGet(baseURL + "/mempool")
@@ -421,7 +421,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		t.Fatalf("Expected empty mempool after block, got count %v", resp["count"])
 	}
 
-	log.Printf("✓ /mempool endpoint shows transaction removed after mining")
+	log.Printf("/mempool endpoint shows transaction removed after mining")
 
 	// Stop node
 	err = nodeA.Stop()
@@ -458,7 +458,7 @@ func TestQueryAPIErrorHandling(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	log.Printf("✓ /balance endpoint correctly rejects invalid address format")
+	log.Printf("/balance endpoint correctly rejects invalid address format")
 
 	// Test invalid transaction hash format
 	resp, err = http.Get(baseURL + "/transaction/invalid")
@@ -470,7 +470,7 @@ func TestQueryAPIErrorHandling(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	log.Printf("✓ /transaction endpoint correctly rejects invalid hash format")
+	log.Printf("/transaction endpoint correctly rejects invalid hash format")
 
 	// Test invalid block hash format
 	resp, err = http.Get(baseURL + "/block/invalid")
@@ -482,7 +482,7 @@ func TestQueryAPIErrorHandling(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	log.Printf("✓ /block endpoint correctly rejects invalid hash format")
+	log.Printf("/block endpoint correctly rejects invalid hash format")
 
 	// Test wrong HTTP methods
 	resp, err = http.Post(baseURL+"/chain-info", "application/json", nil)
@@ -494,7 +494,7 @@ func TestQueryAPIErrorHandling(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	log.Printf("✓ Endpoints correctly reject wrong HTTP methods")
+	log.Printf("Endpoints correctly reject wrong HTTP methods")
 
 	// Stop node
 	err = nodeA.Stop()

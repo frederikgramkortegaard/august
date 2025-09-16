@@ -174,7 +174,7 @@ def main():
 
         # Deploy a contract
         colored_print("\n5. Deploying contract...", Colors.BOLD)
-        deploy_result = run_cmd(f"go run cmd/wallet/main.go --node localhost:8334 --privkey {privkey} deploy --amount 1000000 --gas-limit 50000 --gas-price 100", capture_output=False, output_color=Colors.RED)
+        deploy_result = run_cmd(f"go run cmd/wallet/main.go --node localhost:8334 --privkey {privkey} deploy --init contracts/counter_init.avmbc --body contracts/counter_runtime.avmbc --amount 1000000 --gas-limit 50000 --gas-price 100", capture_output=False, output_color=Colors.RED)
         if deploy_result.returncode != 0:
             colored_print("Failed to deploy contract!", Colors.PURPLE)
             return

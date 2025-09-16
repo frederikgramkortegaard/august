@@ -356,11 +356,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			}
 
 			// Create AVM runtime for initialization using remaining gas
-			config := avm.RuntimeConfig{
-				StackSize:  1024,
-				MemorySize: 65536,
-			}
-			runtime := avm.NewRuntime(remainingGas, tsx.InitInstructions, config)
+			runtime := avm.NewRuntime(remainingGas, tsx.InitInstructions)
 
 			// Execute initialization code
 			initGasUsed, err := runtime.StartExecution()
@@ -440,11 +436,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 				remainingGas := tsx.GasLimit - gasUsed
 				if remainingGas > 0 {
 					// Create AVM runtime for contract execution using remaining gas
-					config := avm.RuntimeConfig{
-						StackSize:  1024,
-						MemorySize: 65536,
-					}
-					runtime := avm.NewRuntime(remainingGas, toState.Instructions, config)
+					runtime := avm.NewRuntime(remainingGas, toState.Instructions)
 
 					// Initialize runtime with existing persistent storage from contract
 					for key, value := range toState.Persistent {

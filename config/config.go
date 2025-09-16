@@ -44,6 +44,10 @@ const (
 	GasContractDeploy    = uint64(21000)          // Base gas for contract deployment (before init execution)
 	GasContractInitLimit = uint64(1000000)        // Max gas for contract init execution
 
+	// AVM runtime limits
+	AVMMaxStackSize      = 1024                   // Maximum stack depth (0 = unlimited)
+	AVMMaxMemorySize     = 1024                   // Maximum memory slots (0 = unlimited)
+
 	// Network request-response constants
 	RequestTimeout     = 5 * time.Second         // How long to wait for responses
 	MaxPendingRequests = 100                     // Maximum number of pending requests
