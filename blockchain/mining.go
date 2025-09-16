@@ -1,8 +1,9 @@
 package blockchain
 
-import "fmt"
-
-type NonceType = uint64
+import (
+	. "august/types"
+	"fmt"
+)
 
 // Currency multipliers (like time package)
 const (

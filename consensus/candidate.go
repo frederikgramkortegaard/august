@@ -2,48 +2,26 @@ package consensus
 
 import (
 	"august/blockchain"
-	store "august/storage"
+	"august/storage"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-// CandidateBlock represents an orphan block waiting for its parent
-type CandidateBlock struct {
-	Block        *blockchain.Block
-	Source       string    // Address of peer who sent this block
-	ReceivedAt   time.Time
-	ParentNeeded [32]byte  // Hash of the missing parent block
-}
-
-// CandidateChain tracks a competing chain being downloaded and validated
-type CandidateChain struct {
-	ID            string
-	PeerSource    string               // Address of peer advertising this chain
-	ChainStore    store.ChainStore     // Isolated storage for candidate blocks
-	Headers       []blockchain.BlockHeader // Headers to validate against
-	StartedAt     time.Time
-	ExpectedWork  string               // Expected total work when complete
-	expectedHeight atomic.Uint64       // Expected final height
-	currentHeight atomic.Uint64        // Current downloaded height
-	downloadStatus atomic.Uint64       // 0=downloading, 1=complete, 2=failed
-}
-
 // CandidateManager manages candidate blocks and chains
 type CandidateManager struct {
-	candidateBlocks *sync.Map  // map[string]*CandidateBlock
-	candidateChains *sync.Map  // map[string]*CandidateChain
-	store          store.ChainStore
-	mu             sync.RWMutex
+	candidateBlocks *sync.Map // map[string]*CandidateBlock
+	candidateChains *sync.Map // map[string]*CandidateChain
+	store           storage.ChainStore
+	mu              sync.RWMutex
 }
 
 // NewCandidateManager creates a new candidate manager
-func NewCandidateManager(chainStore store.ChainStore) *CandidateManager {
+func NewCandidateManager(chainStore storage.ChainStore) *CandidateManager {
 	return &CandidateManager{
 		candidateBlocks: &sync.Map{},
 		candidateChains: &sync.Map{},
-		store:          chainStore,
+		store:           chainStore,
 	}
 }
 
@@ -67,7 +45,7 @@ func (cm *CandidateManager) CreateCandidateChain(peerAddr string, headers []bloc
 	candidateID := fmt.Sprintf("%s-%d-%s", peerAddr, chainHead.Height, chainHead.HeadHash[:16])
 
 	// Create candidate chain with isolated storage
-	candidateStore := store.NewMemoryChainStore()
+	candidateStore := storage.NewMemoryChainStore()
 
 	candidate := &CandidateChain{
 		ID:           candidateID,

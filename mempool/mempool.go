@@ -2,20 +2,20 @@ package mempool
 
 import (
 	"august/blockchain"
+	"august/types"
 	"container/heap"
-	"sync"
 	"time"
 )
 
-// MempoolEntry wraps a transaction with metadata
-type MempoolEntry struct {
-	Transaction blockchain.Transaction
-	AddedAt     time.Time
-	GasPrice    uint64 // Cached for sorting (gas price determines priority)
-}
+// Type aliases to allow method definitions in this package
+type GasPriceQueue = types.GasPriceQueue
+type MempoolEntry = types.MempoolEntry
+type Mempool = types.Mempool
+type Config = types.MempoolConfig
+type Transaction = types.Transaction
+type PublicKey = types.PublicKey
+type AccountState = types.AccountState
 
-// GasPriceQueue implements a priority queue ordered by gas price (highest first)
-type GasPriceQueue []*MempoolEntry
 
 func (pq GasPriceQueue) Len() int { return len(pq) }
 
@@ -44,20 +44,6 @@ func (pq *GasPriceQueue) Pop() interface{} {
 	return item
 }
 
-// Config holds mempool configuration
-type Config struct {
-	MaxSize    int           // Maximum number of transactions (default: 1000)
-	MaxExpiry  time.Duration // Maximum age before expiry (default: 7 days)
-}
-
-// Mempool manages pending transactions with gas price-based prioritization
-type Mempool struct {
-	mu           sync.RWMutex
-	queue        *GasPriceQueue
-	transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
-	config       Config
-}
-
 // NewMempool creates a new mempool with given configuration
 func NewMempool(config Config) *Mempool {
 	if config.MaxSize <= 0 {
@@ -79,12 +65,12 @@ func NewMempool(config Config) *Mempool {
 
 // AddTransaction adds a transaction to the mempool after validation
 // Returns true if added, false if rejected (duplicate, invalid, etc.)
-func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[blockchain.PublicKey]*blockchain.AccountState) bool {
+func (mp *Mempool) AddTransaction(tx Transaction, accountStates map[PublicKey]*AccountState) bool {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	// Generate transaction hash for deduplication
-	txHash := blockchain.HashTransaction(&tx)
+	txHash := tx.GetHash()
 	hashStr := string(txHash[:])
 
 	// Check if transaction already exists
@@ -127,7 +113,7 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 }
 
 // GetTransactions returns the top N transactions ordered by fee (highest first)
-func (mp *Mempool) GetTransactions(limit int) []blockchain.Transaction {
+func (mp *Mempool) GetTransactions(limit int) []Transaction {
 	// Use write lock since we modify state by cleaning expired transactions
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
@@ -135,7 +121,7 @@ func (mp *Mempool) GetTransactions(limit int) []blockchain.Transaction {
 	// Clean expired transactions first
 	mp.cleanExpiredTransactions()
 
-	var transactions []blockchain.Transaction
+	var transactions []Transaction
 	count := limit
 	if count > mp.queue.Len() {
 		count = mp.queue.Len()
@@ -155,13 +141,13 @@ func (mp *Mempool) GetTransactions(limit int) []blockchain.Transaction {
 
 // RemoveTransactions removes the given transactions from the mempool
 // Used when transactions are included in a mined block
-func (mp *Mempool) RemoveTransactions(transactions []blockchain.Transaction) int {
+func (mp *Mempool) RemoveTransactions(transactions []Transaction) int {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	removed := 0
 	for _, tx := range transactions {
-		txHash := blockchain.HashTransaction(&tx)
+		txHash := tx.GetHash()
 		hashStr := string(txHash[:])
 
 		if _, exists := mp.transactions[hashStr]; exists {
@@ -235,7 +221,7 @@ func (mp *Mempool) removeLowestGasPrice() {
 
 	// Remove from hash map
 	lowestEntry := (*mp.queue)[lowestIdx]
-	txHash := blockchain.HashTransaction(&lowestEntry.Transaction)
+	txHash := lowestEntry.Transaction.GetHash()
 	hashStr := string(txHash[:])
 	delete(mp.transactions, hashStr)
 
@@ -254,7 +240,7 @@ func (mp *Mempool) removeLowestGasPrice() {
 
 // RevalidateTransactions removes transactions that are no longer valid against current chain state
 // This should be called whenever a new block is added to the chain
-func (mp *Mempool) RevalidateTransactions(accountStates map[blockchain.PublicKey]*blockchain.AccountState) int {
+func (mp *Mempool) RevalidateTransactions(accountStates map[PublicKey]*AccountState) int {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 

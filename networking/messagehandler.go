@@ -1,51 +1,49 @@
 package networking
 
-import (
-	"net"
-)
-
 // ProcessMessage handles different types of network messages
-func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
+func (network *Network) ProcessMessage(msg *Message) {
 	// First check if this is a response to a pending request
-	if handled := server.reqRespClient.HandleResponse(msg); handled {
-		server.logf("Delivered response for request %s", msg.ReplyTo)
+	if handled := network.HandleResponse(msg); handled {
+		fmt.Printf("Delivered response for request %s\n", msg.ReplyTo)
 		return
 	}
 
+	// Find Peer & Con from the Message
+
 	switch msg.Type {
 	case MessageTypeHandshake:
-		server.ProcessHandshake(msg, peer, conn)
+		network.ProcessHandshake(msg, peer, conn)
 	case MessageTypeNewBlockHeader:
-		server.ProcessNewBlockHeader(msg, peer)
+		network.ProcessNewBlockHeader(msg, peer)
 	case MessageTypeNewBlock:
-		server.ProcessNewBlock(msg, peer)
+		network.ProcessNewBlock(msg, peer)
 	case MessageTypePing:
-		server.SendPongResponse(conn)
+		network.SendPongResponse(conn)
 	case MessageTypePong:
-		server.ProcessPong(peer)
+		network.ProcessPong(peer)
 	case MessageTypeRequestPeers:
-		server.SendPeerList(conn, msg, peer.Address)
+		network.SendPeerList(conn, msg, peer.Address)
 	case MessageTypeSharePeers:
-		server.ProcessSharedPeers(msg, peer)
+		network.ProcessSharedPeers(msg, peer)
 	case MessageTypeRequestBlock:
-		server.SendBlockResponse(conn, msg, peer)
+		network.SendBlockResponse(conn, msg, peer)
 	case MessageTypeNewTx:
-		server.ProcessNewTransaction(msg, peer)
+		network.ProcessNewTransaction(msg, peer)
 	case MessageTypeRequestChainHead:
-		server.SendChainHeadResponse(conn, msg, peer)
+		network.SendChainHeadResponse(conn, msg, peer)
 	case MessageTypeChainHead:
-		server.ProcessChainHead(msg, peer)
+		network.ProcessChainHead(msg, peer)
 	case MessageTypeRequestHeaders:
-		server.SendHeadersResponse(conn, msg, peer)
+		network.SendHeadersResponse(conn, msg, peer)
 	case MessageTypeHeaders:
-		server.ProcessHeaders(msg, peer)
+		network.ProcessHeaders(msg, peer)
 	case MessageTypeRequestBlocks:
-		server.SendBlocksResponse(conn, msg, peer)
+		network.SendBlocksResponse(conn, msg, peer)
 	case MessageTypeBlocks:
-		server.ProcessBlocks(msg, peer)
+		network.ProcessBlocks(msg, peer)
 	case MessageTypeSubmitBlock:
-		server.ProcessSubmitBlock(msg, conn)
+		network.ProcessSubmitBlock(msg, conn)
 	default:
-		server.logf("Unknown message type: %s", msg.Type)
+		fmt.Printf("Unknown message type: %s\n", msg.Type)
 	}
 }

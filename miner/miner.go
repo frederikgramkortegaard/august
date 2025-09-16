@@ -64,8 +64,8 @@ func NewBlock(params BlockCreationParams) (blockchain.Block, error) {
 		// Execute transaction to get actual gas usage
 		gasUsed, err := blockchain.ApplyTransaction(&tx, tempAccountStates)
 		if err != nil {
-			// Transaction failed - skip it (in practice, miners might still include failed txs that pay gas)
-			continue
+			// Ethereum-style: include failed transaction with actual gas used
+			// ApplyTransaction returns the actual gas used even on failure
 		}
 
 		// Calculate actual gas fee

@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"august/avm"
+	. "august/types"
 	"crypto/ed25519"
 	"fmt"
 	"log"
@@ -442,7 +443,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 			// Check if recipient is a contract (has runtime code)
 			if len(toState.Instructions) > 0 {
-				fmt.Printf("Executing contract at: %x\n", tsx.To[:])
+				fmt.Printf("Executing contract at: %x with %d instructions\n", tsx.To[:], len(toState.Instructions))
 
 				// Check if we have enough gas remaining for contract execution
 				remainingGas := tsx.GasLimit - gasUsed
@@ -493,7 +494,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 				StorageRoot: Hash32{},
 				CodeHash:    Hash32{},
 			}
-			fmt.Printf("Created new account: %x\n", tsx.To[:])
+			fmt.Printf("Created new account (not a contract): %x\n", tsx.To[:])
 		}
 
 		// Validate gas usage doesn't exceed limit
@@ -599,9 +600,20 @@ func ApplyBlock(block *Block, chain *Chain) error {
 
 	// Apply each transaction to the chain state and track actual gas usage
 	for i, tsx := range block.Transactions {
+		fmt.Printf("Validation: Processing transaction %d from %x to %x\n", i, tsx.From[:8], tsx.To[:8])
 		gasUsed, err := ApplyTransaction(&tsx, chain.AccountStates)
 		if err != nil {
-			return fmt.Errorf("failed to apply transaction %d: %w", i, err)
+			// Ethereum-style: failed transactions still consume gas and are included in blocks
+			// ApplyTransaction returns the actual gas used even on failure
+			fmt.Printf("Transaction %d failed during validation but still consumed %d gas: %v\n", i, gasUsed, err)
+			// If transaction failed very early (e.g., account doesn't exist), it might return 0 gas
+			// In that case, we still charge base gas
+			if gasUsed == 0 && tsx.From != (PublicKey{}) {
+				gasUsed = GasTransfer
+				fmt.Printf("Using base gas %d for failed transaction\n", gasUsed)
+			}
+		} else {
+			fmt.Printf("Transaction %d succeeded, used %d gas\n", i, gasUsed)
 		}
 
 		// Track total gas used
@@ -624,6 +636,8 @@ func ApplyBlock(block *Block, chain *Chain) error {
 
 	// Validate that block reports correct gas usage
 	if totalGasUsed != block.Header.GasUsed {
+		fmt.Printf("Gas mismatch details: Block header says %d, validation calculated %d\n", block.Header.GasUsed, totalGasUsed)
+		fmt.Printf("Number of transactions in block: %d\n", len(block.Transactions))
 		return fmt.Errorf("block reports gas used %d but actual is %d", block.Header.GasUsed, totalGasUsed)
 	}
 
@@ -815,3 +829,4 @@ func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockE
 		Action:        "ignore",
 	}
 }
+

@@ -4,50 +4,22 @@ import (
 	"august/blockchain"
 	"august/mempool"
 	"august/networking"
-	"august/node/queryapi"
-	store "august/storage"
+	"august/storage"
+	. "august/types"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"strconv"
-	"sync"
 	"time"
 )
 
-// Config holds all configuration for a full node
-type Config struct {
-	Port           string
-	NodeID         string
-	SeedPeers      []string
-	DBName         string
-	QueryPort      string        // HTTP port for query API and miners (optional)
-	MaxMempoolSize int           // Maximum transactions in mempool (default: 1000)
-	MempoolExpiry  time.Duration // Maximum age for mempool transactions (default: 7 days)
-}
-
-// FullNode orchestrates Peer Discovery and the rest of networking stuff
-type FullNode struct {
-	// Core blockchain storage
-	Store store.ChainStore
-
-	// Configuration
-	Config Config
-
-	// Components (each package handles its own concern)
-	NetworkServer *networking.Server // Network message handling
-	Mempool       *mempool.Mempool   // Transaction pool
-
-	// Goroutine management
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-}
+// Type aliases for types from other packages
 
 // NewFullNode creates a node that runs all services
 func NewFullNode(config Config) *FullNode {
+
 	// Create shared store
-	chainStore := store.NewPersistentChainStore(config.DBName)
+	chainStore := storage.NewPersistentChainStore(config.DatabaseName)
 
 	// Create mempool with configuration
 	mempoolConfig := mempool.Config{
@@ -76,35 +48,35 @@ func (n *FullNode) Start() <-chan bool {
 	go func() {
 		// 1. Initialize chain
 		if err := n.InitializeChain(); err != nil {
-			log.Printf("%s\tFailed to initialize chain: %v", n.Config.NodeID, err)
+			Log("CORE", n.Config.NodeID, "Failed to initialize chain: %v", err)
 			ready <- false
 			return
 		}
 
 		// 2. Start networking
 		if !<-n.StartNetworking() {
-			log.Printf("%s\tFailed to start networking", n.Config.NodeID)
+			Log("NET", n.Config.NodeID, "Failed to start networking")
 			ready <- false
 			return
 		}
 
 		// 3. Connect to seeds
 		if !<-n.ConnectToSeeds() {
-			log.Printf("%s\tFailed to connect to seeds", n.Config.NodeID)
+			Log("NET", n.Config.NodeID, "Failed to connect to seeds")
 			ready <- false
 			return
 		}
 
 		// 4. Start discovery
 		if !<-n.StartDiscovery() {
-			log.Printf("%s\tFailed to start discovery", n.Config.NodeID)
+			Log("DISC", n.Config.NodeID, "Failed to start discovery")
 			ready <- false
 			return
 		}
 
 		// 5. Start sync
 		if !<-n.StartSync() {
-			log.Printf("%s\tFailed to start sync", n.Config.NodeID)
+			Log("SYNC", n.Config.NodeID, "Failed to start sync")
 			ready <- false
 			return
 		}
@@ -113,13 +85,13 @@ func (n *FullNode) Start() <-chan bool {
 		if n.Config.QueryPort != "" {
 			go func() {
 				port, _ := strconv.Atoi(n.Config.QueryPort)
-				if err := queryapi.StartQueryAPI(n, port); err != nil {
+				if err := n.StartQueryAPI(port); err != nil {
 					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
 				}
 			}()
 		}
 
-		log.Printf("%s\tFull node started: Network on :%s", n.Config.NodeID, n.Config.Port)
+		Log("CORE", n.Config.NodeID, "Full node started: Network on :%s", n.Config.Port)
 
 		// Signal ready
 		ready <- true
@@ -143,7 +115,7 @@ func (n *FullNode) InitializeChain() error {
 		if err := n.Store.AddBlock(blockchain.GenesisBlock); err != nil {
 			return fmt.Errorf("failed to add genesis block: %w", err)
 		}
-		log.Printf("%s\tBlockchain initialized with genesis block", n.Config.NodeID)
+		Log("CORE", n.Config.NodeID, "Blockchain initialized with genesis block")
 	} else {
 		// Chain already exists, log current state
 		log.Printf("%s\tLoaded existing blockchain with %d blocks (height %d)",
@@ -228,7 +200,7 @@ func (n *FullNode) StartSync() <-chan bool {
 			return
 		}
 
-		log.Printf("%s\tChain synchronization active", n.Config.NodeID)
+		Log("SYNC", n.Config.NodeID, "Chain synchronization active")
 		ready <- true
 	}()
 	return ready
@@ -239,21 +211,18 @@ func (n *FullNode) startNetworking() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
+		Log("NET", n.Config.NodeID, "Starting network server on port %s", n.Config.Port)
 
 		networkConfig := networking.Config{
-			Port:              n.Config.Port,
-			NodeID:            n.Config.NodeID,
-			Store:             n.Store,
-			SeedPeers:         n.Config.SeedPeers,
-			ReqRespConfig:     networking.DefaultReqRespConfig(),
-			PeerRequestConfig: networking.DefaultPeerRequestConfig(),
+			Port:                 n.Config.Port,
+			NodeID:               n.Config.NodeID,
+			Store:                n.Store,
+			SeedPeers:            n.Config.SeedPeers,
+			ReqRespConfig:        networking.DefaultReqRespConfig(),
+			PeerRequestConfig:    networking.DefaultPeerRequestConfig(),
 			TransactionProcessor: n.SubmitTransaction, // Process incoming transactions through mempool
 		}
-		n.NetworkServer = networking.NewServer(networkConfig)
-
-		// Set the block processor callback to use our node's ProcessBlock method
-		n.NetworkServer.SetBlockProcessor(n.ProcessBlock)
+		n.NetworkServer = networking.NewNetwork(networkConfig, n)
 
 		err := n.NetworkServer.StartListener()
 		if err != nil {
@@ -309,244 +278,13 @@ func (n *FullNode) Stop() error {
 }
 
 // GetNetworkServer returns the network server for testing purposes
-func (n *FullNode) GetNetworkServer() *networking.Server {
+func (n *FullNode) GetNetworkServer() *networking.Network {
 	return n.NetworkServer
 }
 
 // GetNodeID returns the node's ID
 func (n *FullNode) GetNodeID() string {
 	return n.Config.NodeID
-}
-
-// SubmitTransaction submits a transaction to the network
-func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
-	if n.NetworkServer == nil {
-		return fmt.Errorf("network server not initialized")
-	}
-
-	// Get current chain state for validation
-	chain, err := n.Store.GetChain()
-	if err != nil {
-		return fmt.Errorf("failed to get chain state: %w", err)
-	}
-
-	// Try to add transaction to mempool (includes validation)
-	if !n.Mempool.AddTransaction(*tx, chain.AccountStates) {
-		return fmt.Errorf("transaction rejected by mempool (invalid, duplicate, or fee too low)")
-	}
-
-	txHash := blockchain.HashTransaction(tx)
-	log.Printf("%s\tTransaction added to mempool: %x", n.Config.NodeID, txHash[:8])
-
-	// Broadcast the transaction to all connected peers
-	n.wg.Add(1)
-	go func() {
-		defer n.wg.Done()
-		select {
-		case <-n.ctx.Done():
-			return // Node is shutting down
-		case <-networking.RelayTransaction(n.NetworkServer, tx):
-			// Transaction relayed successfully
-		}
-	}()
-
-	return nil
-}
-
-// SubmitBlock accepts an already-mined block from external miners
-func (n *FullNode) SubmitBlock(block *blockchain.Block) error {
-	if n.NetworkServer == nil {
-		return fmt.Errorf("network server not initialized")
-	}
-
-	// Process through the node's block processing pipeline
-	n.wg.Add(1)
-	go func() {
-		defer n.wg.Done()
-		select {
-		case <-n.ctx.Done():
-			return // Node is shutting down
-		case <-n.ProcessBlock(block):
-			// Block processed successfully
-		}
-	}()
-
-	return nil
-}
-
-// ProcessBlock attempts to add a block to the main chain, handling orphans
-// Returns a completion channel that will be closed when processing completes
-// excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
-func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{} {
-	complete := make(chan struct{})
-
-	go func() {
-		defer close(complete)
-
-		if block == nil {
-			return
-		}
-
-		blockHash := blockchain.HashBlockHeader(&block.Header)
-
-		// Determine exclude address for relay
-		var excludeAddr string
-		if len(excludePeerAddr) > 0 {
-			excludeAddr = excludePeerAddr[0]
-		}
-
-		// Get current chain and make a deep copy for validation
-		originalChain, err := n.Store.GetChain()
-		if err != nil {
-			log.Printf("%s\tFailed to get chain for block %x: %v", n.Config.NodeID, blockHash[:8], err)
-			return
-		}
-
-		// Make a deep copy to validate on without affecting the original
-		chainCopy := originalChain.DeepCopy()
-		if chainCopy == nil {
-			log.Printf("%s\tFailed to create chain copy for block %x", n.Config.NodeID, blockHash[:8])
-			return
-		}
-
-		// Try to validate and apply block to the copy (this also adds the block to the chain)
-		if err := blockchain.ValidateAndApplyBlock(block, chainCopy); err != nil {
-			// Check if this is a missing parent error (orphan block)
-			if missingParentErr, ok := err.(blockchain.ErrMissingParent); ok {
-				log.Printf("%s\tBlock %x is orphan, missing parent %x. Adding to candidate blocks.",
-					n.Config.NodeID, blockHash[:8], missingParentErr.Hash[:8])
-
-				// Store in candidate blocks using consensus manager
-				n.NetworkServer.GetConsensusManager().AddCandidateBlock(block, excludeAddr, missingParentErr.Hash)
-
-				// Request missing parent block from multiple peers
-				log.Printf("%s\tNeed to request parent block %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
-
-				connectedPeers := n.NetworkServer.GetPeerManager().GetConnectedPeers()
-				if len(connectedPeers) > 0 {
-					hashString := base64.StdEncoding.EncodeToString(missingParentErr.Hash[:])
-					go func() {
-						blocks, err := networking.RequestBlocksByHash(n.NetworkServer, []string{hashString})
-						if err != nil {
-							log.Printf("%s\tFailed to request parent block %x from peers: %v", n.Config.NodeID, missingParentErr.Hash[:8], err)
-							return
-						}
-
-						if len(blocks) == 0 {
-							log.Printf("%s\tNo parent block returned for %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
-							return
-						}
-
-						// Process the parent block - this should connect orphan blocks
-						<-n.ProcessBlock(blocks[0])
-					}()
-				}
-				return
-
-				// Check if this is a chain switch request (fork detected)
-			} else if details, ok := err.(blockchain.ErrSwitchChain); ok {
-				log.Printf("%s\tBlock %x detected fork, need to check for chain reorganization", n.Config.NodeID, blockHash[:8])
-
-				// Check if current chain has more work
-				if blockchain.CompareWork(details.Block.Header.TotalWork, chainCopy.Blocks[len(chainCopy.Blocks)-1].Header.TotalWork) <= 0 {
-					log.Printf("%s\tCurrent chain has more total work, ignoring block %x", n.Config.NodeID, blockHash[:8])
-					return
-				}
-
-				// Perform Chain Switch - fork has more work
-				// Build new chain up to the fork point
-				newBlocks := chainCopy.Blocks[:details.Block.Header.Height]
-				newBlocks = append(newBlocks, details.Block)
-
-				// Create new chain and rebuild account states from genesis
-				newChain := &blockchain.Chain{
-					Blocks:        newBlocks,
-					AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
-				}
-
-				// Rebuild account states by processing all transactions
-				for _, block := range newBlocks {
-					for _, tx := range block.Transactions {
-						blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
-					}
-				}
-
-				chainCopy = newChain
-				log.Printf("%s\tReorganized Chain", n.Config.NodeID)
-
-				// Clean mempool after chain reorganization
-				n.wg.Add(1)
-				go func() {
-					defer n.wg.Done()
-					select {
-					case <-n.ctx.Done():
-						return
-					default:
-						// Revalidate all transactions against new chain state
-						invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-						if invalidated > 0 {
-							log.Printf("%s\tRemoved %d invalid transactions from mempool after chain reorganization", n.Config.NodeID, invalidated)
-						}
-					}
-				}()
-
-			} else {
-				// Other validation errors
-				log.Printf("%s\tBlock %x validation failed: %v", n.Config.NodeID, blockHash[:8], err)
-				return
-			}
-		}
-
-		// Block validation succeeded and was added to the copy, now atomically replace the chain
-		if err := n.Store.ReplaceChain(chainCopy); err != nil {
-			log.Printf("%s\tFailed to replace chain with validated block %x: %v", n.Config.NodeID, blockHash[:8], err)
-			return
-		}
-
-		// Block successfully added to main chain
-		log.Printf("%s\tBlock %x added to main chain", n.Config.NodeID, blockHash[:8])
-
-		// Clean mempool after new block is added
-		n.wg.Add(1)
-		go func() {
-			defer n.wg.Done()
-			select {
-			case <-n.ctx.Done():
-				return
-			default:
-				// Remove transactions that were included in this block from mempool
-				removed := n.Mempool.RemoveTransactions(block.Transactions)
-				if removed > 0 {
-					log.Printf("%s\tRemoved %d transactions from mempool (included in block %x)", n.Config.NodeID, removed, blockHash[:8])
-				}
-
-				// Revalidate remaining transactions against new chain state
-				invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-				if invalidated > 0 {
-					log.Printf("%s\tRemoved %d invalid transactions from mempool after block %x", n.Config.NodeID, invalidated, blockHash[:8])
-				}
-			}
-		}()
-
-		// Relay the block header to connected peers (headers-first approach)
-		n.wg.Add(1)
-		go func() {
-			defer n.wg.Done()
-			select {
-			case <-n.ctx.Done():
-				return
-			case <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr):
-				// Header relayed successfully
-			}
-		}()
-
-		// Try to connect any candidate blocks that might now be connectible
-		if err := n.NetworkServer.GetConsensusManager().TryConnectCandidateBlocks(block); err != nil {
-			log.Printf("%s\tError connecting candidate blocks: %v", n.Config.NodeID, err)
-		}
-	}()
-
-	return complete
 }
 
 // GetChainHead returns information about the current chain head
@@ -577,7 +315,8 @@ func (n *FullNode) GetChain() (*blockchain.Chain, error) {
 }
 
 // GetMempool returns the mempool instance (required by queryapi.Node interface)
-func (n *FullNode) GetMempool() interface{ GetTransactions(limit int) []blockchain.Transaction } {
+func (n *FullNode) GetMempool() interface {
+	GetTransactions(limit int) []blockchain.Transaction
+} {
 	return n.Mempool
 }
-

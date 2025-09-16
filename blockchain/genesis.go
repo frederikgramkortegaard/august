@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	. "august/types"
 	"log"
 )
 
