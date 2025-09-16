@@ -3,7 +3,6 @@ package networking
 import (
 	"august/blockchain"
 	"august/config"
-	"august/consensus"
 	"august/storage"
 	"encoding/json"
 	"io"
@@ -18,12 +17,11 @@ import (
 type NetworkConfig struct {
 	Port                 string
 	NodeID               string
-	Store                storage.ChainStore
+	Store                *storage.Store
 	SeedPeers            []string                                    // Seed peers for discovery
 	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
 }
 
-// Note: CandidateBlock and CandidateChain types moved to august/consensus package
 
 // Server handles network communication and message passing
 type Server struct {
@@ -48,9 +46,6 @@ type Server struct {
 	recentTransactions    map[blockchain.Hash32]time.Time
 	recentTransactionsMu  sync.RWMutex
 
-	// Consensus management
-	consensusManager *consensus.CandidateManager
-	chainDownloader  *consensus.ChainDownloader
 
 	// Block processing callback (set by node)
 	blockProcessor func(*blockchain.Block, ...string) <-chan struct{}
@@ -92,16 +87,6 @@ func NewServer(config NetworkConfig) *Server {
 		recentBlocks:          make(map[blockchain.Hash32]time.Time),
 		recentTransactions:    make(map[blockchain.Hash32]time.Time),
 	}
-
-	// Initialize consensus management
-	server.consensusManager = consensus.NewCandidateManager(config.Store)
-
-	// Create block request function for the chain downloader
-	blockRequestFunc := func(blockHashes []string) ([]*blockchain.Block, error) {
-		return RequestBlocksByHash(server, blockHashes)
-	}
-
-	server.chainDownloader = consensus.NewChainDownloader(server.consensusManager, blockRequestFunc)
 
 	// Initialize request-response handling
 	server.pendingRequests = make(map[string]chan *Message)
@@ -259,21 +244,15 @@ func (s *Server) GetListener() net.Listener {
 }
 
 
-// GetConsensusManager returns the consensus manager
-func (s *Server) GetConsensusManager() *consensus.CandidateManager {
-	return s.consensusManager
-}
 
 // SetBlockProcessor sets the callback function for processing blocks
 func (s *Server) SetBlockProcessor(processor func(*blockchain.Block, ...string) <-chan struct{}) {
 	s.blockProcessor = processor
 }
 
-// Note: Candidate chains and blocks are now managed by the consensus package
-// Use server.consensusManager to access candidate functionality
 
 // GetChainStore returns the chain store for testing purposes
-func (s *Server) GetChainStore() storage.ChainStore {
+func (s *Server) GetChainStore() *storage.Store {
 	return s.config.Store
 }
 

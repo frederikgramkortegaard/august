@@ -10,7 +10,6 @@ import (
 
 	"august/blockchain"
 	"august/config"
-	"august/consensus"
 )
 
 
@@ -299,7 +298,7 @@ func RequestPeers(server *Server, maxPeers int) ([]string, error) {
 }
 
 // RequestChainHead requests the current chain head from a peer
-func RequestChainHead(server *Server, peer *Peer) (*consensus.ChainHeadPayload, error) {
+func RequestChainHead(server *Server, peer *Peer) (*ChainHeadPayload, error) {
 	requestPayload := RequestChainHeadPayload{}
 
 	msg, err := NewMessage(MessageTypeRequestChainHead, requestPayload)
@@ -317,7 +316,7 @@ func RequestChainHead(server *Server, peer *Peer) (*consensus.ChainHeadPayload, 
 		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
 	}
 
-	var headPayload consensus.ChainHeadPayload
+	var headPayload ChainHeadPayload
 	if err := responseMsg.ParsePayload(&headPayload); err != nil {
 		return nil, fmt.Errorf("failed to parse chain head response: %w", err)
 	}
@@ -567,7 +566,7 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 }
 
 // EvaluateChainHead performs headers-first evaluation of a peer's chain
-func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.ChainHeadPayload) error {
+func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *ChainHeadPayload) error {
 	// Get our current chain
 	ourChain, err := server.config.Store.GetChain()
 	if err != nil {
@@ -614,20 +613,39 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.Chai
 		return nil
 	}
 
-	// Phase 2: Headers look good, start candidate chain download
-	log.Printf(server.config.NodeID+"\t"+"Headers validated and better, starting candidate chain download")
+	// Phase 2: Headers look good, start direct block download
+	log.Printf(server.config.NodeID+"\t"+"Headers validated and better, starting direct block download")
 
-	// Create candidate chain using consensus manager
-	candidate, err := server.consensusManager.CreateCandidateChain(peer.Address, headers, peerChainHead)
-	if err != nil {
-		return fmt.Errorf("failed to create candidate chain: %w", err)
-	}
-
-	// Start download in background
+	// Simple direct sync: request all blocks from this chain
 	go func() {
-		if err := server.chainDownloader.DownloadCandidateChain(candidate); err != nil {
-			log.Printf(server.config.NodeID+"\t"+"Candidate chain download failed: %v", err)
+		// Convert headers to block hashes for download
+		var blockHashes []string
+		for _, header := range headers {
+			hash := header.GetHash()
+			hashStr := base64.StdEncoding.EncodeToString(hash[:])
+			blockHashes = append(blockHashes, hashStr)
 		}
+
+		log.Printf(server.config.NodeID+"\t"+"Requesting %d blocks from peer %s", len(blockHashes), peer.Address)
+
+		// Request blocks directly
+		blocks, err := RequestBlocksByHash(server, blockHashes)
+		if err != nil {
+			log.Printf(server.config.NodeID+"\t"+"Failed to download blocks from %s: %v", peer.Address, err)
+			return
+		}
+
+		log.Printf(server.config.NodeID+"\t"+"Downloaded %d blocks, validating chain", len(blocks))
+
+		// Validate the downloaded chain by trying to apply each block
+		if server.blockProcessor != nil {
+			for _, block := range blocks {
+				done := server.blockProcessor(block, peer.Address)
+				<-done // Wait for each block to be processed before continuing
+			}
+		}
+
+		log.Printf(server.config.NodeID+"\t"+"Chain sync from %s completed", peer.Address)
 	}()
 
 	return nil
@@ -768,7 +786,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	headBlock := chain.Blocks[len(chain.Blocks)-1]
 	headHash := headBlock.Header.GetHash()
 
-	headPayload := consensus.ChainHeadPayload{
+	headPayload := ChainHeadPayload{
 		HeadHash:  base64.StdEncoding.EncodeToString(headHash[:]),
 		Height:    headBlock.Header.Height,
 		TotalWork: headBlock.Header.TotalWork,
@@ -904,7 +922,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 
 // ProcessChainHead handles chain head messages and initiates sync if needed
 func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
-	var headPayload consensus.ChainHeadPayload
+	var headPayload ChainHeadPayload
 	if err := msg.ParsePayload(&headPayload); err != nil {
 		log.Printf(s.config.NodeID+"\t"+"Failed to decode chain head payload from %s: %v", peer.Address, err)
 		return
@@ -1070,30 +1088,38 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 		return
 	}
 
-	log.Printf(s.config.NodeID+"\t"+"Headers from %s represent better chain, starting candidate download", peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Headers from %s represent better chain, starting direct sync", peer.Address)
 
-	// Create a mock chain head payload from the final header
-	finalHeader := headersPayload.Headers[len(headersPayload.Headers)-1]
-	finalHash := finalHeader.GetHash()
-	chainHead := &consensus.ChainHeadPayload{
-		HeadHash:  base64.StdEncoding.EncodeToString(finalHash[:]),
-		Height:    finalHeader.Height,
-		TotalWork: finalHeader.TotalWork,
-		Header:    finalHeader,
-	}
-
-	// Start candidate chain download using consensus manager
-	candidate, err := s.consensusManager.CreateCandidateChain(peer.Address, headersPayload.Headers, chainHead)
-	if err != nil {
-		log.Printf(s.config.NodeID+"\t"+"Failed to create candidate chain from %s: %v", peer.Address, err)
-		return
-	}
-
-	// Start download in background
+	// Simple direct sync: request all blocks from this chain
 	go func() {
-		if err := s.chainDownloader.DownloadCandidateChain(candidate); err != nil {
-			log.Printf(s.config.NodeID+"\t"+"Candidate chain download failed: %v", err)
+		// Convert headers to block hashes for download
+		var blockHashes []string
+		for _, header := range headersPayload.Headers {
+			hash := header.GetHash()
+			hashStr := base64.StdEncoding.EncodeToString(hash[:])
+			blockHashes = append(blockHashes, hashStr)
 		}
+
+		log.Printf(s.config.NodeID+"\t"+"Requesting %d blocks from peer %s", len(blockHashes), peer.Address)
+
+		// Request blocks directly
+		blocks, err := RequestBlocksByHash(s, blockHashes)
+		if err != nil {
+			log.Printf(s.config.NodeID+"\t"+"Failed to download blocks from %s: %v", peer.Address, err)
+			return
+		}
+
+		log.Printf(s.config.NodeID+"\t"+"Downloaded %d blocks, validating chain", len(blocks))
+
+		// Validate the downloaded chain by trying to apply each block
+		if s.blockProcessor != nil {
+			for _, block := range blocks {
+				done := s.blockProcessor(block, peer.Address)
+				<-done // Wait for each block to be processed before continuing
+			}
+		}
+
+		log.Printf(s.config.NodeID+"\t"+"Chain sync from %s completed", peer.Address)
 	}()
 }
 
@@ -1207,35 +1233,6 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 	go func() { <-RelayTransaction(s, tx, peer.Address) }()
 }
 
-// ProcessSubmitBlock handles one-off block submissions from miners (no peer relationship required)
-func (s *Server) ProcessSubmitBlock(msg *Message, conn net.Conn) {
-	var submitPayload SubmitBlockPayload
-	if err := msg.ParsePayload(&submitPayload); err != nil {
-		log.Printf(s.config.NodeID+"\t"+"Failed to parse submit block payload: %v", err)
-		return
-	}
-
-	blockHash := submitPayload.Block.Header.GetHash()
-	remoteAddr := conn.RemoteAddr().String()
-	log.Printf(s.config.NodeID+"\t"+"Received block submission %x from miner %s", blockHash[:8], remoteAddr)
-
-	// Process the block through the same pipeline
-	// (no excludePeerAddr since this isn't from a peer)
-	go func() {
-		<-ProcessBlock(s, submitPayload.Block)
-	}()
-
-	// Send simple acknowledgment back to miner
-	response := map[string]interface{}{
-		"status": "received",
-		"block_hash": fmt.Sprintf("%x", blockHash[:8]),
-	}
-
-	ackMsg, err := NewMessage(MessageTypePong, response) // Reuse pong for simplicity
-	if err == nil {
-		s.sendMessage(conn, ackMsg)
-	}
-}
 
 // SendHeadersResponse sends headers in response to a request
 func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {

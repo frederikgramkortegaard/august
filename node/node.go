@@ -13,6 +13,14 @@ import (
 	"time"
 )
 
+// OrphanBlock represents a block waiting for its parent
+type OrphanBlock struct {
+	Block        *blockchain.Block
+	Source       string
+	ReceivedAt   time.Time
+	ParentNeeded blockchain.Hash32
+}
+
 // NodeConfig holds all configuration for a full node
 type NodeConfig struct {
 	Port      string
@@ -25,7 +33,7 @@ type NodeConfig struct {
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
 type FullNode struct {
 	// Core blockchain storage
-	Store storage.ChainStore
+	Store *storage.Store
 
 	// Configuration
 	Config NodeConfig
@@ -33,6 +41,10 @@ type FullNode struct {
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server // Network message handling
 	Mempool       *Mempool           // Transaction pool
+
+	// Orphan block management
+	orphanBlocks   map[blockchain.Hash32]*OrphanBlock
+	orphanBlocksMu sync.RWMutex
 
 	// Goroutine management
 	ctx    context.Context
@@ -43,7 +55,7 @@ type FullNode struct {
 // NewFullNode creates a node that runs all services
 func NewFullNode(config NodeConfig) *FullNode {
 	// Create shared store
-	chainStore := storage.NewPersistentChainStore(config.DatabaseName)
+	chainStore := storage.NewStore(config.DatabaseName)
 
 	// Create mempool
 	nodeMempool := NewMempool()
@@ -52,11 +64,12 @@ func NewFullNode(config NodeConfig) *FullNode {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &FullNode{
-		Store:   chainStore,
-		Config:  config,
-		Mempool: nodeMempool,
-		ctx:     ctx,
-		cancel:  cancel,
+		Store:        chainStore,
+		Config:       config,
+		Mempool:      nodeMempool,
+		orphanBlocks: make(map[blockchain.Hash32]*OrphanBlock),
+		ctx:          ctx,
+		cancel:       cancel,
 		// Components will be initialized in Start()
 	}
 }
@@ -288,10 +301,8 @@ func (n *FullNode) Stop() error {
 	}
 
 	// Close database connection
-	if closer, ok := n.Store.(interface{ Close() error }); ok {
-		if err := closer.Close(); err != nil {
-			log.Printf("%s\tError closing database: %v", n.Config.NodeID, err)
-		}
+	if err := n.Store.Close(); err != nil {
+		log.Printf("%s\tError closing database: %v", n.Config.NodeID, err)
 	}
 
 	log.Println("FullNode stopped successfully")
@@ -343,26 +354,6 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 	return nil
 }
 
-// SubmitBlock accepts an already-mined block from external miners
-func (n *FullNode) SubmitBlock(block *blockchain.Block) error {
-	if n.NetworkServer == nil {
-		return fmt.Errorf("network server not initialized")
-	}
-
-	// Process through the node's block processing pipeline
-	n.wg.Add(1)
-	go func() {
-		defer n.wg.Done()
-		select {
-		case <-n.ctx.Done():
-			return // Node is shutting down
-		case <-n.ProcessBlock(block):
-			// Block processed successfully
-		}
-	}()
-
-	return nil
-}
 
 // ProcessBlock attempts to add a block to the main chain, handling orphans
 // Returns a completion channel that will be closed when processing completes
@@ -406,8 +397,8 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 				log.Printf("%s\tBlock %x is orphan, missing parent %x. Adding to candidate blocks.",
 					n.Config.NodeID, blockHash[:8], missingParentErr.Hash[:8])
 
-				// Store in candidate blocks using consensus manager
-				n.NetworkServer.GetConsensusManager().AddCandidateBlock(block, excludeAddr, missingParentErr.Hash)
+				// Store in orphan blocks
+				n.AddOrphanBlock(block, excludeAddr, missingParentErr.Hash)
 
 				// Request missing parent block from multiple peers
 				log.Printf("%s\tNeed to request parent block %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
@@ -530,9 +521,9 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 			}
 		}()
 
-		// Try to connect any candidate blocks that might now be connectible
-		if err := n.NetworkServer.GetConsensusManager().TryConnectCandidateBlocks(block); err != nil {
-			log.Printf("%s\tError connecting candidate blocks: %v", n.Config.NodeID, err)
+		// Try to connect any orphan blocks that might now be connectible
+		if err := n.TryConnectOrphanBlocks(block); err != nil {
+			log.Printf("%s\tError connecting orphan blocks: %v", n.Config.NodeID, err)
 		}
 	}()
 
@@ -569,5 +560,46 @@ func (n *FullNode) GetChain() (*blockchain.Chain, error) {
 // GetMempool returns the mempool instance (required by NodeAPI interface)
 func (n *FullNode) GetMempool() interface{ GetTransactions(limit int) []blockchain.Transaction } {
 	return n.Mempool
+}
+
+// AddOrphanBlock stores an orphan block waiting for its parent
+func (n *FullNode) AddOrphanBlock(block *blockchain.Block, source string, parentHash blockchain.Hash32) {
+	n.orphanBlocksMu.Lock()
+	defer n.orphanBlocksMu.Unlock()
+
+	blockHash := block.Header.GetHash()
+	n.orphanBlocks[blockHash] = &OrphanBlock{
+		Block:        block,
+		Source:       source,
+		ReceivedAt:   time.Now(),
+		ParentNeeded: parentHash,
+	}
+}
+
+// TryConnectOrphanBlocks attempts to connect orphan blocks when new blocks arrive
+func (n *FullNode) TryConnectOrphanBlocks(newBlock *blockchain.Block) error {
+	newBlockHash := newBlock.Header.GetHash()
+
+	n.orphanBlocksMu.Lock()
+	defer n.orphanBlocksMu.Unlock()
+
+	// Find orphans that can now be connected
+	var toConnect []*OrphanBlock
+	for hash, orphan := range n.orphanBlocks {
+		if orphan.ParentNeeded == newBlockHash {
+			toConnect = append(toConnect, orphan)
+			delete(n.orphanBlocks, hash)
+		}
+	}
+
+	// Process connected orphans
+	for _, orphan := range toConnect {
+		go func(block *blockchain.Block, source string) {
+			done := n.ProcessBlock(block, source)
+			<-done
+		}(orphan.Block, orphan.Source)
+	}
+
+	return nil
 }
 

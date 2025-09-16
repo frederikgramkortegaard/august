@@ -44,8 +44,6 @@ func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 		s.SendBlocksResponse(conn, msg, peer)
 	case MessageTypeBlocks:
 		s.ProcessBlocks(msg, peer)
-	case MessageTypeSubmitBlock:
-		s.ProcessSubmitBlock(msg, conn)
 	default:
 		log.Printf(s.config.NodeID+"\t"+"Unknown message type: %s", msg.Type)
 	}

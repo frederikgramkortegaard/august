@@ -27,8 +27,6 @@ const (
 	MessageTypeRequestBlocks    MessageType = "request_blocks" // Batch blocks request
 	MessageTypeBlocks           MessageType = "blocks"         // Batch blocks response
 
-	// Mining submission (one-off, no peer relationship required)
-	MessageTypeSubmitBlock      MessageType = "submit_block"   // Miner block submission
 )
 
 // Message represents a network message between nodes
@@ -92,7 +90,13 @@ type RequestChainHeadPayload struct {
 	// Empty - just requesting current head info
 }
 
-// Note: ChainHeadPayload moved to august/consensus package
+// ChainHeadPayload contains chain head information
+type ChainHeadPayload struct {
+	Height    uint64                 `json:"height"`
+	HeadHash  string                 `json:"head_hash"`  // Base64 encoded
+	TotalWork string                 `json:"total_work"` // Big.Int as string
+	Header    blockchain.BlockHeader `json:"header"`     // Full header for validation
+}
 
 // RequestHeadersPayload requests block headers in a range or by specific hashes
 type RequestHeadersPayload struct {
@@ -119,10 +123,6 @@ type BlocksPayload struct {
 	Blocks []*blockchain.Block `json:"blocks"`
 }
 
-// SubmitBlockPayload contains a mined block for submission
-type SubmitBlockPayload struct {
-	Block *blockchain.Block `json:"block"`
-}
 
 // NewMessage creates a new network message with the given type and payload
 func NewMessage(msgType MessageType, payload interface{}) (*Message, error) {
