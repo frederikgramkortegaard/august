@@ -3,7 +3,7 @@ package main
 import (
 	"august/blockchain"
 	"august/config"
-	"august/node/queryapi"
+	"august/node"
 	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -229,7 +229,7 @@ func (m *SimpleMiner) getMempoolTransactions() ([]blockchain.Transaction, error)
 		return nil, fmt.Errorf("HTTP error: %s", resp.Status)
 	}
 
-	var mempoolResp queryapi.MempoolResponse
+	var mempoolResp node.MempoolResponse
 	if err := json.NewDecoder(resp.Body).Decode(&mempoolResp); err != nil {
 		return nil, fmt.Errorf("failed to decode mempool response: %w", err)
 	}
@@ -249,7 +249,7 @@ func (m *SimpleMiner) getChainState() (map[blockchain.PublicKey]*blockchain.Acco
 		return nil, fmt.Errorf("HTTP error: %s", resp.Status)
 	}
 
-	var chainStateResp queryapi.ChainStateResponse
+	var chainStateResp node.ChainStateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chainStateResp); err != nil {
 		return nil, fmt.Errorf("failed to decode chain state response: %w", err)
 	}

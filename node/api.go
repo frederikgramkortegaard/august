@@ -1,4 +1,4 @@
-package queryapi
+package node
 
 import (
 	"august/blockchain"
@@ -11,8 +11,74 @@ import (
 	"strings"
 )
 
-// Node interface represents the minimal interface needed by the query API
-type Node interface {
+// API Response Types
+
+// BalanceResponse represents the response from the balance API endpoint
+type BalanceResponse struct {
+	Address string `json:"address"`
+	Exists  bool   `json:"exists"`
+	Balance uint64 `json:"balance"`
+	Nonce   uint64 `json:"nonce"`
+}
+
+// SubmitTransactionResponse represents the response from submitting a transaction
+type SubmitTransactionResponse struct {
+	Status string `json:"status"`
+	Hash   string `json:"hash"`
+}
+
+// TransactionResponse represents the response from the transaction lookup API
+type TransactionResponse struct {
+	Found       bool        `json:"found"`
+	Transaction interface{} `json:"transaction,omitempty"`
+	BlockHeight int         `json:"block_height,omitempty"`
+	BlockHash   string      `json:"block_hash,omitempty"`
+	TxIndex     int         `json:"tx_index,omitempty"`
+	Status      string      `json:"status,omitempty"`
+	InMempool   bool        `json:"in_mempool,omitempty"`
+	Hash        string      `json:"hash,omitempty"`
+}
+
+// BlockResponse represents the response from the block lookup API
+type BlockResponse struct {
+	Found         bool        `json:"found"`
+	Block         interface{} `json:"block,omitempty"`
+	Height        int         `json:"height,omitempty"`
+	Hash          string      `json:"hash,omitempty"`
+	TxCount       int         `json:"tx_count,omitempty"`
+	Confirmations int         `json:"confirmations,omitempty"`
+}
+
+// MempoolResponse represents the response from the mempool API
+type MempoolResponse struct {
+	Count        int                       `json:"count"`
+	Transactions []blockchain.Transaction `json:"transactions"`
+}
+
+// ContractResponse represents the response from the contract inspection API
+type ContractResponse struct {
+	Found           bool              `json:"found"`
+	Address         string            `json:"address"`
+	Balance         uint64            `json:"balance,omitempty"`
+	Nonce           uint64            `json:"nonce,omitempty"`
+	IsContract      bool              `json:"is_contract"`
+	HasInstructions bool              `json:"has_instructions,omitempty"`
+	StorageEntries  int               `json:"storage_entries,omitempty"`
+	PersistentData  map[string]string `json:"persistent_data,omitempty"`
+	CodeHash        string            `json:"code_hash,omitempty"`
+	StorageRoot     string            `json:"storage_root,omitempty"`
+}
+
+// ChainStateResponse represents the response from the chain state API
+type ChainStateResponse struct {
+	AccountStates map[string]*blockchain.AccountState `json:"account_states"`
+	AccountCount  int                                  `json:"account_count"`
+}
+
+// API Implementation
+
+// NodeAPI interface represents the minimal interface needed by the query API
+type NodeAPI interface {
 	GetChainHead() blockchain.ChainHead
 	ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{}
 	SubmitTransaction(tx *blockchain.Transaction) error
@@ -21,7 +87,7 @@ type Node interface {
 }
 
 // StartQueryAPI starts the HTTP API server for miners and blockchain queries (completely separate from P2P)
-func StartQueryAPI(node Node, port int) error {
+func StartQueryAPI(node NodeAPI, port int) error {
 	// Create a new ServeMux to avoid conflicts when running multiple instances
 	mux := http.NewServeMux()
 
@@ -44,7 +110,7 @@ func StartQueryAPI(node Node, port int) error {
 }
 
 // GET /chain-info - Returns the current chain head info
-func handleChainInfo(node Node) http.HandlerFunc {
+func handleChainInfo(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -59,7 +125,7 @@ func handleChainInfo(node Node) http.HandlerFunc {
 }
 
 // GET /chain-state - Returns the current account states for miners
-func handleChainState(node Node) http.HandlerFunc {
+func handleChainState(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -91,7 +157,7 @@ func handleChainState(node Node) http.HandlerFunc {
 }
 
 // POST /submit-block - Submit a mined block
-func handleSubmitBlock(node Node) http.HandlerFunc {
+func handleSubmitBlock(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -115,7 +181,7 @@ func handleSubmitBlock(node Node) http.HandlerFunc {
 }
 
 // GET /mempool - Returns pending transactions from mempool (highest fee first)
-func handleGetMempool(node Node) http.HandlerFunc {
+func handleGetMempool(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -150,7 +216,7 @@ func handleGetMempool(node Node) http.HandlerFunc {
 }
 
 // GET /balance/<address> - Check account balance
-func handleBalance(node Node) http.HandlerFunc {
+func handleBalance(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -209,7 +275,7 @@ func handleBalance(node Node) http.HandlerFunc {
 }
 
 // GET /transaction/<hash> - Lookup transaction details
-func handleTransaction(node Node) http.HandlerFunc {
+func handleTransaction(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -305,7 +371,7 @@ func handleTransaction(node Node) http.HandlerFunc {
 }
 
 // GET /block/<hash> - Get block information
-func handleBlock(node Node) http.HandlerFunc {
+func handleBlock(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -380,7 +446,7 @@ func handleBlock(node Node) http.HandlerFunc {
 }
 
 // POST /submit-transaction - Submit a transaction to the mempool
-func handleSubmitTransaction(node Node) http.HandlerFunc {
+func handleSubmitTransaction(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -412,7 +478,7 @@ func handleSubmitTransaction(node Node) http.HandlerFunc {
 }
 
 // GET /contract/<address> - Get contract information and persistent storage
-func handleContract(node Node) http.HandlerFunc {
+func handleContract(node NodeAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

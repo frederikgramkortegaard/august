@@ -3,7 +3,6 @@ package node
 import (
 	"august/blockchain"
 	"august/networking"
-	"august/node/queryapi"
 	"august/storage"
 	"context"
 	"encoding/base64"
@@ -106,7 +105,7 @@ func (n *FullNode) Start() <-chan bool {
 		if n.Config.QueryPort != "" {
 			go func() {
 				port, _ := strconv.Atoi(n.Config.QueryPort)
-				if err := queryapi.StartQueryAPI(n, port); err != nil {
+				if err := StartQueryAPI(n, port); err != nil {
 					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
 				}
 			}()
@@ -562,12 +561,12 @@ func (n *FullNode) GetChainHead() blockchain.ChainHead {
 	}
 }
 
-// GetChain returns the current blockchain state (required by queryapi.Node interface)
+// GetChain returns the current blockchain state (required by NodeAPI interface)
 func (n *FullNode) GetChain() (*blockchain.Chain, error) {
 	return n.Store.GetChain()
 }
 
-// GetMempool returns the mempool instance (required by queryapi.Node interface)
+// GetMempool returns the mempool instance (required by NodeAPI interface)
 func (n *FullNode) GetMempool() interface{ GetTransactions(limit int) []blockchain.Transaction } {
 	return n.Mempool
 }

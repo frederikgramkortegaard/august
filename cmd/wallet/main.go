@@ -3,7 +3,7 @@ package main
 import (
 	"august/avm"
 	"august/blockchain"
-	"august/node/queryapi"
+	"august/node"
 	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -154,7 +154,7 @@ func checkBalance(pubKey *ed25519.PublicKey, nodeaddr string) error {
 	}
 
 	// Read response
-	var response queryapi.BalanceResponse
+	var response node.BalanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -186,7 +186,7 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
 	}
 
-	var balanceResp queryapi.BalanceResponse
+	var balanceResp node.BalanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
 		return fmt.Errorf("failed to decode balance response: %w", err)
 	}
@@ -241,7 +241,7 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 	}
 
 	// Read response
-	var response queryapi.SubmitTransactionResponse
+	var response node.SubmitTransactionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -296,7 +296,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
 	}
 
-	var balanceResp queryapi.BalanceResponse
+	var balanceResp node.BalanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
 		return fmt.Errorf("failed to decode balance response: %w", err)
 	}
@@ -358,7 +358,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 	}
 
 	// Read response
-	var response queryapi.SubmitTransactionResponse
+	var response node.SubmitTransactionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -388,7 +388,7 @@ func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint6
 		return fmt.Errorf("HTTP error getting balance %s: %s", resp.Status, errorBody)
 	}
 
-	var balanceResp queryapi.BalanceResponse
+	var balanceResp node.BalanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
 		return fmt.Errorf("failed to decode balance response: %w", err)
 	}
@@ -445,7 +445,7 @@ func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint6
 	}
 
 	// Read response
-	var response queryapi.SubmitTransactionResponse
+	var response node.SubmitTransactionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}

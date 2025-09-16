@@ -3,7 +3,6 @@ package e2e
 import (
 	"august/config"
 	"august/node"
-	"august/node/queryapi"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -174,7 +173,7 @@ func generateKeyPair(t *testing.T) (string, string) {
 }
 
 // sendTransaction sends a transaction using the wallet functionality
-func sendTransaction(privKey, toAddr string, amount uint64, nodeAddr string) (*queryapi.SubmitTransactionResponse, error) {
+func sendTransaction(privKey, toAddr string, amount uint64, nodeAddr string) (*node.SubmitTransactionResponse, error) {
 	// Run the wallet send command
 	cmd := exec.Command("go", "run", "cmd/wallet/main.go",
 		"--privkey", privKey, "--node", nodeAddr,
@@ -188,14 +187,14 @@ func sendTransaction(privKey, toAddr string, amount uint64, nodeAddr string) (*q
 
 	// Parse the transaction hash from output (simple approach)
 	// In a real test, we'd parse the actual response, but this simulates the CLI usage
-	return &queryapi.SubmitTransactionResponse{
+	return &node.SubmitTransactionResponse{
 		Status: "submitted",
 		Hash:   "simulated-hash-from-cli",
 	}, nil
 }
 
 // Helper function to get balance via HTTP API
-func getBalance(pubKeyHex, nodeAddr string) (*queryapi.BalanceResponse, error) {
+func getBalance(pubKeyHex, nodeAddr string) (*node.BalanceResponse, error) {
 	url := fmt.Sprintf("http://%s/balance/%s", nodeAddr, pubKeyHex)
 
 	resp, err := http.Get(url)
@@ -208,7 +207,7 @@ func getBalance(pubKeyHex, nodeAddr string) (*queryapi.BalanceResponse, error) {
 		return nil, fmt.Errorf("HTTP error: %s", resp.Status)
 	}
 
-	var balance queryapi.BalanceResponse
+	var balance node.BalanceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&balance); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
