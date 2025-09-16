@@ -74,6 +74,18 @@ Run the AVM bytecode demo:
 go run cmd/avm/main.go
 ```
 
+### Deploy and Call Smart Contracts
+
+Deploy a contract:
+```bash
+go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 deploy --amount 1000000 --gas-limit 50000 --gas-price 100
+```
+
+Call a deployed contract:
+```bash
+go run cmd/wallet/main.go --privkey YOUR_PRIVATE_KEY --node localhost:8080 call --contract CONTRACT_ADDRESS --amount 0 --gas-limit 50000 --gas-price 100
+```
+
 ### Run Tests
 
 ```bash
@@ -227,6 +239,96 @@ instructions := []avm.Instruction{
 - **Memory bounds checking** with sparse map storage
 - **Control flow validation** prevents invalid jumps
 - **Comprehensive error handling** for all edge cases
+
+## Smart Contracts
+
+Smart contracts in August are AVM bytecode programs with persistent storage and gas-metered execution.
+
+### Contract Structure
+
+Contracts have two types of code:
+- **Init Instructions**: Run once during deployment to initialize storage
+- **Runtime Instructions**: Run every time the contract is called
+
+### Persistent Storage
+
+Contracts can store data permanently using:
+- `PSTORE` - Store value at persistent storage address (1000 gas)
+- `PLOAD` - Load value from persistent storage address (1000 gas)
+
+Storage keys and values are 256-bit integers stored as strings.
+
+### Example Contract
+
+Simple counter that increments on each call:
+
+**Init Code (runs once at deployment):**
+```go
+// Initialize counter to 42 at storage address 1
+{Opcode: avm.PUSH, Value: big.NewInt(42)}, // Value 42
+{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Storage address 1
+{Opcode: avm.PSTORE},                      // Store 42 at address 1
+```
+
+**Runtime Code (runs on each call):**
+```go
+{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address 1
+{Opcode: avm.PLOAD},                      // Load current value
+{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Increment amount
+{Opcode: avm.ADD},                        // Add 1 to current value
+{Opcode: avm.DUP},                        // Duplicate for storage + emit
+{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address 1
+{Opcode: avm.PSTORE},                     // Store incremented value
+{Opcode: avm.EMIT},                       // Emit the new value
+```
+
+### Contract Deployment
+
+1. **Create Transaction**: Use wallet with `deploy` command
+2. **Gas Payment**: Deployer pays base deployment fee + gas for init code execution
+3. **Address Generation**: Contract address = hash(deployer_address + nonce)
+4. **Initialization**: Init code runs to set up initial storage
+5. **Storage**: Runtime code is stored for future calls
+
+### Contract Calls
+
+1. **Send Transaction**: Transaction with `To` field set to contract address
+2. **Gas Metering**: Caller pays gas for runtime code execution
+3. **Execution**: Runtime code runs with access to persistent storage
+4. **State Changes**: Storage modifications are persisted after successful execution
+5. **Events**: Contracts can emit data using `EMIT` instruction
+
+### Contract Interaction Workflow
+
+```bash
+# 1. Deploy contract (automatically includes simple counter example)
+go run cmd/wallet/main.go --privkey $PRIVATE_KEY --node localhost:8080 deploy \
+  --amount 1000000 --gas-limit 50000 --gas-price 100
+
+# 2. Mine block to include deployment
+go run cmd/miner/main.go --privkey $PRIVATE_KEY --node localhost:8080 --maxblocks 1
+
+# 3. Call contract (increments counter)
+go run cmd/wallet/main.go --privkey $PRIVATE_KEY --node localhost:8080 call \
+  --contract $CONTRACT_ADDRESS --amount 0 --gas-limit 50000 --gas-price 100
+
+# 4. Mine block to include call
+go run cmd/miner/main.go --privkey $PRIVATE_KEY --node localhost:8080 --maxblocks 1
+
+# 5. Check contract storage state
+curl http://localhost:8080/chain-state | jq '.account_states["$CONTRACT_ADDRESS"].persistent'
+
+# Alternative: Use debug script for automated deployment and testing
+python3 scripts/deploy_and_call_contract.py        # Full workflow
+python3 scripts/deploy_and_call_contract.py -step  # Interactive mode
+```
+
+### Gas Costs
+
+- **Contract Deployment**: 20,000 gas base fee + init code execution
+- **Contract Call**: 21,000 gas base fee + runtime code execution
+- **Storage Operations**: 1,000 gas per PSTORE/PLOAD
+- **Failed Calls**: Gas is still consumed even if execution fails
 
 ## HTTP Query API
 
