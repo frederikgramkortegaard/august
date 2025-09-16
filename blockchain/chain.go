@@ -1,5 +1,7 @@
 package blockchain
 
+import "august/avm"
+
 // ChainHead represents the current head of the blockchain
 type ChainHead struct {
 	Height    uint64 `json:"height"`
@@ -31,10 +33,27 @@ func (c *Chain) DeepCopy() *Chain {
 	accountStates := make(map[PublicKey]*AccountState)
 	for pubKey, state := range c.AccountStates {
 		if state != nil {
+			// Deep copy Instructions slice
+			var instructions []avm.Instruction
+			if state.Instructions != nil {
+				instructions = make([]avm.Instruction, len(state.Instructions))
+				copy(instructions, state.Instructions)
+			}
+
+			// Deep copy Persistent storage map
+			persistent := make(map[string]string)
+			for k, v := range state.Persistent {
+				persistent[k] = v
+			}
+
 			accountStates[pubKey] = &AccountState{
-				Address: state.Address,
-				Balance: state.Balance,
-				Nonce:   state.Nonce,
+				Address:      state.Address,
+				Balance:      state.Balance,
+				Nonce:        state.Nonce,
+				Instructions: instructions,
+				Persistent:   persistent,
+				StorageRoot:  state.StorageRoot,
+				CodeHash:     state.CodeHash,
 			}
 		}
 	}

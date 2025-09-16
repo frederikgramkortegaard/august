@@ -7,6 +7,8 @@ Simple script to reproduce the gas calculation issue:
 4. Mine a block
 5. Call the contract
 6. Mine a block (this should fail with gas mismatch)
+
+With -step mode: repeatedly call contract and mine blocks with manual stepping
 """
 
 import subprocess
@@ -16,6 +18,7 @@ import os
 import signal
 import threading
 import sys
+import argparse
 
 # ANSI color codes
 class Colors:
@@ -73,7 +76,43 @@ def node_output_reader(process, stop_event):
     except Exception as e:
         colored_print(f"Error reading node output: {e}", Colors.PURPLE)
 
+def step_through_mode(privkey, contract_addr):
+    """Step-through mode: repeatedly call contract and mine with manual stepping"""
+    call_count = 0
+
+    while True:
+        call_count += 1
+        colored_print(f"\n=== Step {call_count}: Contract Call & Mine ===", Colors.BOLD)
+
+        # Get chain state before
+        colored_print("Chain state before call:", Colors.CYAN)
+        run_cmd(f"curl -s http://localhost:8334/chain-state | jq '.account_states.\"{contract_addr}\".persistent'", output_color=Colors.CYAN)
+
+        # Call the contract
+        colored_print(f"Calling contract (call #{call_count})...", Colors.RED)
+        call_result = run_cmd(f"go run cmd/wallet/main.go --node localhost:8334 --privkey {privkey} call --contract {contract_addr} --amount 0 --gas-limit 50000 --gas-price 100", capture_output=False, output_color=Colors.RED)
+
+        # Mine the block with the contract call
+        colored_print("Mining block...", Colors.BLUE)
+        mine_result = run_cmd(f"go run cmd/miner/main.go --node localhost:8334 --privkey {privkey} --maxblocks 1", capture_output=False, timeout=15, output_color=Colors.BLUE)
+
+        # Get chain state after
+        colored_print("Chain state after call:", Colors.GREEN)
+        run_cmd(f"curl -s http://localhost:8334/chain-state | jq '.account_states.\"{contract_addr}\".persistent'", output_color=Colors.GREEN)
+
+        # Wait for user input to continue
+        try:
+            input(f"\n{Colors.YELLOW}Press Enter to continue to step {call_count + 1}, or Ctrl+C to exit...{Colors.END}")
+        except KeyboardInterrupt:
+            colored_print("\nExiting step-through mode.", Colors.YELLOW)
+            break
+
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Deploy and call contract debug script")
+    parser.add_argument("-step", action="store_true", help="Enable step-through mode for repeated contract calls")
+    args = parser.parse_args()
+
     print("=== Debugging Gas Calculation Issue ===")
     os.chdir("/Users/fgk/Developer/august")
 
@@ -140,6 +179,7 @@ def main():
             colored_print("Failed to deploy contract!", Colors.PURPLE)
             return
         colored_print("Contract deployed", Colors.RED)
+        time.sleep(1)  # Ensure different timestamps
 
         # Mine block with contract deployment
         colored_print("\n6. Mining block with contract deployment...", Colors.BOLD)
@@ -149,10 +189,28 @@ def main():
             colored_print("This is likely where the gas mismatch occurs!", Colors.PURPLE)
             return
         colored_print("Mined block with contract", Colors.BLUE)
+        time.sleep(1)  # Ensure different timestamps
 
-        # Get contract address from node output (look for "Deployed contract at:")
+        # Get contract address from the chain state after deployment
         colored_print("\n7. Getting contract address...", Colors.BOLD)
-        contract_addr = "3a789352b6c664552d62e37d3d9c78c02375626902ca3cecaeecdf6dccf18668"  # From deployment output
+        # Find the contract with instructions (not the user account)
+        get_state = run_cmd(f"curl -s http://localhost:8334/chain-state", output_color=Colors.CYAN)
+        contract_addr = None
+        import json
+        try:
+            if get_state and get_state.stdout:
+                state_data = json.loads(get_state.stdout)
+                for addr, account in state_data.get("account_states", {}).items():
+                    if account.get("instructions") and len(account.get("instructions", [])) > 0:
+                        contract_addr = addr
+                        break
+        except:
+            pass
+
+        if not contract_addr:
+            colored_print("Could not find deployed contract address!", Colors.PURPLE)
+            return
+
         colored_print(f"Using contract address: {contract_addr}", Colors.CYAN)
 
         # Check chain state before calling contract
@@ -165,6 +223,7 @@ def main():
         if call_result.returncode != 0:
             colored_print("Contract call failed (expected for this demo)", Colors.RED)
         colored_print("Contract call attempted", Colors.RED)
+        time.sleep(1)  # Ensure different timestamps
 
         # Mine final block with contract call
         colored_print("\n10. Mining final block...", Colors.BOLD)
@@ -205,6 +264,15 @@ def main():
                         colored_print(f"Unexpected value: expected 43, got {value}", Colors.PURPLE)
         except Exception as e:
             colored_print(f"Error parsing chain state: {e}", Colors.PURPLE)
+
+        # Check if step-through mode was requested
+        if args.step:
+            colored_print("\n=== Entering Step-Through Mode ===", Colors.BOLD)
+            colored_print("You can now repeatedly call the contract and see storage changes.", Colors.CYAN)
+            try:
+                step_through_mode(privkey, contract_addr)
+            except Exception as e:
+                colored_print(f"Error in step-through mode: {e}", Colors.PURPLE)
 
     finally:
         # Stop the output reading thread

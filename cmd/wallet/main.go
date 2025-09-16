@@ -270,8 +270,7 @@ func GetContract() ([]avm.Instruction, []avm.Instruction) {
 		{Opcode: avm.ADD},                        // Add 1 to current value
 		{Opcode: avm.DUP},                        // Duplicate result for emit
 		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Storage address
-		{Opcode: avm.SWAP, Param: 1}, // Swap to get incremented value on top
-		{Opcode: avm.PSTORE},                     // Store incremented value at address 1
+		{Opcode: avm.PSTORE},                     // Store incremented value at address 1 (stack: [value, address])
 		{Opcode: avm.EMIT},                       // Emit the new value
 	}
 
