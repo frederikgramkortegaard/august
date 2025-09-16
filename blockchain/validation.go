@@ -2,6 +2,9 @@ package blockchain
 
 import (
 	"august/avm"
+	"august/config"
+	"august/crypt"
+	"august/types"
 	. "august/types"
 	"crypto/ed25519"
 	"fmt"
@@ -20,7 +23,7 @@ func debugLog(format string, args ...interface{}) {
 
 // ErrMissingParent is returned when a block's parent is not found in the chain
 type ErrMissingParent struct {
-	Hash Hash32
+	Hash types.Hash32
 }
 
 func (e ErrMissingParent) Error() string { return "missing parent" }
@@ -37,7 +40,7 @@ func (e ErrSwitchChain) Error() string { return "chain switch" }
 // This is used by networking layer to validate headers from peers
 func ValidateHeaderStructure(header *BlockHeader) error {
 	// 1. Proof of Work - check if hash meets the target specified in header
-	hash := HashBlockHeader(header)
+	hash := header.GetHash()
 	if !BlockHashMeetsDifficulty(hash, header.Bits) {
 		difficulty := CalculateDifficulty(header.Bits)
 		diffFloat, _ := difficulty.Float64()
@@ -47,8 +50,8 @@ func ValidateHeaderStructure(header *BlockHeader) error {
 	// 2. Basic field validation
 	if header.Height == 0 {
 		// Genesis block validation
-		genesisHash := HashBlockHeader(&GenesisBlock.Header)
-		headerHash := HashBlockHeader(header)
+		genesisHash := GenesisBlock.Header.GetHash()
+		headerHash := header.GetHash()
 		if genesisHash != headerHash {
 			return fmt.Errorf("invalid genesis header")
 		}
@@ -69,7 +72,7 @@ func ValidateBlockStructure(block *Block) error {
 	}
 
 	// 2. Merkle root validation
-	merkle := MerkleTransactions(block.Transactions)
+	merkle := crypt.MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
 		return fmt.Errorf("merkle root mismatch")
 	}
@@ -94,8 +97,8 @@ func ValidateBlockStructure(block *Block) error {
 
 func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	// Ensure the first block is genesis
-	genesisHash := HashBlockHeader(&GenesisBlock.Header)
-	firstBlockHash := HashBlockHeader(header)
+	genesisHash := GenesisBlock.Header.GetHash()
+	firstBlockHash := header.GetHash()
 
 	// Direct comparison for [32]byte arrays
 	if genesisHash != firstBlockHash {
@@ -119,7 +122,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	} else {
 		// Check if we have the parent block using O(1) lookup
 		var parentExists bool
-		prevBlock, parentExists = chain.GetBlockByHash(block.Header.PreviousHash)
+		prevBlock, parentExists = GetBlockByHash(chain, block.Header.PreviousHash)
 
 		// Parent block not found - this is an orphan
 		if !parentExists {
@@ -127,14 +130,14 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		}
 
 		// Check if this is a fork (parent exists but is not the tip)
-		if chain.Tip != nil && HashBlockHeader(&chain.Tip.Header) != block.Header.PreviousHash {
+		if chain.Tip != nil && chain.Tip.Header.GetHash() != block.Header.PreviousHash {
 			// This is a fork - let ValidateAndApplyBlock handle chain switching
 			return ErrSwitchChain{Block: block, CommonAncestor: prevBlock}
 		}
 	}
 
 	// 2. Proof Of Work - check if hash meets the target specified in block header
-	hash := HashBlockHeader(&block.Header)
+	hash := block.Header.GetHash()
 	if !BlockHashMeetsDifficulty(hash, block.Header.Bits) {
 		difficulty := CalculateDifficulty(block.Header.Bits)
 		diffFloat, _ := difficulty.Float64()
@@ -148,7 +151,7 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	}
 
 	// 3. Merkle Root
-	merkle := MerkleTransactions(block.Transactions)
+	merkle := crypt.MerkleTransactions(block.Transactions)
 	if merkle != block.Header.MerkleRoot {
 		return fmt.Errorf("merkle root is not correct")
 	}
@@ -164,10 +167,10 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 // validateTransactionSignature validates just the cryptographic signature
 func validateTransactionSignature(tsx *Transaction) bool {
 	debugLog("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
-	signingData := GetSigningBytesFromTransaction(tsx)
+	signingData := tsx.GetHash()
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
-	valid := ed25519.Verify(publicKey, signingData, signature)
+	valid := ed25519.Verify(publicKey, signingData[:], signature)
 	if !valid {
 		debugLog("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
 	} else {
@@ -338,7 +341,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	// Handle contract deployment or regular transfer
 	if isContractDeployment {
 		// Generate contract address from sender + nonce
-		contractAddr := GenerateContractAddress(tsx.From, fromState.Nonce)
+		contractAddr := crypt.GenerateContractAddress(tsx.From, fromState.Nonce)
 
 		// Create initial contract state (only stored if init succeeds)
 		contractState := &AccountState{
@@ -347,8 +350,8 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			Nonce:        0,
 			Instructions: tsx.Instructions, // Runtime code
 			Persistent:   make(map[string]string),
-			StorageRoot:  ComputeStorageRoot(nil),
-			CodeHash:     ComputeCodeHash(tsx.Instructions),
+			StorageRoot:  crypt.ComputeStorageRoot(nil),
+			CodeHash:     crypt.ComputeCodeHash(tsx.Instructions),
 		}
 
 		// Track whether contract deployment succeeds
@@ -389,7 +392,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 					contractState.Persistent[key] = value
 				}
 				// Update storage root to reflect persistent storage changes
-				contractState.StorageRoot = ComputeStorageRoot(contractState.Persistent)
+				contractState.StorageRoot = crypt.ComputeStorageRoot(contractState.Persistent)
 				fmt.Printf("Contract initialized successfully, gas used: %d, stored %d values\n", initGasUsed, len(runtime.Persistent))
 				contractDeployed = true
 			}
@@ -477,7 +480,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 							toState.Persistent[key] = value
 						}
 						// Update storage root to reflect persistent storage changes
-						toState.StorageRoot = ComputeStorageRoot(toState.Persistent)
+						toState.StorageRoot = crypt.ComputeStorageRoot(toState.Persistent)
 						fmt.Printf("Applied %d persistent storage updates\n", len(runtime.Persistent))
 					}
 				} else {
@@ -652,7 +655,7 @@ func ApplyBlock(block *Block, chain *Chain) error {
 	}
 
 	// Add the block to the chain and update tip/index
-	chain.AddBlock(block)
+	AddBlock(chain, block)
 	return nil
 }
 
@@ -678,7 +681,7 @@ func ValidateHeaderChain(headers []BlockHeader) bool {
 
 	// Basic validation - each header should link to the previous
 	for i := 1; i < len(headers); i++ {
-		prevHash := HashBlockHeader(&headers[i-1])
+		prevHash := headers[i-1].GetHash()
 		if headers[i].PreviousHash != prevHash {
 			return false
 		}
@@ -759,9 +762,9 @@ func ValidateCompleteChain(candidateChain *Chain) error {
 	}
 
 	// Initialize with genesis account (FirstUser gets 10 AUG)
-	validationChain.AccountStates[FirstUser] = &AccountState{
-		Address: FirstUser,
-		Balance: 10 * AUG,
+	validationChain.AccountStates[config.FirstUser] = &AccountState{
+		Address: config.FirstUser,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -794,7 +797,7 @@ func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockE
 		// This might be the next block in sequence
 		if len(currentChain.Blocks) > 0 {
 			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
-			if HashBlockHeader(&ourTip.Header) == header.PreviousHash {
+			if ourTip.Header.GetHash() == header.PreviousHash {
 				return BlockEvaluationResult{
 					ShouldRequest: true,
 					Reason:        "next block in sequence",
@@ -829,4 +832,3 @@ func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockE
 		Action:        "ignore",
 	}
 }
-

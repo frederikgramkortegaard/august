@@ -1,21 +1,19 @@
 package crypt
 
 import (
-	"august/blockchain"
+	"august/types"
 	"crypto/sha256"
 )
 
-type Transaction blockchain.Transaction
-
 // MerkleTransactions computes a Merkle root for a list of transactions
-func MerkleTransactions(transactions []Transaction) Hash32 {
+func MerkleTransactions(transactions []types.Transaction) types.Hash32 {
 	if len(transactions) == 0 {
-		return Hash32{}
+		return types.Hash32{}
 	}
 
 	hashes := make([][]byte, len(transactions))
 	for i, tx := range transactions {
-		h := HashTransaction(&tx)
+		h := tx.GetHash()
 		hashes[i] = h[:]
 	}
 
@@ -34,7 +32,7 @@ func MerkleTransactions(transactions []Transaction) Hash32 {
 		hashes = newLevel
 	}
 
-	var root Hash32
+	var root types.Hash32
 	copy(root[:], hashes[0])
 	return root
 }

@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"august/config"
 	. "august/types"
 	"encoding/json"
 	"fmt"

@@ -2,12 +2,11 @@ package types
 
 import (
 	"august/avm"
-	"crypto/ed25519"
 )
 
 type Transaction struct {
-	From             ed25519.PublicKey `json:"from"`
-	To               ed25519.PublicKey `json:"to"`
+	From             PublicKey `json:"from"`
+	To               PublicKey `json:"to"`
 	Amount           uint64            `json:"amount"`
 	Signature        Signature         `json:"signature"`
 	Nonce            uint64            `json:"nonce"`

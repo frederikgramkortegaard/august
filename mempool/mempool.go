@@ -4,18 +4,18 @@ import (
 	"august/blockchain"
 	"august/types"
 	"container/heap"
+	"sync"
 	"time"
 )
 
-// Type aliases to allow method definitions in this package
-type GasPriceQueue = types.GasPriceQueue
-type MempoolEntry = types.MempoolEntry
-type Mempool = types.Mempool
-type Config = types.MempoolConfig
-type Transaction = types.Transaction
-type PublicKey = types.PublicKey
-type AccountState = types.AccountState
-
+// Local type definitions to allow method implementations
+type GasPriceQueue []*types.MempoolEntry
+type Mempool struct {
+	Mu           sync.RWMutex
+	Queue        *GasPriceQueue
+	Transactions map[string]*types.MempoolEntry
+	Config       types.MempoolConfig
+}
 
 func (pq GasPriceQueue) Len() int { return len(pq) }
 
@@ -33,7 +33,7 @@ func (pq GasPriceQueue) Swap(i, j int) {
 }
 
 func (pq *GasPriceQueue) Push(x interface{}) {
-	*pq = append(*pq, x.(*MempoolEntry))
+	*pq = append(*pq, x.(*types.MempoolEntry))
 }
 
 func (pq *GasPriceQueue) Pop() interface{} {
@@ -45,7 +45,7 @@ func (pq *GasPriceQueue) Pop() interface{} {
 }
 
 // NewMempool creates a new mempool with given configuration
-func NewMempool(config Config) *Mempool {
+func NewMempool(config types.MempoolConfig) *Mempool {
 	if config.MaxSize <= 0 {
 		config.MaxSize = 1000
 	}
@@ -57,24 +57,24 @@ func NewMempool(config Config) *Mempool {
 	heap.Init(queue)
 
 	return &Mempool{
-		queue:        queue,
-		transactions: make(map[string]*MempoolEntry),
-		config:       config,
+		Queue:        queue,
+		Transactions: make(map[string]*types.MempoolEntry),
+		Config:       config,
 	}
 }
 
 // AddTransaction adds a transaction to the mempool after validation
 // Returns true if added, false if rejected (duplicate, invalid, etc.)
-func (mp *Mempool) AddTransaction(tx Transaction, accountStates map[PublicKey]*AccountState) bool {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+func (mp *Mempool) AddTransaction(tx types.Transaction, accountStates map[types.PublicKey]*types.AccountState) bool {
+	mp.Mu.Lock()
+	defer mp.Mu.Unlock()
 
 	// Generate transaction hash for deduplication
 	txHash := tx.GetHash()
 	hashStr := string(txHash[:])
 
 	// Check if transaction already exists
-	if _, exists := mp.transactions[hashStr]; exists {
+	if _, exists := mp.Transactions[hashStr]; exists {
 		return false // Duplicate transaction
 	}
 
@@ -83,17 +83,17 @@ func (mp *Mempool) AddTransaction(tx Transaction, accountStates map[PublicKey]*A
 		return false // Invalid transaction
 	}
 
-	entry := &MempoolEntry{
+	entry := &types.MempoolEntry{
 		Transaction: tx,
 		AddedAt:     time.Now(),
 		GasPrice:    tx.GasPrice,
 	}
 
 	// If mempool is full, check if we should evict lowest gas price transaction
-	if len(mp.transactions) >= mp.config.MaxSize {
+	if len(mp.Transactions) >= mp.Config.MaxSize {
 		// Find the lowest gas price transaction (last in max heap)
-		if mp.queue.Len() > 0 {
-			lowestGasPriceEntry := (*mp.queue)[mp.queue.Len()-1]
+		if mp.Queue.Len() > 0 {
+			lowestGasPriceEntry := (*mp.Queue)[mp.Queue.Len()-1]
 
 			// Only add if new transaction has higher gas price
 			if tx.GasPrice <= lowestGasPriceEntry.GasPrice {
@@ -106,33 +106,33 @@ func (mp *Mempool) AddTransaction(tx Transaction, accountStates map[PublicKey]*A
 	}
 
 	// Add transaction to both structures
-	heap.Push(mp.queue, entry)
-	mp.transactions[hashStr] = entry
+	heap.Push(mp.Queue, entry)
+	mp.Transactions[hashStr] = entry
 
 	return true
 }
 
 // GetTransactions returns the top N transactions ordered by fee (highest first)
-func (mp *Mempool) GetTransactions(limit int) []Transaction {
+func (mp *Mempool) GetTransactions(limit int) []types.Transaction {
 	// Use write lock since we modify state by cleaning expired transactions
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+	mp.Mu.Lock()
+	defer mp.Mu.Unlock()
 
 	// Clean expired transactions first
 	mp.cleanExpiredTransactions()
 
-	var transactions []Transaction
+	var transactions []types.Transaction
 	count := limit
-	if count > mp.queue.Len() {
-		count = mp.queue.Len()
+	if count > mp.Queue.Len() {
+		count = mp.Queue.Len()
 	}
 
 	// Create a copy of the queue for iteration without modifying original
-	tempQueue := make(GasPriceQueue, len(*mp.queue))
-	copy(tempQueue, *mp.queue)
+	tempQueue := make(GasPriceQueue, len(*mp.Queue))
+	copy(tempQueue, *mp.Queue)
 
 	for i := 0; i < count && len(tempQueue) > 0; i++ {
-		entry := heap.Pop(&tempQueue).(*MempoolEntry)
+		entry := heap.Pop(&tempQueue).(*types.MempoolEntry)
 		transactions = append(transactions, entry.Transaction)
 	}
 
@@ -141,17 +141,17 @@ func (mp *Mempool) GetTransactions(limit int) []Transaction {
 
 // RemoveTransactions removes the given transactions from the mempool
 // Used when transactions are included in a mined block
-func (mp *Mempool) RemoveTransactions(transactions []Transaction) int {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+func (mp *Mempool) RemoveTransactions(transactions []types.Transaction) int {
+	mp.Mu.Lock()
+	defer mp.Mu.Unlock()
 
 	removed := 0
 	for _, tx := range transactions {
 		txHash := tx.GetHash()
 		hashStr := string(txHash[:])
 
-		if _, exists := mp.transactions[hashStr]; exists {
-			delete(mp.transactions, hashStr)
+		if _, exists := mp.Transactions[hashStr]; exists {
+			delete(mp.Transactions, hashStr)
 			removed++
 		}
 	}
@@ -164,22 +164,22 @@ func (mp *Mempool) RemoveTransactions(transactions []Transaction) int {
 
 // Size returns the current number of transactions in the mempool
 func (mp *Mempool) Size() int {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-	return len(mp.transactions)
+	mp.Mu.RLock()
+	defer mp.Mu.RUnlock()
+	return len(mp.Transactions)
 }
 
 // IsFull returns true if mempool is at capacity
 func (mp *Mempool) IsFull() bool {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-	return len(mp.transactions) >= mp.config.MaxSize
+	mp.Mu.RLock()
+	defer mp.Mu.RUnlock()
+	return len(mp.Transactions) >= mp.Config.MaxSize
 }
 
 // CleanExpiredTransactions removes transactions older than MaxExpiry
 func (mp *Mempool) CleanExpiredTransactions() int {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+	mp.Mu.Lock()
+	defer mp.Mu.Unlock()
 	return mp.cleanExpiredTransactions()
 }
 
@@ -188,9 +188,9 @@ func (mp *Mempool) cleanExpiredTransactions() int {
 	now := time.Now()
 	removed := 0
 
-	for hash, entry := range mp.transactions {
-		if now.Sub(entry.AddedAt) > mp.config.MaxExpiry {
-			delete(mp.transactions, hash)
+	for hash, entry := range mp.Transactions {
+		if now.Sub(entry.AddedAt) > mp.Config.MaxExpiry {
+			delete(mp.Transactions, hash)
 			removed++
 		}
 	}
@@ -204,51 +204,51 @@ func (mp *Mempool) cleanExpiredTransactions() int {
 
 // removeLowestGasPrice removes the transaction with lowest gas price (must hold lock)
 func (mp *Mempool) removeLowestGasPrice() {
-	if mp.queue.Len() == 0 {
+	if mp.Queue.Len() == 0 {
 		return
 	}
 
 	// Find the entry with lowest gas price (linear search through heap)
 	lowestIdx := 0
-	lowestGasPrice := (*mp.queue)[0].GasPrice
+	lowestGasPrice := (*mp.Queue)[0].GasPrice
 
-	for i, entry := range *mp.queue {
-		if entry.GasPrice < lowestGasPrice || (entry.GasPrice == lowestGasPrice && entry.AddedAt.After((*mp.queue)[lowestIdx].AddedAt)) {
+	for i, entry := range *mp.Queue {
+		if entry.GasPrice < lowestGasPrice || (entry.GasPrice == lowestGasPrice && entry.AddedAt.After((*mp.Queue)[lowestIdx].AddedAt)) {
 			lowestIdx = i
 			lowestGasPrice = entry.GasPrice
 		}
 	}
 
 	// Remove from hash map
-	lowestEntry := (*mp.queue)[lowestIdx]
+	lowestEntry := (*mp.Queue)[lowestIdx]
 	txHash := lowestEntry.Transaction.GetHash()
 	hashStr := string(txHash[:])
-	delete(mp.transactions, hashStr)
+	delete(mp.Transactions, hashStr)
 
 	// Remove from heap by replacing with last element
-	lastIdx := mp.queue.Len() - 1
+	lastIdx := mp.Queue.Len() - 1
 	if lowestIdx != lastIdx {
 		// Replace with last element and fix heap
-		(*mp.queue)[lowestIdx] = (*mp.queue)[lastIdx]
-		*mp.queue = (*mp.queue)[:lastIdx]
-		heap.Fix(mp.queue, lowestIdx)
+		(*mp.Queue)[lowestIdx] = (*mp.Queue)[lastIdx]
+		*mp.Queue = (*mp.Queue)[:lastIdx]
+		heap.Fix(mp.Queue, lowestIdx)
 	} else {
 		// Just remove the last element
-		*mp.queue = (*mp.queue)[:lastIdx]
+		*mp.Queue = (*mp.Queue)[:lastIdx]
 	}
 }
 
 // RevalidateTransactions removes transactions that are no longer valid against current chain state
 // This should be called whenever a new block is added to the chain
-func (mp *Mempool) RevalidateTransactions(accountStates map[PublicKey]*AccountState) int {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+func (mp *Mempool) RevalidateTransactions(accountStates map[types.PublicKey]*types.AccountState) int {
+	mp.Mu.Lock()
+	defer mp.Mu.Unlock()
 
 	removed := 0
-	for hash, entry := range mp.transactions {
+	for hash, entry := range mp.Transactions {
 		// Validate transaction against current chain state
 		if err := blockchain.ValidateTransaction(&entry.Transaction, accountStates); err != nil {
-			delete(mp.transactions, hash)
+			delete(mp.Transactions, hash)
 			removed++
 		}
 	}
@@ -264,10 +264,10 @@ func (mp *Mempool) RevalidateTransactions(accountStates map[PublicKey]*AccountSt
 func (mp *Mempool) rebuildHeap() {
 	newQueue := &GasPriceQueue{}
 
-	for _, entry := range mp.transactions {
+	for _, entry := range mp.Transactions {
 		*newQueue = append(*newQueue, entry)
 	}
 
 	heap.Init(newQueue)
-	mp.queue = newQueue
+	mp.Queue = newQueue
 }

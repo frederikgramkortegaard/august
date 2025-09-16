@@ -23,8 +23,8 @@ type MempoolConfig struct {
 
 // Mempool manages pending transactions with gas price-based prioritization
 type Mempool struct {
-	mu           sync.RWMutex
-	queue        *GasPriceQueue
-	transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
-	config       MempoolConfig
+	Mu           sync.RWMutex
+	Queue        *GasPriceQueue
+	Transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
+	Config       MempoolConfig
 }

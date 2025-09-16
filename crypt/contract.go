@@ -2,25 +2,26 @@ package crypt
 
 import (
 	"august/avm"
+	"august/types"
 	"crypto/sha256"
 )
 
 // GenerateContractAddress generates a deterministic contract address from deployer and nonce
-func GenerateContractAddress(deployer PublicKey, nonce NonceType) PublicKey {
+func GenerateContractAddress(deployer types.PublicKey, nonce uint64) types.PublicKey {
 	h := sha256.New()
 	h.Write(deployer[:])
 	h.Write(uint64ToBytes(nonce))
 	hash := h.Sum(nil)
 
-	var addr PublicKey
+	var addr types.PublicKey
 	copy(addr[:], hash[:32])
 	return addr
 }
 
 // ComputeCodeHash calculates the hash of contract instructions
-func ComputeCodeHash(instructions []avm.Instruction) Hash32 {
+func ComputeCodeHash(instructions []avm.Instruction) types.Hash32 {
 	if len(instructions) == 0 {
-		return Hash32{}
+		return types.Hash32{}
 	}
 
 	h := sha256.New()
@@ -32,15 +33,15 @@ func ComputeCodeHash(instructions []avm.Instruction) Hash32 {
 		h.Write(uint32ToBytes(uint32(instruction.Param)))
 	}
 
-	var hash Hash32
+	var hash types.Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
 // ComputeStorageRoot calculates the Merkle root of persistent storage
-func ComputeStorageRoot(persistent map[string]string) Hash32 {
+func ComputeStorageRoot(persistent map[string]string) types.Hash32 {
 	if len(persistent) == 0 {
-		return Hash32{}
+		return types.Hash32{}
 	}
 
 	// Sort keys for deterministic ordering
@@ -83,7 +84,7 @@ func ComputeStorageRoot(persistent map[string]string) Hash32 {
 		hashes = newLevel
 	}
 
-	var root Hash32
+	var root types.Hash32
 	copy(root[:], hashes[0])
 	return root
 }

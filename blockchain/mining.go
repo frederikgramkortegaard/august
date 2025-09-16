@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	. "august/types"
 	"fmt"
 )
 

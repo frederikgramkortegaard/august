@@ -1,7 +1,12 @@
 package networking
 
+import (
+	"august/types"
+	"fmt"
+)
+
 // ProcessMessage handles different types of network messages
-func (network *Network) ProcessMessage(msg *Message) {
+func (network *types.Network) ProcessMessage(msg *types.Message) {
 	// First check if this is a response to a pending request
 	if handled := network.HandleResponse(msg); handled {
 		fmt.Printf("Delivered response for request %s\n", msg.ReplyTo)

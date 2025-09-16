@@ -1,9 +1,12 @@
 package crypt
 
-import "crypto/sha256"
+import (
+	"august/types"
+	"crypto/sha256"
+)
 
 // HashAccountState computes the hash of an account state
-func HashAccountState(state *AccountState) Hash32 {
+func HashAccountState(state *types.AccountState) types.Hash32 {
 	h := sha256.New()
 	h.Write(state.Address[:])
 	h.Write(uint64ToBytes(state.Balance))
@@ -25,19 +28,19 @@ func HashAccountState(state *AccountState) Hash32 {
 	h.Write(state.StorageRoot[:])
 	h.Write(state.CodeHash[:])
 
-	var hash Hash32
+	var hash types.Hash32
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
 
 // ComputeStateRoot calculates the Merkle root of all account states
-func ComputeStateRoot(accountStates map[PublicKey]*AccountState) Hash32 {
+func ComputeStateRoot(accountStates map[types.PublicKey]*types.AccountState) types.Hash32 {
 	if len(accountStates) == 0 {
-		return Hash32{}
+		return types.Hash32{}
 	}
 
 	// Sort accounts by address for deterministic ordering
-	addresses := make([]PublicKey, 0, len(accountStates))
+	addresses := make([]types.PublicKey, 0, len(accountStates))
 	for addr := range accountStates {
 		addresses = append(addresses, addr)
 	}
@@ -80,7 +83,7 @@ func ComputeStateRoot(accountStates map[PublicKey]*AccountState) Hash32 {
 		hashes = newLevel
 	}
 
-	var root Hash32
+	var root types.Hash32
 	copy(root[:], hashes[0])
 	return root
 }
