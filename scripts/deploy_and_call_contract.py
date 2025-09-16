@@ -244,14 +244,14 @@ def main():
         try:
             if state_before and state_before.stdout:
                 before_data = json.loads(state_before.stdout)
-                before_contract = before_data.get("AccountStates", {}).get(contract_addr, {})
-                before_storage = before_contract.get("Persistent", {})
+                before_contract = before_data.get("account_states", {}).get(contract_addr, {})
+                before_storage = before_contract.get("persistent", {})
                 colored_print(f"Storage before call: {before_storage}", Colors.YELLOW)
 
             if state_after and state_after.stdout:
                 after_data = json.loads(state_after.stdout)
-                after_contract = after_data.get("AccountStates", {}).get(contract_addr, {})
-                after_storage = after_contract.get("Persistent", {})
+                after_contract = after_data.get("account_states", {}).get(contract_addr, {})
+                after_storage = after_contract.get("persistent", {})
                 colored_print(f"Storage after call: {after_storage}", Colors.YELLOW)
 
                 # Check if value changed from 42 to 43 (increment)
