@@ -246,7 +246,6 @@ func (n *FullNode) startNetworking() <-chan bool {
 			NodeID:            n.Config.NodeID,
 			Store:             n.Store,
 			SeedPeers:         n.Config.SeedPeers,
-			ReqRespConfig:     networking.DefaultReqRespConfig(),
 			PeerRequestConfig: networking.DefaultPeerRequestConfig(),
 			TransactionProcessor: n.SubmitTransaction, // Process incoming transactions through mempool
 		}

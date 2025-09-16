@@ -20,7 +20,6 @@ type NetworkConfig struct {
 	NodeID               string
 	Store                store.ChainStore
 	SeedPeers            []string                                    // Seed peers for discovery
-	ReqRespConfig        ReqRespConfig                               // Request-response configuration
 	PeerRequestConfig    PeerRequestConfig                           // Bitcoin-style peer request configuration
 	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
 }
@@ -36,7 +35,9 @@ type Server struct {
 	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
-	reqRespClient     *ReqRespClient      // Request-response client
+	// Request-response handling (integrated directly)
+	pendingRequests   map[string]chan *Message
+	pendingMutex      sync.RWMutex
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
@@ -114,31 +115,12 @@ func NewServer(config NetworkConfig) *Server {
 
 	server.chainDownloader = consensus.NewChainDownloader(server.consensusManager, blockRequestFunc, logFunc)
 
-	// Create request-response client with this server as the sender
-	server.reqRespClient = NewReqRespClient(config.ReqRespConfig, server)
+	// Initialize request-response handling
+	server.pendingRequests = make(map[string]chan *Message)
 
 	return server
 }
 
-// SendMessage implements the MessageSender interface for reqresp client
-func (s *Server) SendMessage(peerAddress string, msg RequestResponse) error {
-	// Get the connection for this peer
-	s.peerConnectionsMu.RLock()
-	conn, exists := s.peerConnections[peerAddress]
-	s.peerConnectionsMu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("no connection to peer %s", peerAddress)
-	}
-
-	// Cast to *Message and send
-	message, ok := msg.(*Message)
-	if !ok {
-		return fmt.Errorf("invalid message type")
-	}
-
-	return s.sendMessage(conn, message)
-}
 
 // StartListener begins listening for network connections (TCP only)
 func (s *Server) StartListener() error {
@@ -288,19 +270,19 @@ func (s *Server) checkPeerChains() {
 	s.logf("Checking chain heads from %d peers", len(connectedPeers))
 
 	for _, peer := range connectedPeers {
-		go func(peerAddr string) {
+		go func(p *Peer) {
 			// Request chain head from peer
 			msg, err := NewMessage(MessageTypeRequestChainHead, RequestChainHeadPayload{})
 			if err != nil {
-				s.logf("Failed to create chain head request for %s: %v", peerAddr, err)
+				s.logf("Failed to create chain head request for %s: %v", p.Address, err)
 				return
 			}
 
 			// Use SendNotification since we'll handle the response in handleChainHead
-			if err := s.reqRespClient.SendNotification(peerAddr, msg); err != nil {
-				s.logf("Failed to request chain head from %s: %v", peerAddr, err)
+			if err := s.SendNotification(p, msg); err != nil {
+				s.logf("Failed to request chain head from %s: %v", p.Address, err)
 			}
-		}(peer.Address)
+		}(peer)
 	}
 }
 
@@ -415,7 +397,9 @@ func (s *Server) sendHandshake(peerAddr string) {
 	}
 
 	s.logf("Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
-	if err := s.reqRespClient.SendNotification(peerAddr, msg); err != nil {
+	// Create a temporary peer object for handshake (we don't have a full peer yet)
+	tempPeer := &Peer{Address: peerAddr}
+	if err := s.SendNotification(tempPeer, msg); err != nil {
 		s.logf("Failed to send handshake: %v", err)
 	}
 }
@@ -852,3 +836,4 @@ func (s *Server) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer,
 		return !existingPeer.IsOutgoing
 	}
 }
+

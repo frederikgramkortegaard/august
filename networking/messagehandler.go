@@ -7,7 +7,7 @@ import (
 // ProcessMessage handles different types of network messages
 func ProcessMessage(server *Server, msg *Message, peer *Peer, conn net.Conn) {
 	// First check if this is a response to a pending request
-	if handled := server.reqRespClient.HandleResponse(msg); handled {
+	if handled := server.HandleResponse(msg); handled {
 		server.logf("Delivered response for request %s", msg.ReplyTo)
 		return
 	}

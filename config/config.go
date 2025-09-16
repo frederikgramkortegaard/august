@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // Difficulty adjustment constants
 const (
 	RecalculationFrequency = 2016
@@ -36,4 +38,8 @@ const (
 	GasTransfer          = uint64(21000)          // Base gas for regular transfer
 	GasContractDeploy    = uint64(21000)          // Base gas for contract deployment (before init execution)
 	GasContractInitLimit = uint64(1000000)        // Max gas for contract init execution
+
+	// Network request-response constants
+	RequestTimeout     = 5 * time.Second         // How long to wait for responses
+	MaxPendingRequests = 100                     // Maximum number of pending requests
 )

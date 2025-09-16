@@ -2,7 +2,10 @@ module august
 
 go 1.23.5
 
-require github.com/cockroachdb/pebble v1.1.5
+require (
+	github.com/cockroachdb/pebble v1.1.5
+	github.com/google/uuid v1.3.0
+)
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect

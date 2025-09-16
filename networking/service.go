@@ -128,7 +128,7 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 		for _, peer := range server.peerManager.GetConnectedPeers() {
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
-				if err := server.reqRespClient.SendNotification(peer.Address, msg); err != nil {
+				if err := server.SendNotification(peer, msg); err != nil {
 					server.logf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
 				} else {
 					server.logf("Relayed block %x to peer %s", blockHash[:8], peer.Address)
@@ -181,7 +181,7 @@ func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAdd
 				continue
 			}
 
-			err = server.reqRespClient.SendNotification(peer.Address, msg)
+			err = server.SendNotification(peer, msg)
 			if err != nil {
 				server.logf("Failed to relay transaction %x to peer %s: %v", txHash[:8], peer.Address, err)
 			} else {
@@ -241,7 +241,7 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 		for _, peer := range server.peerManager.GetConnectedPeers() {
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
-				if err := server.reqRespClient.SendNotification(peer.Address, msg); err != nil {
+				if err := server.SendNotification(peer, msg); err != nil {
 					server.logf("Failed to relay header %x to peer %s: %v", blockHash[:8], peer.Address, err)
 				} else {
 					server.logf("Relayed header %x to peer %s", blockHash[:8], peer.Address)
@@ -283,13 +283,13 @@ func RequestPeers(server *Server, maxPeers int) ([]string, error) {
 				return
 			}
 
-			response, err := server.reqRespClient.SendRequest(p.Address, msg)
+			response, err := server.SendRequest(p, msg)
 			if err != nil {
 				responses <- peerDiscoveryResponse{nil, err, p.Address}
 				return
 			}
 
-			responseMsg := response.(*Message)
+			responseMsg := response
 			if responseMsg.Type != MessageTypeSharePeers {
 				responses <- peerDiscoveryResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
 				return
@@ -337,12 +337,12 @@ func RequestChainHead(server *Server, peer *Peer) (*consensus.ChainHeadPayload, 
 		return nil, fmt.Errorf("failed to create chain head request: %w", err)
 	}
 
-	response, err := server.reqRespClient.SendRequest(peer.Address, msg)
+	response, err := server.SendRequest(peer, msg)
 	if err != nil {
 		return nil, err
 	}
 
-	responseMsg := response.(*Message)
+	responseMsg := response
 	if responseMsg.Type != MessageTypeChainHead {
 		return nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type)
 	}
@@ -385,13 +385,13 @@ func RequestHeadersByHeight(server *Server, startHeight uint64, count uint64) ([
 				return
 			}
 
-			response, err := server.reqRespClient.SendRequest(p.Address, msg)
+			response, err := server.SendRequest(p, msg)
 			if err != nil {
 				responses <- headerResponse{nil, err, p.Address}
 				return
 			}
 
-			responseMsg := response.(*Message)
+			responseMsg := response
 			if responseMsg.Type != MessageTypeHeaders {
 				responses <- headerResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
 				return
@@ -465,13 +465,13 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 				return
 			}
 
-			response, err := server.reqRespClient.SendRequest(p.Address, msg)
+			response, err := server.SendRequest(p, msg)
 			if err != nil {
 				responses <- headerResponse{nil, err, p.Address}
 				return
 			}
 
-			responseMsg := response.(*Message)
+			responseMsg := response
 			if responseMsg.Type != MessageTypeHeaders {
 				responses <- headerResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
 				return
@@ -544,13 +544,13 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 				return
 			}
 
-			response, err := server.reqRespClient.SendRequest(p.Address, msg)
+			response, err := server.SendRequest(p, msg)
 			if err != nil {
 				responses <- peerResponse{nil, err, p.Address}
 				return
 			}
 
-			responseMsg := response.(*Message)
+			responseMsg := response
 			if responseMsg.Type != MessageTypeBlocks {
 				responses <- peerResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
 				return
