@@ -56,9 +56,10 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 	var gasFeeSum uint64
 	var totalGasUsed uint64
 
-	for _, tx := range params.Transactions {
+	for i, tx := range params.Transactions {
 		// Skip coinbase transactions
 		if tx.From == (PublicKey{}) {
+			fmt.Printf("MINING DEBUG: tx %d, skipping coinbase, from=%x\n", i, tx.From[:8])
 			continue
 		}
 
@@ -66,8 +67,11 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 		gasUsed, err := ApplyTransaction(&tx, tempAccountStates)
 		if err != nil {
 			// Transaction failed - skip it (in practice, miners might still include failed txs that pay gas)
+			fmt.Printf("MINING DEBUG: tx %d, failed with error: %v\n", i, err)
 			continue
 		}
+
+		fmt.Printf("MINING DEBUG: tx %d, gasUsed=%d, from=%x\n", i, gasUsed, tx.From[:8])
 
 		// Calculate actual gas fee
 		gasFee := gasUsed * tx.GasPrice
@@ -83,6 +87,9 @@ func NewBlock(params BlockCreationParams) (Block, error) {
 		}
 		totalGasUsed = newTotalGasUsed
 	}
+
+	// Debug total
+	fmt.Printf("MINING DEBUG: total gas used in mining: %d\n", totalGasUsed)
 
 	// Validate Coinbase amount
 	expectedCoinbaseAmount, err := utils.SafeAdd(config.BlockReward, gasFeeSum)

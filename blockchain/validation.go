@@ -463,10 +463,9 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 						// This matches Ethereum behavior - failed contract calls still deduct gas
 					} else {
 						fmt.Printf("Contract executed successfully, gas used: %d\n", runtimeGasUsed)
-						// Apply persistent storage changes from runtime execution
-						for key, value := range runtime.Persistent {
-							toState.Persistent[key] = value
-						}
+						// Replace contract's persistent storage with runtime's final state
+						// The runtime started with a copy of all existing storage, so this preserves everything
+						toState.Persistent = runtime.Persistent
 						// Update storage root to reflect persistent storage changes
 						toState.StorageRoot = ComputeStorageRoot(toState.Persistent)
 						fmt.Printf("Applied %d persistent storage updates\n", len(runtime.Persistent))
@@ -596,15 +595,19 @@ func ApplyBlock(block *Block, chain *Chain) error {
 			return fmt.Errorf("failed to apply transaction %d: %w", i, err)
 		}
 
-		// Track total gas used
-		newGasUsed, err := utils.SafeAdd(totalGasUsed, gasUsed)
-		if err != nil {
-			return fmt.Errorf("gas used sum overflow: %w", err)
-		}
-		totalGasUsed = newGasUsed
+		// Debug logging
+		fmt.Printf("VALIDATION DEBUG: tx %d, gasUsed=%d, isCoinbase=%t, from=%x\n",
+			i, gasUsed, tsx.From == (PublicKey{}), tsx.From[:8])
 
-		// Calculate gas fees for non-coinbase transactions
+		// Track total gas used (skip coinbase transactions like mining does)
 		if tsx.From != (PublicKey{}) {
+			newGasUsed, err := utils.SafeAdd(totalGasUsed, gasUsed)
+			if err != nil {
+				return fmt.Errorf("gas used sum overflow: %w", err)
+			}
+			totalGasUsed = newGasUsed
+
+			// Calculate gas fees for non-coinbase transactions
 			gasFee := gasUsed * tsx.GasPrice
 			newGasFees, err := utils.SafeAdd(totalGasFees, gasFee)
 			if err != nil {
@@ -613,6 +616,10 @@ func ApplyBlock(block *Block, chain *Chain) error {
 			totalGasFees = newGasFees
 		}
 	}
+
+	// Debug total
+	fmt.Printf("VALIDATION DEBUG: block reports %d gas, validation calculated %d gas\n",
+		block.Header.GasUsed, totalGasUsed)
 
 	// Validate that block reports correct gas usage
 	if totalGasUsed != block.Header.GasUsed {

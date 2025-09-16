@@ -20,6 +20,7 @@ func main() {
 	nodeAddr := flag.String("node", "localhost:8080", "Node HTTP API address to mine for")
 	minerID := flag.String("id", "", "Miner ID (auto-generated if not provided)")
 	privKey := flag.String("privkey", "", "Private key encoded as Hex")
+	maxBlocks := flag.Int("maxblocks", 0, "Maximum number of blocks to mine (0 = unlimited)")
 	flag.Parse()
 
 	if *privKey == "" {
@@ -50,6 +51,7 @@ func main() {
 		NodeAddr:     *nodeAddr,
 		MinerAddress: blockchain.PublicKey(pub),
 		PrivateKey:   priv,
+		MaxBlocks:    *maxBlocks,
 	}
 
 	// Start mining loop
@@ -61,12 +63,22 @@ type SimpleMiner struct {
 	NodeAddr     string
 	MinerAddress blockchain.PublicKey
 	PrivateKey   ed25519.PrivateKey
+	MaxBlocks    int
 }
 
 func (m *SimpleMiner) StartMining() {
 	log.Printf("%s\tStarting mining loop...", m.ID)
+	if m.MaxBlocks > 0 {
+		log.Printf("%s\tMining limited to %d blocks", m.ID, m.MaxBlocks)
+	}
 
+	blocksMinedCount := 0
 	for {
+		// Check if we've reached the maximum blocks limit
+		if m.MaxBlocks > 0 && blocksMinedCount >= m.MaxBlocks {
+			log.Printf("%s\tReached maximum blocks limit (%d), stopping", m.ID, m.MaxBlocks)
+			return
+		}
 		// Get mining info from node
 		chainInfo, err := m.getChainInfo()
 		if err != nil {
@@ -94,6 +106,14 @@ func (m *SimpleMiner) StartMining() {
 			log.Printf("%s\tFailed to submit block: %v", m.ID, err)
 		} else {
 			log.Printf("%s\tBlock submitted successfully!", m.ID)
+			blocksMinedCount++
+			log.Printf("%s\tBlocks mined: %d", m.ID, blocksMinedCount)
+		}
+
+		// Check if we've reached the maximum blocks limit after successful mining
+		if m.MaxBlocks > 0 && blocksMinedCount >= m.MaxBlocks {
+			log.Printf("%s\tReached maximum blocks limit (%d), stopping", m.ID, m.MaxBlocks)
+			return
 		}
 
 		// Small delay before next mining attempt
