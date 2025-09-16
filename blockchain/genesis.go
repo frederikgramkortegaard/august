@@ -11,10 +11,10 @@ var GenesisBlock *Block
 
 func init() {
 	// Hardcoded genesis block - pre-computed to avoid any runtime calculation
-	// Genesis coinbase transaction gives 10M coins to FirstUser
+	// Genesis coinbase transaction gives 10M coins to config.FirstUser
 	genesisCoinbase := Transaction{
 		From:             PublicKey{}, // Coinbase (empty)
-		To:               FirstUser,   // Send to FirstUser
+		To:               config.FirstUser,   // Send to config.FirstUser
 		Amount:           10 * config.AUG,    // 10 AUG initial coins
 		Nonce:            0,           // Coinbase doesn't need nonce
 		Signature:        Signature{}, // Coinbase doesn't need signature
@@ -50,5 +50,5 @@ func init() {
 	}
 
 	log.Printf("Genesis block loaded (hardcoded) - hash: 00000db1b197dba918877f28230252126e7f2fd4e883941f1be04961e8504b35")
-	log.Printf("FirstUser %x receives 10 AUG initial coins\n", FirstUser[:8])
+	log.Printf("config.FirstUser %x receives 10 AUG initial coins\n", config.FirstUser[:8])
 }

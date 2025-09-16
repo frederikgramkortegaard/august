@@ -1,6 +1,11 @@
 package config
 
-import "time"
+import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
+	"time"
+)
 
 // Difficulty adjustment constants
 const (
@@ -50,4 +55,55 @@ const (
 	RecentBlocksTTL       = 5 * time.Minute      // How long to keep blocks in recent cache
 	RecentTransactionsTTL = 5 * time.Minute      // How long to keep transactions in recent cache
 	CleanupInterval       = 30 * time.Second     // How often to cleanup dead peers
+
+	// Mempool constants
+	MempoolMaxSize   = 1000                      // Maximum number of transactions in mempool
+	MempoolMaxExpiry = 7 * 24 * time.Hour        // Maximum age before transaction expires (7 days)
+
+	// Blockchain constants
+	Difficulty = 1                               // Default difficulty
+
+	// Peer request configuration constants (Bitcoin-style defaults)
+	MaxRequestsPerPeer    = 16                   // Conservative like Bitcoin Core
+	MaxPeersForRequest    = 20                   // Try up to 20 peers in parallel/sequence
+	MinPeersForRequest    = 1                    // Can sync from 1 peer (like Bitcoin)
+	RequestTimeoutSec     = 30                   // 30 second timeout per peer
+	RandomizePeerOrder    = true                 // Whether to randomize peer selection order
+	PreferResponsivePeers = true                 // Prefer peers that have been historically responsive
 )
+
+// PublicKey type for blockchain addresses
+type PublicKey [ed25519.PublicKeySize]byte // 32
+
+// Custom JSON marshaling for PublicKey
+func (pk PublicKey) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + base64.StdEncoding.EncodeToString(pk[:]) + `"`), nil
+}
+
+func (pk *PublicKey) UnmarshalJSON(data []byte) error {
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		return fmt.Errorf("invalid JSON string for PublicKey: %s", string(data))
+	}
+
+	b64String := string(data[1 : len(data)-1])
+	decoded, err := base64.StdEncoding.DecodeString(b64String)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64 '%s': %v", b64String, err)
+	}
+
+	if len(decoded) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid PublicKey size for '%s': got %d, want %d", b64String, len(decoded), ed25519.PublicKeySize)
+	}
+
+	copy(pk[:], decoded)
+	return nil
+}
+
+// FirstUser is the genesis account that receives the initial coin supply
+// Generated from fixed seed in testing/generator.go (testing only!)
+var FirstUser = PublicKey{
+	0x99, 0x3f, 0xe6, 0xa3, 0x6d, 0x19, 0xed, 0x52,
+	0x78, 0x90, 0xa7, 0x69, 0x8e, 0x94, 0x0c, 0x3c,
+	0x1c, 0x62, 0x9c, 0xa0, 0x64, 0x43, 0x83, 0x78,
+	0x71, 0xcb, 0x0e, 0xd1, 0x94, 0x35, 0x22, 0x9b,
+}

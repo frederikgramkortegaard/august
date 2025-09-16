@@ -4,8 +4,7 @@ import (
 	"august/avm"
 	"august/blockchain"
 	"august/config"
-	"august/miner"
-	"crypto/ed25519"
+		"crypto/ed25519"
 	"testing"
 	"time"
 )
@@ -19,8 +18,8 @@ func TestDeploySimpleContract(t *testing.T) {
 	chain.InitializeIndexes()
 
 	// Create initial account state from genesis
-	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
-		Address: blockchain.FirstUser,
+	chain.AccountStates[config.FirstUser] = &blockchain.AccountState{
+		Address: config.FirstUser,
 		Balance: 10 * config.AUG, // From genesis
 		Nonce:   0,
 	}
@@ -34,7 +33,7 @@ func TestDeploySimpleContract(t *testing.T) {
 	copy(minerPublicKey[:], minerPub)
 
 	t.Logf("Miner address: %x", minerPublicKey[:8])
-	t.Logf("Genesis user balance: %d AUG", chain.AccountStates[blockchain.FirstUser].Balance/config.AUG)
+	t.Logf("Genesis user balance: %d AUG", chain.AccountStates[config.FirstUser].Balance/config.AUG)
 
 	// Mine a block to give the miner some coins
 	coinbaseTx := blockchain.Transaction{
@@ -52,7 +51,7 @@ func TestDeploySimpleContract(t *testing.T) {
 
 	// Create and mine block 1
 	previousHash := blockchain.GenesisBlock.Header.GetHash()
-	blockParams := miner.BlockCreationParams{
+	blockParams := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
 		Height:        1,
@@ -64,7 +63,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		CurrentStates: chain.AccountStates, // Pass current blockchain state
 	}
 
-	block1, err := miner.NewBlock(blockParams)
+	block1, err := blockchain.NewBlock(blockParams)
 	if err != nil {
 		t.Fatalf("Failed to mine block 1: %v", err)
 	}
@@ -131,7 +130,7 @@ func TestDeploySimpleContract(t *testing.T) {
 
 	// Mine block 2 with the contract deployment transaction
 	previousHash2 := block1.Header.GetHash()
-	blockParams2 := miner.BlockCreationParams{
+	blockParams2 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
 		Height:        2,
@@ -143,7 +142,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		CurrentStates: chain.AccountStates, // Pass current blockchain state
 	}
 
-	block2, err := miner.NewBlock(blockParams2)
+	block2, err := blockchain.NewBlock(blockParams2)
 	if err != nil {
 		t.Fatalf("Failed to mine block 2: %v", err)
 	}

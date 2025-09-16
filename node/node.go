@@ -2,7 +2,6 @@ package node
 
 import (
 	"august/blockchain"
-	"august/mempool"
 	"august/networking"
 	"august/node/queryapi"
 	"august/storage"
@@ -17,13 +16,11 @@ import (
 
 // NodeConfig holds all configuration for a full node
 type NodeConfig struct {
-	Port           string
-	NodeID         string
-	SeedPeers      []string
-	DBName         string
-	QueryPort      string        // HTTP port for query API and miners (optional)
-	MaxMempoolSize int           // Maximum transactions in mempool (default: 1000)
-	MempoolExpiry  time.Duration // Maximum age for mempool transactions (default: 7 days)
+	Port      string
+	NodeID    string
+	SeedPeers []string
+	DatabaseName    string
+	QueryPort string // HTTP port for query API and miners (optional)
 }
 
 // FullNode orchestrates Peer Discovery and the rest of networking stuff
@@ -36,7 +33,7 @@ type FullNode struct {
 
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server // Network message handling
-	Mempool       *mempool.Mempool   // Transaction pool
+	Mempool       *Mempool           // Transaction pool
 
 	// Goroutine management
 	ctx    context.Context
@@ -47,14 +44,10 @@ type FullNode struct {
 // NewFullNode creates a node that runs all services
 func NewFullNode(config NodeConfig) *FullNode {
 	// Create shared store
-	chainStore := storage.NewPersistentChainStore(config.DBName)
+	chainStore := storage.NewPersistentChainStore(config.DatabaseName)
 
-	// Create mempool with configuration
-	mempoolConfig := mempool.MempoolConfig{
-		MaxSize:   config.MaxMempoolSize,
-		MaxExpiry: config.MempoolExpiry,
-	}
-	nodeMempool := mempool.NewMempool(mempoolConfig)
+	// Create mempool
+	nodeMempool := NewMempool()
 
 	// Create context for goroutine management
 	ctx, cancel := context.WithCancel(context.Background())
@@ -242,11 +235,10 @@ func (n *FullNode) startNetworking() <-chan bool {
 		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
 
 		networkConfig := networking.NetworkConfig{
-			Port:              n.Config.Port,
-			NodeID:            n.Config.NodeID,
-			Store:             n.Store,
-			SeedPeers:         n.Config.SeedPeers,
-			PeerRequestConfig: networking.DefaultPeerRequestConfig(),
+			Port:                 n.Config.Port,
+			NodeID:               n.Config.NodeID,
+			Store:                n.Store,
+			SeedPeers:            n.Config.SeedPeers,
 			TransactionProcessor: n.SubmitTransaction, // Process incoming transactions through mempool
 		}
 		n.NetworkServer = networking.NewServer(networkConfig)

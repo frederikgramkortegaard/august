@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"log"
 	"net"
 )
 
@@ -8,7 +9,7 @@ import (
 func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 	// First check if this is a response to a pending request
 	if handled := s.HandleResponse(msg); handled {
-		s.logf("Delivered response for request %s", msg.ReplyTo)
+		log.Printf(s.config.NodeID+"\t"+"Delivered response for request %s", msg.ReplyTo)
 		return
 	}
 
@@ -46,6 +47,6 @@ func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 	case MessageTypeSubmitBlock:
 		s.ProcessSubmitBlock(msg, conn)
 	default:
-		s.logf("Unknown message type: %s", msg.Type)
+		log.Printf(s.config.NodeID+"\t"+"Unknown message type: %s", msg.Type)
 	}
 }

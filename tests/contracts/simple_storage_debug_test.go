@@ -4,8 +4,7 @@ import (
 	"august/avm"
 	"august/blockchain"
 	"august/config"
-	"august/miner"
-	"crypto/ed25519"
+		"crypto/ed25519"
 	"math/big"
 	"testing"
 	"time"
@@ -20,8 +19,8 @@ func TestSimpleStorageDebug(t *testing.T) {
 	}
 	chain.InitializeIndexes()
 
-	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
-		Address: blockchain.FirstUser,
+	chain.AccountStates[config.FirstUser] = &blockchain.AccountState{
+		Address: config.FirstUser,
 		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
@@ -47,7 +46,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 	}
 
 	previousHash := blockchain.GenesisBlock.Header.GetHash()
-	blockParams1 := miner.BlockCreationParams{
+	blockParams1 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
 		Height:        1,
@@ -59,7 +58,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block1, err := miner.NewBlock(blockParams1)
+	block1, err := blockchain.NewBlock(blockParams1)
 	if err != nil {
 		t.Fatalf("Failed to mine block 1: %v", err)
 	}
@@ -137,7 +136,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 
 	// Deploy the contract
 	previousHash2 := block1.Header.GetHash()
-	blockParams2 := miner.BlockCreationParams{
+	blockParams2 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
 		Height:        2,
@@ -149,7 +148,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block2, err := miner.NewBlock(blockParams2)
+	block2, err := blockchain.NewBlock(blockParams2)
 	if err != nil {
 		t.Fatalf("Failed to mine block 2: %v", err)
 	}

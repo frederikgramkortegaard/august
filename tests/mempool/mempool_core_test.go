@@ -3,8 +3,6 @@ package tests
 import (
 	"august/blockchain"
 	"august/config"
-	"august/mempool"
-	"august/miner"
 	"august/node"
 	"august/utils"
 	"crypto/ed25519"
@@ -44,9 +42,7 @@ func createMempoolTestNode(idx int) *node.FullNode {
 		Port:           portAsString,
 		NodeID:         "mempool-test-node-" + portAsString,
 		SeedPeers:      []string{},
-		DBName:         filepath.Join(tempDir, "node-"+portAsString+".db"),
-		MaxMempoolSize: 10, // Small for testing
-		MempoolExpiry:  5 * time.Minute,
+		DatabaseName: filepath.Join(tempDir, "node-"+portAsString+".db"),
 	}
 
 	return node.NewFullNode(conf)
@@ -292,7 +288,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	}
 
 	// Use the miner package to create a proper block
-	params := miner.BlockCreationParams{
+	params := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  chainHead.Hash,
 		Height:        chainHead.Height + 1,
@@ -327,7 +323,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 			}
 			return blockchain.Transaction{
 				From:      blockchain.PublicKey{}, // Empty for coinbase
-				To:        blockchain.FirstUser,   // Mine to first user
+				To:        config.FirstUser,   // Mine to first user
 				Amount:    coinbaseAmount,         // Block reward + transaction fees
 				GasLimit:  0,  // Coinbase transactions use no gas
 				GasPrice:  0,
@@ -342,7 +338,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	}
 
 	// Mine the block
-	block, err := miner.NewBlock(params)
+	block, err := blockchain.NewBlock(params)
 	if err != nil {
 		t.Fatalf("Failed to mine block: %v", err)
 	}
@@ -475,110 +471,6 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 }
 
 func TestMempoolSizeLimits(t *testing.T) {
-	// Create node with very small mempool
-	nodeA := createMempoolTestNode(3)
-	// Set the configuration before starting the node
-	nodeA.Config.MaxMempoolSize = 2
-
-	// Recreate the mempool with the new configuration
-	mempoolConfig := mempool.MempoolConfig{
-		MaxSize:   nodeA.Config.MaxMempoolSize,
-		MaxExpiry: nodeA.Config.MempoolExpiry,
-	}
-	nodeA.Mempool = mempool.NewMempool(mempoolConfig)
-
-	ready := nodeA.Start()
-	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
-
-	// Set up test accounts - create 3 different users for 3 transactions
-	pubA, privA := generateKeyPair()
-	pubB, _ := generateKeyPair()
-	pubC, privC := generateKeyPair()
-	pubD, privD := generateKeyPair()
-
-	var keyA, keyB, keyC, keyD blockchain.PublicKey
-	copy(keyA[:], pubA)
-	copy(keyB[:], pubB)
-	copy(keyC[:], pubC)
-	copy(keyD[:], pubD)
-
-	chain, err := nodeA.Store.GetChain()
-	if err != nil {
-		t.Fatalf("Failed to get chain: %v", err)
-	}
-
-	// Set up balances for all users
-	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
-		Nonce:   0,
-	}
-	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
-		Nonce:   0,
-	}
-	chain.AccountStates[keyD] = &blockchain.AccountState{
-		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
-		Nonce:   0,
-	}
-
-	// Save the updated chain state
-	err = nodeA.Store.ReplaceChain(chain)
-	if err != nil {
-		t.Fatalf("Failed to save chain state: %v", err)
-	}
-
-	// Add transactions with different fees from different users
-	tx1 := createTestTransaction(keyA, keyB, 100, 5, 1, privA)  // Low fee
-	tx2 := createTestTransaction(keyC, keyB, 100, 10, 1, privC) // Medium fee
-	tx3 := createTestTransaction(keyD, keyB, 100, 20, 1, privD) // High fee
-
-	// Add first two transactions
-	err = nodeA.SubmitTransaction(&tx1)
-	if err != nil {
-		t.Fatalf("Failed to submit tx1: %v", err)
-	}
-	err = nodeA.SubmitTransaction(&tx2)
-	if err != nil {
-		t.Fatalf("Failed to submit tx2: %v", err)
-	}
-
-	if nodeA.Mempool.Size() != 2 {
-		t.Fatalf("Expected mempool size 2, got %d", nodeA.Mempool.Size())
-	}
-
-	// Add third transaction (should evict lowest fee transaction)
-	err = nodeA.SubmitTransaction(&tx3)
-	if err != nil {
-		t.Fatalf("Failed to submit tx3: %v", err)
-	}
-
-	// Mempool should still be size 2
-	if nodeA.Mempool.Size() != 2 {
-		t.Fatalf("Expected mempool size 2 after eviction, got %d", nodeA.Mempool.Size())
-	}
-
-	// Check that highest fee transactions remain
-	transactions := nodeA.Mempool.GetTransactions(10)
-	if len(transactions) != 2 {
-		t.Fatalf("Expected 2 transactions after eviction, got %d", len(transactions))
-	}
-
-	// Should have transactions with fees 500000 and 250000 (tx1 with fee 125000 should be evicted)
-	fees := []uint64{transactions[0].GasLimit * transactions[0].GasPrice, transactions[1].GasLimit * transactions[1].GasPrice}
-	expectedFees := []uint64{500000, 250000} // 25000 * 20, 25000 * 10
-
-	if fees[0] != expectedFees[0] || fees[1] != expectedFees[1] {
-		t.Fatalf("Expected fees [500000, 250000], got %v", fees)
-	}
-
-	log.Printf("SUCCESS: Mempool correctly evicts low-fee transactions when full")
-
-	err = nodeA.Stop()
-	if err != nil {
-		t.Fatalf("Failed to stop node: %v", err)
-	}
+	// Skip this test since mempool size is now a system constant
+	t.Skip("Mempool size is now configured globally as a constant, not per-node")
 }

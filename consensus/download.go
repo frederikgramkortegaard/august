@@ -4,27 +4,23 @@ import (
 	"august/blockchain"
 	"encoding/base64"
 	"fmt"
+	"log"
 )
 
 // BlockRequestFunc is a function that can request blocks from peers
 type BlockRequestFunc func(blockHashes []string) ([]*blockchain.Block, error)
 
-// LogFunc is a function for logging messages
-type LogFunc func(format string, args ...interface{})
-
 // ChainDownloader handles downloading candidate chains
 type ChainDownloader struct {
 	manager       *CandidateManager
 	requestBlocks BlockRequestFunc
-	logf          LogFunc
 }
 
 // NewChainDownloader creates a new chain downloader
-func NewChainDownloader(manager *CandidateManager, requestBlocks BlockRequestFunc, logf LogFunc) *ChainDownloader {
+func NewChainDownloader(manager *CandidateManager, requestBlocks BlockRequestFunc) *ChainDownloader {
 	return &ChainDownloader{
 		manager:       manager,
 		requestBlocks: requestBlocks,
-		logf:          logf,
 	}
 }
 
@@ -37,7 +33,7 @@ func (cd *ChainDownloader) DownloadCandidateChain(candidate *CandidateChain) err
 		}
 	}()
 
-	cd.logf("Starting block download for candidate %s", candidate.ID)
+	log.Printf("Starting block download for candidate %s", candidate.ID)
 
 	// Download blocks in batches
 	batchSize := uint64(100)
@@ -52,7 +48,7 @@ func (cd *ChainDownloader) DownloadCandidateChain(candidate *CandidateChain) err
 
 		// Check if we should abort (better candidate appeared)
 		if cd.manager.ShouldAbortDownload(candidate) {
-			cd.logf("Aborting download for candidate %s - better option found", candidate.ID)
+			log.Printf("Aborting download for candidate %s - better option found", candidate.ID)
 			candidate.downloadStatus.Store(2) // mark failed
 			return fmt.Errorf("download aborted for better candidate")
 		}
@@ -67,41 +63,41 @@ func (cd *ChainDownloader) DownloadCandidateChain(candidate *CandidateChain) err
 			}
 		}
 
-		cd.logf("Candidate %s: downloading %d blocks %d-%d from multiple peers", candidate.ID, len(blockHashes), startHeight, startHeight+count-1)
+		log.Printf("Candidate %s: downloading %d blocks %d-%d from multiple peers", candidate.ID, len(blockHashes), startHeight, startHeight+count-1)
 
 		blocks, err := cd.requestBlocks(blockHashes)
 		if err != nil {
-			cd.logf("Failed to download blocks for candidate %s: %v", candidate.ID, err)
+			log.Printf("Failed to download blocks for candidate %s: %v", candidate.ID, err)
 			candidate.downloadStatus.Store(2) // mark failed
 			return fmt.Errorf("failed to download blocks: %w", err)
 		}
 
-		cd.logf("Candidate %s: downloaded %d blocks from peers", candidate.ID, len(blocks))
+		log.Printf("Candidate %s: downloaded %d blocks from peers", candidate.ID, len(blocks))
 
 		// Add blocks to candidate's isolated chain store
 		for _, block := range blocks {
 			if err := candidate.ChainStore.AddBlock(block); err != nil {
-				cd.logf("Failed to add block to candidate %s: %v", candidate.ID, err)
+				log.Printf("Failed to add block to candidate %s: %v", candidate.ID, err)
 				candidate.downloadStatus.Store(2) // mark failed
 				return fmt.Errorf("failed to add block to candidate: %w", err)
 			}
 			candidate.currentHeight.Store(block.Header.Height)
 		}
 
-		cd.logf("Candidate %s: added %d blocks, now at height %d",
+		log.Printf("Candidate %s: added %d blocks, now at height %d",
 			candidate.ID, len(blocks), candidate.currentHeight.Load())
 
 		startHeight += count
 	}
 
-	cd.logf("Candidate %s: download complete, evaluating for promotion", candidate.ID)
+	log.Printf("Candidate %s: download complete, evaluating for promotion", candidate.ID)
 
 	// Download complete - evaluate for promotion
 	if err := cd.manager.EvaluateCandidateForPromotion(candidate); err != nil {
-		cd.logf("Candidate %s not promoted: %v", candidate.ID, err)
+		log.Printf("Candidate %s not promoted: %v", candidate.ID, err)
 		return err
 	}
 
-	cd.logf("Successfully promoted candidate %s to active chain", candidate.ID)
+	log.Printf("Successfully promoted candidate %s to active chain", candidate.ID)
 	return nil
 }

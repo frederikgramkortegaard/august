@@ -4,8 +4,7 @@ import (
 	"august/avm"
 	"august/blockchain"
 	"august/config"
-	"august/miner"
-	"crypto/ed25519"
+		"crypto/ed25519"
 	"math/big"
 	"testing"
 	"time"
@@ -20,8 +19,8 @@ func TestPersistentStorageBasics(t *testing.T) {
 	chain.InitializeIndexes()
 
 	// Create initial account state from genesis
-	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
-		Address: blockchain.FirstUser,
+	chain.AccountStates[config.FirstUser] = &blockchain.AccountState{
+		Address: config.FirstUser,
 		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
@@ -47,7 +46,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 	}
 
 	previousHash := blockchain.GenesisBlock.Header.GetHash()
-	blockParams1 := miner.BlockCreationParams{
+	blockParams1 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
 		Height:        1,
@@ -59,7 +58,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block1, err := miner.NewBlock(blockParams1)
+	block1, err := blockchain.NewBlock(blockParams1)
 	if err != nil {
 		t.Fatalf("Failed to mine block 1: %v", err)
 	}
@@ -153,7 +152,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 
 	// Mine block 2 with contract deployment
 	previousHash2 := block1.Header.GetHash()
-	blockParams2 := miner.BlockCreationParams{
+	blockParams2 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
 		Height:        2,
@@ -165,7 +164,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block2, err := miner.NewBlock(blockParams2)
+	block2, err := blockchain.NewBlock(blockParams2)
 	if err != nil {
 		t.Fatalf("Failed to mine block 2: %v", err)
 	}
@@ -264,7 +263,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 
 	// Mine block 3 with contract call
 	previousHash3 := block2.Header.GetHash()
-	blockParams3 := miner.BlockCreationParams{
+	blockParams3 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash3,
 		Height:        3,
@@ -276,7 +275,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block3, err := miner.NewBlock(blockParams3)
+	block3, err := blockchain.NewBlock(blockParams3)
 	if err != nil {
 		t.Fatalf("Failed to mine block 3: %v", err)
 	}
@@ -318,8 +317,8 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	}
 	chain.InitializeIndexes()
 
-	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
-		Address: blockchain.FirstUser,
+	chain.AccountStates[config.FirstUser] = &blockchain.AccountState{
+		Address: config.FirstUser,
 		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
@@ -345,7 +344,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	}
 
 	previousHash := blockchain.GenesisBlock.Header.GetHash()
-	blockParams1 := miner.BlockCreationParams{
+	blockParams1 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
 		Height:        1,
@@ -357,7 +356,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block1, err := miner.NewBlock(blockParams1)
+	block1, err := blockchain.NewBlock(blockParams1)
 	if err != nil {
 		t.Fatalf("Failed to mine block 1: %v", err)
 	}
@@ -450,7 +449,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 
 	// Mine deployment block
 	previousHash2 := block1.Header.GetHash()
-	blockParams2 := miner.BlockCreationParams{
+	blockParams2 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
 		Height:        2,
@@ -462,7 +461,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block2, err := miner.NewBlock(blockParams2)
+	block2, err := blockchain.NewBlock(blockParams2)
 	if err != nil {
 		t.Fatalf("Failed to mine block 2: %v", err)
 	}
@@ -558,7 +557,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 
 	// Mine call block
 	previousHash3 := block2.Header.GetHash()
-	blockParams3 := miner.BlockCreationParams{
+	blockParams3 := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash3,
 		Height:        3,
@@ -570,7 +569,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 	}
 
-	block3, err := miner.NewBlock(blockParams3)
+	block3, err := blockchain.NewBlock(blockParams3)
 	if err != nil {
 		t.Fatalf("Failed to mine block 3: %v", err)
 	}

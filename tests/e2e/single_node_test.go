@@ -37,13 +37,11 @@ func TestSingleNodeNetwork(t *testing.T) {
 
 	// 2. Start a node
 	nodeConfig := node.NodeConfig{
-		Port:           "9998",
-		NodeID:         "test-node",
-		SeedPeers:      []string{},
-		DBName:         "testdb_e2e",
-		QueryPort:      "8887",
-		MaxMempoolSize: 1000,
-		MempoolExpiry:  time.Hour,
+		Port:         "9998",
+		NodeID:       "test-node",
+		SeedPeers:    []string{},
+		DatabaseName: "testdb_e2e",
+		QueryPort:    "8887",
 	}
 
 	testNode := node.NewFullNode(nodeConfig)

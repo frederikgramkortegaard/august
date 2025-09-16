@@ -40,7 +40,7 @@ func main() {
 		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
-		DBName:    *dbname,
+		DatabaseName:    *dbname,
 		QueryPort: *minerport,
 	}
 

@@ -2,6 +2,7 @@ package networking
 
 import (
 	"august/config"
+	"log"
 	"time"
 )
 
@@ -93,13 +94,13 @@ func (ts *TaskScheduler) runCleanupTasks() {
 	// 3. Clean up dead peers
 	removed := ts.server.CleanupDeadPeers()
 	if removed > 0 {
-		ts.server.logf("Cleaned up %d dead peers", removed)
+		log.Printf(ts.server.config.NodeID+"\t"+"Cleaned up %d dead peers", removed)
 	}
 
 	// 4. Log current chain status
 	ts.server.logChainStatus()
 
-	ts.server.logf("Periodic cleanup completed")
+	log.Printf(ts.server.config.NodeID+"\t"+"Periodic cleanup completed")
 }
 
 // periodicChainSync runs chain synchronization checks
@@ -162,18 +163,18 @@ func (ts *TaskScheduler) Stop() {
 func (s *Server) logChainStatus() {
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get chain for status: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain for status: %v", err)
 		return
 	}
 
 	if len(chain.Blocks) == 0 {
-		s.logf("CHAIN STATUS: No blocks")
+		log.Printf(s.config.NodeID+"\t"+"CHAIN STATUS: No blocks")
 		return
 	}
 
 	latestBlock := chain.Blocks[len(chain.Blocks)-1]
 	blockHash := latestBlock.Header.GetHash()
-	s.logf("CHAIN STATUS: Height %d, Head %x, TxCount %d",
+	log.Printf(s.config.NodeID+"\t"+"CHAIN STATUS: Height %d, Head %x, TxCount %d",
 		latestBlock.Header.Height,
 		blockHash[:8],
 		len(latestBlock.Transactions))
@@ -193,7 +194,7 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 	}
 
 	if cleaned > 0 {
-		s.logf("Cleaned up %d old recent blocks", cleaned)
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent blocks", cleaned)
 	}
 }
 
@@ -211,7 +212,7 @@ func (s *Server) cleanRecentTransactions(now time.Time) {
 	}
 
 	if cleaned > 0 {
-		s.logf("Cleaned up %d old recent transactions", cleaned)
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent transactions", cleaned)
 	}
 }
 
@@ -222,20 +223,20 @@ func (s *Server) checkPeerChains() {
 		return // No peers to sync with
 	}
 
-	s.logf("Checking chain heads from %d peers", len(connectedPeers))
+	log.Printf(s.config.NodeID+"\t"+"Checking chain heads from %d peers", len(connectedPeers))
 
 	for _, peer := range connectedPeers {
 		go func(p *Peer) {
 			// Request chain head from peer
 			msg, err := NewMessage(MessageTypeRequestChainHead, RequestChainHeadPayload{})
 			if err != nil {
-				s.logf("Failed to create chain head request for %s: %v", p.Address, err)
+				log.Printf(s.config.NodeID+"\t"+"Failed to create chain head request for %s: %v", p.Address, err)
 				return
 			}
 
 			// Use SendNotification since we'll handle the response in handleChainHead
 			if err := s.SendNotification(p, msg); err != nil {
-				s.logf("Failed to send chain head request to %s: %v", p.Address, err)
+				log.Printf(s.config.NodeID+"\t"+"Failed to send chain head request to %s: %v", p.Address, err)
 			}
 		}(peer)
 	}

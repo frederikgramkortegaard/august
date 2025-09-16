@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 		Port:      "9372",
 		NodeID:    "test-node-id",
 		SeedPeers: []string{""},
-		DBName:    filepath.Join(tempDir, "testdb"),
+		DatabaseName:    filepath.Join(tempDir, "testdb"),
 	}
 
 	// Run all tests

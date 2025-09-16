@@ -1,7 +1,8 @@
-package mempool
+package node
 
 import (
 	"august/blockchain"
+	"august/config"
 	"container/heap"
 	"sync"
 	"time"
@@ -44,36 +45,22 @@ func (pq *GasPriceQueue) Pop() interface{} {
 	return item
 }
 
-// MempoolConfig holds mempool configuration
-type MempoolConfig struct {
-	MaxSize    int           // Maximum number of transactions (default: 1000)
-	MaxExpiry  time.Duration // Maximum age before expiry (default: 7 days)
-}
 
 // Mempool manages pending transactions with gas price-based prioritization
 type Mempool struct {
 	mu           sync.RWMutex
 	queue        *GasPriceQueue
 	transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
-	config       MempoolConfig
 }
 
-// NewMempool creates a new mempool with given configuration
-func NewMempool(config MempoolConfig) *Mempool {
-	if config.MaxSize <= 0 {
-		config.MaxSize = 1000
-	}
-	if config.MaxExpiry <= 0 {
-		config.MaxExpiry = 7 * 24 * time.Hour // 7 days
-	}
-
+// NewMempool creates a new mempool
+func NewMempool() *Mempool {
 	queue := &GasPriceQueue{}
 	heap.Init(queue)
 
 	return &Mempool{
 		queue:        queue,
 		transactions: make(map[string]*MempoolEntry),
-		config:       config,
 	}
 }
 
@@ -104,7 +91,7 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 	}
 
 	// If mempool is full, check if we should evict lowest gas price transaction
-	if len(mp.transactions) >= mp.config.MaxSize {
+	if len(mp.transactions) >= config.MempoolMaxSize {
 		// Find the lowest gas price transaction (last in max heap)
 		if mp.queue.Len() > 0 {
 			lowestGasPriceEntry := (*mp.queue)[mp.queue.Len()-1]
@@ -187,7 +174,7 @@ func (mp *Mempool) Size() int {
 func (mp *Mempool) IsFull() bool {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
-	return len(mp.transactions) >= mp.config.MaxSize
+	return len(mp.transactions) >= config.MempoolMaxSize
 }
 
 // CleanExpiredTransactions removes transactions older than MaxExpiry
@@ -203,7 +190,7 @@ func (mp *Mempool) cleanExpiredTransactions() int {
 	removed := 0
 
 	for hash, entry := range mp.transactions {
-		if now.Sub(entry.AddedAt) > mp.config.MaxExpiry {
+		if now.Sub(entry.AddedAt) > config.MempoolMaxExpiry {
 			delete(mp.transactions, hash)
 			removed++
 		}

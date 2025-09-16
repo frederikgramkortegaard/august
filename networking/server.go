@@ -6,7 +6,6 @@ import (
 	"august/consensus"
 	"august/storage"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -21,7 +20,6 @@ type NetworkConfig struct {
 	NodeID               string
 	Store                storage.ChainStore
 	SeedPeers            []string                                    // Seed peers for discovery
-	PeerRequestConfig    PeerRequestConfig                           // Bitcoin-style peer request configuration
 	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
 }
 
@@ -59,11 +57,6 @@ type Server struct {
 
 }
 
-// logf logs with node ID prefix
-func (s *Server) logf(format string, args ...interface{}) {
-	message := fmt.Sprintf(format, args...)
-	log.Printf("%s\t%s", s.config.NodeID, message)
-}
 
 // IsRecentTransaction checks if we've recently seen this transaction (to prevent relay loops)
 func (s *Server) IsRecentTransaction(txHash blockchain.Hash32) bool {
@@ -108,12 +101,7 @@ func NewServer(config NetworkConfig) *Server {
 		return RequestBlocksByHash(server, blockHashes)
 	}
 
-	// Create log function for the chain downloader
-	logFunc := func(format string, args ...interface{}) {
-		server.logf(format, args...)
-	}
-
-	server.chainDownloader = consensus.NewChainDownloader(server.consensusManager, blockRequestFunc, logFunc)
+	server.chainDownloader = consensus.NewChainDownloader(server.consensusManager, blockRequestFunc)
 
 	// Initialize request-response handling
 	server.pendingRequests = make(map[string]chan *Message)
@@ -130,7 +118,7 @@ func (s *Server) StartListener() error {
 	}
 
 	s.listener = listener
-	s.logf("Network server listening on port %s", s.config.Port)
+	log.Printf(s.config.NodeID+"\t"+"Network server listening on port %s", s.config.Port)
 
 	// Accept connections in background
 	go s.acceptConnections()
@@ -169,7 +157,7 @@ func (s *Server) acceptConnections() {
 			default:
 				// Only log if it's not a shutdown-related error
 				if !isNetworkClosedError(err) {
-					s.logf("Failed to accept connection: %v", err)
+					log.Printf(s.config.NodeID+"\t"+"Failed to accept connection: %v", err)
 				}
 				return
 			}
@@ -197,7 +185,7 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 	defer conn.Close()
 
 	connAddr := conn.RemoteAddr().String()
-	s.logf("New peer connection from: %s", connAddr)
+	log.Printf(s.config.NodeID+"\t"+"New peer connection from: %s", connAddr)
 
 	// For incoming connections, we don't know the peer's listening address yet
 	// We'll get it from their handshake. For now, create a temporary peer entry
@@ -232,11 +220,11 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 	}()
 
 	// Send handshake
-	s.logf("Sending handshake to %s", connAddr)
+	log.Printf(s.config.NodeID+"\t"+"Sending handshake to %s", connAddr)
 	s.sendHandshake(connAddr)
 
 	// Handle incoming messages
-	s.logf("Starting message handler for %s", connAddr)
+	log.Printf(s.config.NodeID+"\t"+"Starting message handler for %s", connAddr)
 	s.handleMessages(conn, peer)
 }
 
@@ -248,19 +236,19 @@ func (s *Server) handleMessages(conn net.Conn, peer *Peer) {
 		var msg Message
 		if err := decoder.Decode(&msg); err != nil {
 			if err == io.EOF {
-				s.logf("Peer %s disconnected", peer.Address)
+				log.Printf(s.config.NodeID+"\t"+"Peer %s disconnected", peer.Address)
 				peer.Status = PeerDisconnected
 			} else if strings.Contains(err.Error(), "connection reset") {
-				s.logf("Peer %s connection reset", peer.Address)
+				log.Printf(s.config.NodeID+"\t"+"Peer %s connection reset", peer.Address)
 				peer.Status = PeerDisconnected
 			} else {
-				s.logf("Error decoding message from peer %s: %v", peer.Address, err)
+				log.Printf(s.config.NodeID+"\t"+"Error decoding message from peer %s: %v", peer.Address, err)
 				peer.Status = PeerFailed
 			}
 			return
 		}
 
-		s.logf("Received message type %s from %s", msg.Type, peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Received message type %s from %s", msg.Type, peer.Address)
 		s.ProcessMessage(&msg, peer, conn)
 	}
 }
@@ -318,14 +306,14 @@ func (s *Server) StartDiscovery() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
-		s.logf("Starting peer discovery with %d seed peers", len(s.config.SeedPeers))
+		log.Printf(s.config.NodeID+"\t"+"Starting peer discovery with %d seed peers", len(s.config.SeedPeers))
 
 		// Connect to seed peers
 		go s.connectToSeeds()
 
 		// Periodic peer discovery is now handled by task scheduler
 
-		s.logf("Peer discovery started successfully")
+		log.Printf(s.config.NodeID+"\t"+"Peer discovery started successfully")
 		ready <- true
 	}()
 
@@ -355,7 +343,7 @@ func (s *Server) connectToSeeds() <-chan bool {
 			if !currentPeers[seedAddr] {
 				connectionTasks = append(connectionTasks, s.ConnectToPeer(seedAddr))
 			} else {
-				s.logf("Skipping seed %s - already connected", seedAddr)
+				log.Printf(s.config.NodeID+"\t"+"Skipping seed %s - already connected", seedAddr)
 			}
 		}
 
@@ -367,7 +355,7 @@ func (s *Server) connectToSeeds() <-chan bool {
 			}
 		}
 
-		s.logf("Seed connection attempts completed: %d/%d successful", successCount, len(s.config.SeedPeers))
+		log.Printf(s.config.NodeID+"\t"+"Seed connection attempts completed: %d/%d successful", successCount, len(s.config.SeedPeers))
 		done <- true
 	}()
 
@@ -392,7 +380,7 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 		// Try connecting to discovered peers we're not already connected to
 		var connectionTasks []<-chan bool
 		connected := 0
-		maxConnections := s.config.PeerRequestConfig.MaxPeersForRequest
+		maxConnections := config.MaxPeersForRequest
 		for _, addr := range discoveredPeers {
 			if !currentPeers[addr] && connected < maxConnections {
 				connectionTasks = append(connectionTasks, s.ConnectToPeer(addr))
@@ -401,7 +389,7 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 		}
 
 		if connected > 0 {
-			s.logf("Attempting to connect to %d discovered peers", connected)
+			log.Printf(s.config.NodeID+"\t"+"Attempting to connect to %d discovered peers", connected)
 			// Wait for all connection attempts to complete
 			successCount := 0
 			for _, task := range connectionTasks {
@@ -409,7 +397,7 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 					successCount++
 				}
 			}
-			s.logf("Discovery connection attempts completed: %d/%d successful", successCount, connected)
+			log.Printf(s.config.NodeID+"\t"+"Discovery connection attempts completed: %d/%d successful", successCount, connected)
 		}
 
 		done <- true
@@ -433,20 +421,20 @@ func (s *Server) requestPeerSharing() {
 	// Use smart peer discovery instead of iterating through individual peers
 	peers, err := RequestPeers(s, 50)
 	if err != nil {
-		s.logf("Failed to discover peers: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to discover peers: %v", err)
 	} else {
 		allDiscoveredPeers = append(allDiscoveredPeers, peers...)
 		successfulRequests = 1 // Simplified since we're doing one aggregated request
 	}
 
 	if successfulRequests > 0 {
-		s.logf("Successfully requested peers from %d peers", successfulRequests)
+		log.Printf(s.config.NodeID+"\t"+"Successfully requested peers from %d peers", successfulRequests)
 
 		// Add all discovered peers to our peer manager
 		if len(allDiscoveredPeers) > 0 {
 			newPeerCount := s.AddDiscoveredPeers(allDiscoveredPeers)
 			if newPeerCount > 0 {
-				s.logf("Discovered %d new peers through peer sharing", newPeerCount)
+				log.Printf(s.config.NodeID+"\t"+"Discovered %d new peers through peer sharing", newPeerCount)
 			}
 		}
 	}
@@ -457,12 +445,12 @@ func (s *Server) requestPeerSharingAndConnect() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		s.logf("Starting peer sharing and connect sequence")
+		log.Printf(s.config.NodeID+"\t"+"Starting peer sharing and connect sequence")
 		// Request peers (synchronous - responses are handled immediately)
 		s.requestPeerSharing()
 
 		// Now try to connect to any newly discovered peers
-		s.logf("Now attempting to connect to discovered peers")
+		log.Printf(s.config.NodeID+"\t"+"Now attempting to connect to discovered peers")
 		<-s.connectToDiscoveredPeers()
 
 		done <- true
@@ -483,17 +471,17 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 		existingPeer, exists := s.peers[address]
 		if exists && existingPeer.Status == PeerConnected {
 			s.peersMu.RUnlock()
-			s.logf("Already connected to peer %s, skipping connection attempt", address)
+			log.Printf(s.config.NodeID+"\t"+"Already connected to peer %s, skipping connection attempt", address)
 			result <- true // Already connected counts as success
 			return
 		}
 		s.peersMu.RUnlock()
 
-		s.logf("Attempting to connect to peer: %s", address)
+		log.Printf(s.config.NodeID+"\t"+"Attempting to connect to peer: %s", address)
 
 		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 		if err != nil {
-			s.logf("Failed to connect to peer %s: %v", address, err)
+			log.Printf(s.config.NodeID+"\t"+"Failed to connect to peer %s: %v", address, err)
 			return
 		}
 
@@ -512,7 +500,7 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 			actualPeer.ConnAddr = conn.LocalAddr().String()
 			actualPeer.IsOutgoing = true
 			peer = actualPeer
-			s.logf("TCP connection established to peer: %s", address)
+			log.Printf(s.config.NodeID+"\t"+"TCP connection established to peer: %s", address)
 
 			// For outgoing connections, we handle it differently
 			// Store the connection
@@ -551,7 +539,7 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 				for {
 					select {
 					case <-timeout.C:
-						s.logf("Handshake timeout for peer %s", address)
+						log.Printf(s.config.NodeID+"\t"+"Handshake timeout for peer %s", address)
 						handshakeComplete <- false
 						return
 					case <-ticker.C:
@@ -559,7 +547,7 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 						s.peersMu.RLock()
 						if peerObj, exists := s.peers[address]; exists && peerObj.Status == PeerConnected {
 							s.peersMu.RUnlock()
-							s.logf("Peer connection established: %s (may be incoming due to race)", address)
+							log.Printf(s.config.NodeID+"\t"+"Peer connection established: %s (may be incoming due to race)", address)
 							handshakeComplete <- true
 							return
 						}
@@ -595,18 +583,18 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 		for _, peer := range connected {
 			connectedAddrs = append(connectedAddrs, peer.Address)
 		}
-		s.logf("Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
+		log.Printf(s.config.NodeID+"\t"+"Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
 
 		// Clean up dead peers
 		removed := s.CleanupDeadPeers()
 		if removed > 0 {
-			s.logf("Cleaned up %d dead peers", removed)
+			log.Printf(s.config.NodeID+"\t"+"Cleaned up %d dead peers", removed)
 		}
 
 		// Different strategies based on connection count
 		if len(connected) == 0 {
 			// No connections, try seed peers
-			s.logf("No connected peers, attempting to connect to seed peers")
+			log.Printf(s.config.NodeID+"\t"+"No connected peers, attempting to connect to seed peers")
 			<-s.connectToSeeds() // Wait for seed connections to complete
 		} else if len(connected) < 15 {
 			// Few connections, try to get more
@@ -616,7 +604,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 			<-s.connectToDiscoveredPeers()
 		}
 
-		s.logf("Discovery round completed")
+		log.Printf(s.config.NodeID+"\t"+"Discovery round completed")
 	}()
 
 	return done

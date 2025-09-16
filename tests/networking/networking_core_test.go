@@ -59,7 +59,7 @@ func createTestNodes(nodeCount int) []*node.FullNode {
 			Port:      portAsString,
 			NodeID:    "test-node-id-" + portAsString,
 			SeedPeers: seedPeers,
-			DBName:    filepath.Join(tempDir, fmt.Sprintf("test-%d-db-%s", idx, portAsString)),
+			DatabaseName:    filepath.Join(tempDir, fmt.Sprintf("test-%d-db-%s", idx, portAsString)),
 		}
 
 		nodes[idx] = node.NewFullNode(conf)

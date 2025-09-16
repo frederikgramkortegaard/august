@@ -5,6 +5,7 @@ import (
 	"august/utils"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"time"
 )
@@ -115,7 +116,7 @@ func (s *Server) sendMessageToPeer(peerAddress string, msg *Message) error {
 	encoder := json.NewEncoder(conn)
 	err := encoder.Encode(msg)
 	if err != nil {
-		s.logf("Failed to encode/send message %s: %v", msg.Type, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to encode/send message %s: %v", msg.Type, err)
 	}
 	return err
 }
@@ -125,7 +126,7 @@ func (s *Server) sendMessage(conn net.Conn, msg *Message) error {
 	encoder := json.NewEncoder(conn)
 	err := encoder.Encode(msg)
 	if err != nil {
-		s.logf("Failed to encode/send message %s: %v", msg.Type, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to encode/send message %s: %v", msg.Type, err)
 	}
 	return err
 }
@@ -134,7 +135,7 @@ func (s *Server) sendMessage(conn net.Conn, msg *Message) error {
 func (s *Server) sendHandshake(peerAddr string) {
 	height, err := s.config.Store.GetChainHeight()
 	if err != nil {
-		s.logf("Failed to get chain height: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain height: %v", err)
 		height = 0
 	}
 
@@ -147,14 +148,14 @@ func (s *Server) sendHandshake(peerAddr string) {
 
 	msg, err := NewMessage(MessageTypeHandshake, handshake)
 	if err != nil {
-		s.logf("Failed to create handshake message: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create handshake message: %v", err)
 		return
 	}
 
-	s.logf("Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
+	log.Printf(s.config.NodeID+"\t"+"Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
 	// Create a temporary peer object for handshake (we don't have a full peer yet)
 	tempPeer := &Peer{Address: peerAddr}
 	if err := s.SendNotification(tempPeer, msg); err != nil {
-		s.logf("Failed to send handshake: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to send handshake: %v", err)
 	}
 }

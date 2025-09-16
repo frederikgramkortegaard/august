@@ -3,7 +3,6 @@ package tests
 import (
 	"august/blockchain"
 	"august/config"
-	"august/miner"
 	"august/node"
 	"august/utils"
 	"crypto/ed25519"
@@ -48,10 +47,8 @@ func createQueryAPITestNode(idx int) *node.FullNode {
 		Port:           portAsString,
 		NodeID:         "queryapi-test-node-" + portAsString,
 		SeedPeers:      []string{},
-		DBName:         filepath.Join(tempDir, "node-"+portAsString+".db"),
-		QueryPort:      queryPortAsString,
-		MaxMempoolSize: 100,
-		MempoolExpiry:  5 * time.Minute,
+		DatabaseName: filepath.Join(tempDir, "node-"+portAsString+".db"),
+		QueryPort:    queryPortAsString,
 	}
 
 	return node.NewFullNode(conf)
@@ -333,7 +330,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	// Mine a block containing the transaction
 	chainHead := nodeA.GetChainHead()
 
-	params := miner.BlockCreationParams{
+	params := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  chainHead.Hash,
 		Height:        chainHead.Height + 1,
@@ -347,7 +344,7 @@ func TestQueryAPIWithData(t *testing.T) {
 			}
 			return blockchain.Transaction{
 				From:      blockchain.PublicKey{},
-				To:        blockchain.FirstUser,
+				To:        config.FirstUser,
 				Amount:    coinbaseAmount,
 				GasLimit:  0,  // Coinbase transactions use no gas
 				GasPrice:  0,
@@ -361,7 +358,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		TargetBits:   config.TestTargetCompact,
 	}
 
-	block, err := miner.NewBlock(params)
+	block, err := blockchain.NewBlock(params)
 	if err != nil {
 		t.Fatalf("Failed to mine block: %v", err)
 	}

@@ -3,8 +3,7 @@ package tests
 import (
 	"august/blockchain"
 	"august/config"
-	"august/miner"
-	"august/node"
+		"august/node"
 	"log"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func createTestNode(idx int) *node.FullNode {
 		Port:      portAsString,
 		NodeID:    "test-node-id-" + portAsString,
 		SeedPeers: []string{},
-		DBName:    filepath.Join(tempDir),
+		DatabaseName:    filepath.Join(tempDir),
 	}
 
 	return node.NewFullNode(conf)
@@ -86,14 +85,14 @@ func TestBlockchainSaveLoad(t *testing.T) {
 	chainHead := nodeA.GetChainHead()
 
 	// Create mining parameters
-	params := miner.BlockCreationParams{
+	params := blockchain.BlockCreationParams{
 		Version:      1,
 		PreviousHash: chainHead.Hash,
 		Height:       chainHead.Height + 1,
 		PreviousWork: chainHead.TotalWork,
 		Coinbase: blockchain.Transaction{
 			From:      blockchain.PublicKey{}, // Empty for coinbase
-			To:        blockchain.FirstUser,   // Mine to first user
+			To:        config.FirstUser,   // Mine to first user
 			Amount:    config.BlockReward,
 			GasLimit:  0,  // Coinbase transactions use no gas
 			GasPrice:  0,
@@ -108,7 +107,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 
 	// Mine the block
 	log.Printf("Mining block at height %d...", params.Height)
-	block, err := miner.NewBlock(params)
+	block, err := blockchain.NewBlock(params)
 	if err != nil {
 		t.Fatalf("Failed to mine block: %v", err)
 	}
@@ -139,7 +138,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 
 	// Create NodeB with same database to test persistence
 	nodeB := createTestNode(1)                // Different port but same temp directory
-	nodeB.Config.DBName = nodeA.Config.DBName // Use same database path
+	nodeB.Config.DatabaseName = nodeA.Config.DatabaseName // Use same database path
 
 	// Start NodeB
 	readyB := nodeB.Start()

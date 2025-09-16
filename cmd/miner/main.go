@@ -3,7 +3,6 @@ package main
 import (
 	"august/blockchain"
 	"august/config"
-	"august/miner"
 	"august/node/queryapi"
 	"bytes"
 	"crypto/ed25519"
@@ -46,7 +45,7 @@ func main() {
 	log.Printf("%s\tConnecting to node: %s", *minerID, *nodeAddr)
 
 	// Create miner
-	miner := &SimpleMiner{
+	simpleMiner := &SimpleMiner{
 		ID:           *minerID,
 		NodeAddr:     *nodeAddr,
 		MinerAddress: blockchain.PublicKey(pub),
@@ -54,7 +53,7 @@ func main() {
 	}
 
 	// Start mining loop
-	miner.StartMining()
+	simpleMiner.StartMining()
 }
 
 type SimpleMiner struct {
@@ -201,7 +200,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 	previousHash := chainInfo.Hash
 
 	// Create mining parameters
-	params := miner.BlockCreationParams{
+	params := blockchain.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
 		Height:        chainInfo.Height + 1,
@@ -215,7 +214,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 
 	// Mine the block (this will take some time!)
 	log.Printf("%s\tMining block at height %d...", m.ID, params.Height)
-	return miner.NewBlock(params)
+	return blockchain.NewBlock(params)
 }
 
 func (m *SimpleMiner) getMempoolTransactions() ([]blockchain.Transaction, error) {

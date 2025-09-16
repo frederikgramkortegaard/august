@@ -3,6 +3,7 @@ package networking
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"time"
@@ -12,38 +13,6 @@ import (
 	"august/consensus"
 )
 
-// PeerRequestConfig defines parameters for Bitcoin-style peer request strategies
-type PeerRequestConfig struct {
-	// Maximum number of outstanding requests per peer (like Bitcoin Core's 16-32)
-	MaxRequestsPerPeer int
-
-	// Maximum number of peers to use for any single request operation
-	MaxPeersForRequest int
-
-	// Minimum number of peers to try before giving up
-	MinPeersForRequest int
-
-	// Request timeout for individual peer requests
-	RequestTimeoutSec int
-
-	// Whether to randomize peer selection order
-	RandomizePeerOrder bool
-
-	// Prefer peers that have been historically responsive
-	PreferResponsivePeers bool
-}
-
-// DefaultPeerRequestConfig returns Bitcoin-inspired default configuration
-func DefaultPeerRequestConfig() PeerRequestConfig {
-	return PeerRequestConfig{
-		MaxRequestsPerPeer:    16, // Conservative like Bitcoin Core
-		MaxPeersForRequest:    20, // Try up to 20 peers in parallel/sequence
-		MinPeersForRequest:    1,  // Can sync from 1 peer (like Bitcoin)
-		RequestTimeoutSec:     30, // 30 second timeout per peer
-		RandomizePeerOrder:    true,
-		PreferResponsivePeers: true,
-	}
-}
 
 // selectPeersForRequest implements Bitcoin-style peer selection with randomization and limits
 func selectPeersForRequest(server *Server) []*Peer {
@@ -54,7 +23,7 @@ func selectPeersForRequest(server *Server) []*Peer {
 	}
 
 	// Get config from server
-	config := server.config.PeerRequestConfig
+	// Use constants from config package
 
 	// Start with a copy to avoid modifying the original slice
 	candidates := make([]*Peer, len(availablePeers))
@@ -80,7 +49,7 @@ func selectPeersForRequest(server *Server) []*Peer {
 		maxPeers = config.MinPeersForRequest
 	}
 
-	server.logf("Selected %d peers for request from %d available (randomized: %v)",
+	log.Printf(server.config.NodeID+"\t"+"Selected %d peers for request from %d available (randomized: %v)",
 		maxPeers, len(availablePeers), config.RandomizePeerOrder)
 
 	return candidates[:maxPeers]
@@ -111,16 +80,16 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 		}
 
 		if len(excludePeerAddrs) == 0 {
-			server.logf("Relaying block %x to all peers", blockHash[:8])
+			log.Printf(server.config.NodeID+"\t"+"Relaying block %x to all peers", blockHash[:8])
 		} else {
-			server.logf("Relaying block %x to other peers (excluding %d peers)", blockHash[:8], len(excludePeerAddrs))
+			log.Printf(server.config.NodeID+"\t"+"Relaying block %x to other peers (excluding %d peers)", blockHash[:8], len(excludePeerAddrs))
 		}
 
 		// Create the block payload
 		blockPayload := NewBlockPayload{Block: block}
 		msg, err := NewMessage(MessageTypeNewBlock, blockPayload)
 		if err != nil {
-			server.logf("Failed to create relay message for block %x: %v", blockHash[:8], err)
+			log.Printf(server.config.NodeID+"\t"+"Failed to create relay message for block %x: %v", blockHash[:8], err)
 			return
 		}
 
@@ -130,15 +99,15 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
 				if err := server.SendNotification(peer, msg); err != nil {
-					server.logf("Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
+					log.Printf(server.config.NodeID+"\t"+"Failed to relay block %x to peer %s: %v", blockHash[:8], peer.Address, err)
 				} else {
-					server.logf("Relayed block %x to peer %s", blockHash[:8], peer.Address)
+					log.Printf(server.config.NodeID+"\t"+"Relayed block %x to peer %s", blockHash[:8], peer.Address)
 					relayCount++
 				}
 			}
 		}
 
-		server.logf("Successfully relayed block %x to %d peers", blockHash[:8], relayCount)
+		log.Printf(server.config.NodeID+"\t"+"Successfully relayed block %x to %d peers", blockHash[:8], relayCount)
 	}()
 
 	return complete
@@ -178,20 +147,20 @@ func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAdd
 			// Send transaction to peer
 			msg, err := NewMessage(MessageTypeNewTx, tx)
 			if err != nil {
-				server.logf("Failed to create transaction message: %v", err)
+				log.Printf(server.config.NodeID+"\t"+"Failed to create transaction message: %v", err)
 				continue
 			}
 
 			err = server.SendNotification(peer, msg)
 			if err != nil {
-				server.logf("Failed to relay transaction %x to peer %s: %v", txHash[:8], peer.Address, err)
+				log.Printf(server.config.NodeID+"\t"+"Failed to relay transaction %x to peer %s: %v", txHash[:8], peer.Address, err)
 			} else {
 				relayCount++
 			}
 		}
 
 		if relayCount > 0 {
-			server.logf("Relayed transaction %x to %d peers", txHash[:8], relayCount)
+			log.Printf(server.config.NodeID+"\t"+"Relayed transaction %x to %d peers", txHash[:8], relayCount)
 		}
 	}()
 
@@ -223,9 +192,9 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 		}
 
 		if len(excludePeerAddrs) == 0 {
-			server.logf("Relaying block header %x (height %d) to all peers", blockHash[:8], header.Height)
+			log.Printf(server.config.NodeID+"\t"+"Relaying block header %x (height %d) to all peers", blockHash[:8], header.Height)
 		} else {
-			server.logf("Relaying block header %x (height %d) to other peers (excluding %d peers)",
+			log.Printf(server.config.NodeID+"\t"+"Relaying block header %x (height %d) to other peers (excluding %d peers)",
 				blockHash[:8], header.Height, len(excludePeerAddrs))
 		}
 
@@ -233,7 +202,7 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 		headerPayload := NewBlockHeaderPayload{Header: *header}
 		msg, err := NewMessage(MessageTypeNewBlockHeader, headerPayload)
 		if err != nil {
-			server.logf("Failed to create relay message for header %x: %v", blockHash[:8], err)
+			log.Printf(server.config.NodeID+"\t"+"Failed to create relay message for header %x: %v", blockHash[:8], err)
 			return
 		}
 
@@ -243,15 +212,15 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
 				if err := server.SendNotification(peer, msg); err != nil {
-					server.logf("Failed to relay header %x to peer %s: %v", blockHash[:8], peer.Address, err)
+					log.Printf(server.config.NodeID+"\t"+"Failed to relay header %x to peer %s: %v", blockHash[:8], peer.Address, err)
 				} else {
-					server.logf("Relayed header %x to peer %s", blockHash[:8], peer.Address)
+					log.Printf(server.config.NodeID+"\t"+"Relayed header %x to peer %s", blockHash[:8], peer.Address)
 					relayCount++
 				}
 			}
 		}
 
-		server.logf("Successfully relayed header %x to %d peers", blockHash[:8], relayCount)
+		log.Printf(server.config.NodeID+"\t"+"Successfully relayed header %x to %d peers", blockHash[:8], relayCount)
 	}()
 
 	return complete
@@ -302,7 +271,7 @@ func RequestPeers(server *Server, maxPeers int) ([]string, error) {
 				return
 			}
 
-			server.logf("Received %d peers from %s", len(sharePayload.Peers), p.Address)
+			log.Printf(server.config.NodeID+"\t"+"Received %d peers from %s", len(sharePayload.Peers), p.Address)
 			responses <- peerDiscoveryResponse{sharePayload.Peers, nil, p.Address}
 		}(peer)
 	}
@@ -321,11 +290,11 @@ func RequestPeers(server *Server, maxPeers int) ([]string, error) {
 				}
 			}
 		} else {
-			server.logf("Peer discovery failed from %s: %v", resp.peer, resp.err)
+			log.Printf(server.config.NodeID+"\t"+"Peer discovery failed from %s: %v", resp.peer, resp.err)
 		}
 	}
 
-	server.logf("Discovered %d unique peers from %d sources", len(allDiscoveredPeers), len(selectedPeers))
+	log.Printf(server.config.NodeID+"\t"+"Discovered %d unique peers from %d sources", len(allDiscoveredPeers), len(selectedPeers))
 	return allDiscoveredPeers, nil
 }
 
@@ -353,7 +322,7 @@ func RequestChainHead(server *Server, peer *Peer) (*consensus.ChainHeadPayload, 
 		return nil, fmt.Errorf("failed to parse chain head response: %w", err)
 	}
 
-	server.logf("Received chain head from %s: height=%d, work=%s", peer.Address, headPayload.Height, headPayload.TotalWork)
+	log.Printf(server.config.NodeID+"\t"+"Received chain head from %s: height=%d, work=%s", peer.Address, headPayload.Height, headPayload.TotalWork)
 	return &headPayload, nil
 }
 
@@ -412,7 +381,7 @@ func RequestHeadersByHeight(server *Server, startHeight uint64, count uint64) ([
 				}
 			}
 
-			server.logf("Received %d valid headers from %s starting at height %d", len(headersPayload.Headers), p.Address, startHeight)
+			log.Printf(server.config.NodeID+"\t"+"Received %d valid headers from %s starting at height %d", len(headersPayload.Headers), p.Address, startHeight)
 			responses <- headerResponse{headersPayload.Headers, nil, p.Address}
 		}(peer)
 	}
@@ -424,7 +393,7 @@ func RequestHeadersByHeight(server *Server, startHeight uint64, count uint64) ([
 		if resp.err == nil {
 			successfulResponses = append(successfulResponses, resp)
 		} else {
-			server.logf("Header request failed from %s: %v", resp.peer, resp.err)
+			log.Printf(server.config.NodeID+"\t"+"Header request failed from %s: %v", resp.peer, resp.err)
 		}
 	}
 
@@ -434,7 +403,7 @@ func RequestHeadersByHeight(server *Server, startHeight uint64, count uint64) ([
 
 	// For now, just return the first successful response
 	// TODO: Add consensus verification later if needed
-	server.logf("Got headers from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
+	log.Printf(server.config.NodeID+"\t"+"Got headers from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
 	return successfulResponses[0].headers, nil
 }
 
@@ -492,7 +461,7 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 				}
 			}
 
-			server.logf("Received %d valid headers from %s by hash", len(headersPayload.Headers), p.Address)
+			log.Printf(server.config.NodeID+"\t"+"Received %d valid headers from %s by hash", len(headersPayload.Headers), p.Address)
 			responses <- headerResponse{headersPayload.Headers, nil, p.Address}
 		}(peer)
 	}
@@ -504,7 +473,7 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 		if resp.err == nil {
 			successfulResponses = append(successfulResponses, resp)
 		} else {
-			server.logf("Header request failed from %s: %v", resp.peer, resp.err)
+			log.Printf(server.config.NodeID+"\t"+"Header request failed from %s: %v", resp.peer, resp.err)
 		}
 	}
 
@@ -515,7 +484,7 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 	// For now, just return the first successful response
 	// TODO : Add consensus verification later if needed
 	// TODO : Handle dropout etc.
-	server.logf("Got headers from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
+	log.Printf(server.config.NodeID+"\t"+"Got headers from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
 	return successfulResponses[0].headers, nil
 }
 
@@ -571,7 +540,7 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 				}
 			}
 
-			server.logf("Received %d valid blocks from %s", len(blocksPayload.Blocks), p.Address)
+			log.Printf(server.config.NodeID+"\t"+"Received %d valid blocks from %s", len(blocksPayload.Blocks), p.Address)
 			responses <- peerResponse{blocksPayload.Blocks, nil, p.Address}
 		}(peer)
 	}
@@ -583,7 +552,7 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 		if resp.err == nil {
 			successfulResponses = append(successfulResponses, resp)
 		} else {
-			server.logf("Failed to get blocks from %s: %v", resp.peer, resp.err)
+			log.Printf(server.config.NodeID+"\t"+"Failed to get blocks from %s: %v", resp.peer, resp.err)
 		}
 	}
 
@@ -593,7 +562,7 @@ func RequestBlocksByHash(server *Server, blockHashes []string) ([]*blockchain.Bl
 
 	// For now, just return the first successful response
 	// TODO: Add consensus verification later if needed
-	server.logf("Got blocks from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
+	log.Printf(server.config.NodeID+"\t"+"Got blocks from %d/%d peers, using first successful", len(successfulResponses), len(selectedPeers))
 	return successfulResponses[0].blocks, nil
 }
 
@@ -612,17 +581,17 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.Chai
 		ourWork = ourChain.Blocks[len(ourChain.Blocks)-1].Header.TotalWork
 	}
 
-	server.logf("Evaluating chain from %s: our height=%d work=%s, peer height=%d work=%s",
+	log.Printf(server.config.NodeID+"\t"+"Evaluating chain from %s: our height=%d work=%s, peer height=%d work=%s",
 		peer.Address, ourHeight, ourWork, peerChainHead.Height, peerChainHead.TotalWork)
 
 	// Quick work comparison - if peer is not better, skip everything
 	if blockchain.CompareWork(peerChainHead.TotalWork, ourWork) <= 0 {
-		server.logf("Peer %s chain not better than ours, skipping", peer.Address)
+		log.Printf(server.config.NodeID+"\t"+"Peer %s chain not better than ours, skipping", peer.Address)
 		return nil
 	}
 
 	// Phase 1: Download headers first from multiple peers (lightweight evaluation)
-	server.logf("Peer chain looks better, downloading headers from multiple peers (triggered by %s)", peer.Address)
+	log.Printf(server.config.NodeID+"\t"+"Peer chain looks better, downloading headers from multiple peers (triggered by %s)", peer.Address)
 
 	// Request headers using smart peer selection
 	headers, err := RequestHeadersByHeight(server, 1, peerChainHead.Height)
@@ -632,21 +601,21 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.Chai
 
 	// Validate header chain before proceeding
 	if !blockchain.ValidateHeaderChain(headers) {
-		server.logf("Header chain from %s invalid, rejecting", peer.Address)
+		log.Printf(server.config.NodeID+"\t"+"Header chain from %s invalid, rejecting", peer.Address)
 		return fmt.Errorf("invalid header chain from %s", peer.Address)
 	}
 
-	server.logf("Downloaded and validated %d headers from %s", len(headers), peer.Address)
+	log.Printf(server.config.NodeID+"\t"+"Downloaded and validated %d headers from %s", len(headers), peer.Address)
 
 	// Double-check work calculation from headers
 	finalHeaderWork := headers[len(headers)-1].TotalWork
 	if blockchain.CompareWork(finalHeaderWork, ourWork) <= 0 {
-		server.logf("Header chain work not better after validation, skipping")
+		log.Printf(server.config.NodeID+"\t"+"Header chain work not better after validation, skipping")
 		return nil
 	}
 
 	// Phase 2: Headers look good, start candidate chain download
-	server.logf("Headers validated and better, starting candidate chain download")
+	log.Printf(server.config.NodeID+"\t"+"Headers validated and better, starting candidate chain download")
 
 	// Create candidate chain using consensus manager
 	candidate, err := server.consensusManager.CreateCandidateChain(peer.Address, headers, peerChainHead)
@@ -657,7 +626,7 @@ func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *consensus.Chai
 	// Start download in background
 	go func() {
 		if err := server.chainDownloader.DownloadCandidateChain(candidate); err != nil {
-			server.logf("Candidate chain download failed: %v", err)
+			log.Printf(server.config.NodeID+"\t"+"Candidate chain download failed: %v", err)
 		}
 	}()
 
@@ -695,7 +664,7 @@ func (s *Server) SendPongResponse(conn net.Conn) {
 
 // SendPeerList sends a list of peers in response to a request
 func (s *Server) SendPeerList(conn net.Conn, msg *Message, requesterAddr string) {
-	s.logf("Peer %s requested peer list", requesterAddr)
+	log.Printf(s.config.NodeID+"\t"+"Peer %s requested peer list", requesterAddr)
 
 	// Get list of connected peers (excluding the requester)
 	peers := s.GetConnectedPeers()
@@ -706,7 +675,7 @@ func (s *Server) SendPeerList(conn net.Conn, msg *Message, requesterAddr string)
 		}
 	}
 
-	s.logf("Sharing %d peers with %s", len(peerAddresses), requesterAddr)
+	log.Printf(s.config.NodeID+"\t"+"Sharing %d peers with %s", len(peerAddresses), requesterAddr)
 
 	sharePayload := SharePeersPayload{
 		Peers: peerAddresses,
@@ -714,7 +683,7 @@ func (s *Server) SendPeerList(conn net.Conn, msg *Message, requesterAddr string)
 
 	shareMsg, err := NewMessage(MessageTypeSharePeers, sharePayload)
 	if err != nil {
-		s.logf("Failed to create share peers message: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create share peers message: %v", err)
 		return
 	}
 
@@ -730,16 +699,16 @@ func (s *Server) SendPeerList(conn net.Conn, msg *Message, requesterAddr string)
 func (s *Server) SendBlockResponse(conn net.Conn, msg *Message, peer *Peer) {
 	var payload RequestBlockPayload
 	if err := msg.ParsePayload(&payload); err != nil {
-		s.logf("Failed to decode request block payload: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to decode request block payload: %v", err)
 		return
 	}
 
-	s.logf("Peer %s requested block %s", peer.Address, payload.BlockHash)
+	log.Printf(s.config.NodeID+"\t"+"Peer %s requested block %s", peer.Address, payload.BlockHash)
 
 	// Get the block from our chain store
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain: %v", err)
 		return
 	}
 
@@ -755,14 +724,14 @@ func (s *Server) SendBlockResponse(conn net.Conn, msg *Message, peer *Peer) {
 	}
 
 	if foundBlock == nil {
-		s.logf("Block %s not found for peer %s", payload.BlockHash, peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Block %s not found for peer %s", payload.BlockHash, peer.Address)
 		return
 	}
 
 	// Create response message with the block
 	response, err := NewMessage(MessageTypeNewBlock, NewBlockPayload{Block: foundBlock})
 	if err != nil {
-		s.logf("Failed to create block response: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create block response: %v", err)
 		return
 	}
 
@@ -770,9 +739,9 @@ func (s *Server) SendBlockResponse(conn net.Conn, msg *Message, peer *Peer) {
 	response.ReplyTo = msg.RequestID
 
 	if err := s.sendMessage(conn, response); err != nil {
-		s.logf("Failed to send block to %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to send block to %s: %v", peer.Address, err)
 	} else {
-		s.logf("Sent block %s to peer %s", payload.BlockHash, peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Sent block %s to peer %s", payload.BlockHash, peer.Address)
 	}
 }
 
@@ -782,16 +751,16 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	if peer != nil {
 		requesterAddr = peer.Address
 	}
-	s.logf("Requester %s requested chain head", requesterAddr)
+	log.Printf(s.config.NodeID+"\t"+"Requester %s requested chain head", requesterAddr)
 
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain: %v", err)
 		return
 	}
 
 	if len(chain.Blocks) == 0 {
-		s.logf("No blocks in chain to share with %s", requesterAddr)
+		log.Printf(s.config.NodeID+"\t"+"No blocks in chain to share with %s", requesterAddr)
 		return
 	}
 
@@ -808,7 +777,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 
 	response, err := NewMessage(MessageTypeChainHead, headPayload)
 	if err != nil {
-		s.logf("Failed to create chain head response: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create chain head response: %v", err)
 		return
 	}
 
@@ -818,9 +787,9 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 	}
 
 	if err := s.sendMessage(conn, response); err != nil {
-		s.logf("Failed to send chain head to %s: %v", requesterAddr, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to send chain head to %s: %v", requesterAddr, err)
 	} else {
-		s.logf("Sent chain head (height %d) to %s", headBlock.Header.Height, requesterAddr)
+		log.Printf(s.config.NodeID+"\t"+"Sent chain head (height %d) to %s", headBlock.Header.Height, requesterAddr)
 	}
 }
 
@@ -828,7 +797,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 	var handshake HandshakePayload
 	if err := msg.ParsePayload(&handshake); err != nil {
-		s.logf("Failed to decode handshake payload from %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to decode handshake payload from %s: %v", peer.Address, err)
 		return
 	}
 
@@ -836,12 +805,12 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
-		s.logf("Failed to parse remote address %s: %v", remoteAddr, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse remote address %s: %v", remoteAddr, err)
 		return
 	}
 
 	properPeerAddr := net.JoinHostPort(host, handshake.ListenPort)
-	s.logf("Received handshake from %s (node %s), actual peer address: %s",
+	log.Printf(s.config.NodeID+"\t"+"Received handshake from %s (node %s), actual peer address: %s",
 		peer.Address, handshake.NodeID, properPeerAddr)
 
 	// Consistent lock ordering to prevent deadlocks
@@ -865,7 +834,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 			keepExisting := s.shouldKeepExistingConnection(existingPeer, peer, handshake.NodeID)
 
 			if keepExisting {
-				s.logf("Duplicate connection detected for %s, keeping existing connection (existing: %v, new: %v)",
+				log.Printf(s.config.NodeID+"\t"+"Duplicate connection detected for %s, keeping existing connection (existing: %v, new: %v)",
 					properPeerAddr, existingPeer.IsOutgoing, peer.IsOutgoing)
 				// Ensure existing peer is marked as properly connected
 				if existingPeer.Status != PeerConnected {
@@ -877,7 +846,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 				conn.Close()
 				return
 			} else {
-				s.logf("Duplicate connection detected for %s, replacing existing connection (existing: %v, new: %v)",
+				log.Printf(s.config.NodeID+"\t"+"Duplicate connection detected for %s, replacing existing connection (existing: %v, new: %v)",
 					properPeerAddr, existingPeer.IsOutgoing, peer.IsOutgoing)
 
 				// Close the old connection and replace with new one (locks already held)
@@ -929,7 +898,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 		s.peerConnectionsMu.Unlock()
 	}
 
-	s.logf("Handshake completed with %s (node: %s, conn: %s, outgoing: %v)",
+	log.Printf(s.config.NodeID+"\t"+"Handshake completed with %s (node: %s, conn: %s, outgoing: %v)",
 		properPeerAddr, handshake.NodeID, peer.ConnAddr, peer.IsOutgoing)
 }
 
@@ -937,17 +906,17 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 	var headPayload consensus.ChainHeadPayload
 	if err := msg.ParsePayload(&headPayload); err != nil {
-		s.logf("Failed to decode chain head payload from %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to decode chain head payload from %s: %v", peer.Address, err)
 		return
 	}
 
-	s.logf("Received chain head from %s: height=%d, hash=%s",
+	log.Printf(s.config.NodeID+"\t"+"Received chain head from %s: height=%d, hash=%s",
 		peer.Address, headPayload.Height, headPayload.HeadHash[:16])
 
 	// Compare with our chain
 	ourChain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get our chain for comparison: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get our chain for comparison: %v", err)
 		return
 	}
 
@@ -958,17 +927,17 @@ func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 
 	// If peer is significantly ahead (more than 1 block), initiate IBD
 	if headPayload.Height > ourHeight+1 {
-		s.logf("Peer %s is ahead by %d blocks, initiating IBD",
+		log.Printf(s.config.NodeID+"\t"+"Peer %s is ahead by %d blocks, initiating IBD",
 			peer.Address, headPayload.Height-ourHeight)
 
 		// Start headers-first evaluation in background
 		go func() {
 			if err := EvaluateChainHead(s, peer, &headPayload); err != nil {
-				s.logf("Chain evaluation failed from %s: %v", peer.Address, err)
+				log.Printf(s.config.NodeID+"\t"+"Chain evaluation failed from %s: %v", peer.Address, err)
 			}
 		}()
 	} else if headPayload.Height == ourHeight+1 {
-		s.logf("Peer %s has next block, requesting it", peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Peer %s has next block, requesting it", peer.Address)
 
 		// Request just the next block (prefer the peer who advertised it)
 		go func() {
@@ -983,12 +952,12 @@ func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 
 			blocks, err := RequestBlocksByHash(s, []string{headPayload.HeadHash})
 			if err != nil {
-				s.logf("Failed to get next block from peers: %v", err)
+				log.Printf(s.config.NodeID+"\t"+"Failed to get next block from peers: %v", err)
 				return
 			}
 
 			if len(blocks) == 0 {
-				s.logf("No next block returned from peers")
+				log.Printf(s.config.NodeID+"\t"+"No next block returned from peers")
 				return
 			}
 
@@ -1002,7 +971,7 @@ func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 	var headerPayload NewBlockHeaderPayload
 	if err := msg.ParsePayload(&headerPayload); err != nil {
-		s.logf("Failed to parse block header payload: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse block header payload: %v", err)
 		return
 	}
 
@@ -1015,19 +984,19 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
 		if time.Now().Sub(addedTime) <= config.RecentBlocksTTL {
-			s.logf("Ignoring duplicate block header: %x", blockHash[:8])
+			log.Printf(s.config.NodeID+"\t"+"Ignoring duplicate block header: %x", blockHash[:8])
 			return
 		}
 	}
 	s.recentBlocks[blockHash] = time.Now()
 
-	s.logf("Received new block header %x (height %d) from peer %s",
+	log.Printf(s.config.NodeID+"\t"+"Received new block header %x (height %d) from peer %s",
 		blockHash[:8], header.Height, peer.Address)
 
 	// Get current chain and let blockchain package decide if we want this block
 	ourChain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get our chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get our chain: %v", err)
 		return
 	}
 
@@ -1035,7 +1004,7 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 	evaluation := blockchain.EvaluateBlockHeaderForSync(header, ourChain)
 
 	if evaluation.ShouldRequest {
-		s.logf("Requesting full block %x: %s", blockHash[:8], evaluation.Reason)
+		log.Printf(s.config.NodeID+"\t"+"Requesting full block %x: %s", blockHash[:8], evaluation.Reason)
 
 		// Request the full block
 		hashString := base64.StdEncoding.EncodeToString(blockHash[:])
@@ -1043,12 +1012,12 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 			// Use smart peer selection internally
 			blocks, err := RequestBlocksByHash(s, []string{hashString})
 			if err != nil {
-				s.logf("Failed to request block %x from peers: %v", blockHash[:8], err)
+				log.Printf(s.config.NodeID+"\t"+"Failed to request block %x from peers: %v", blockHash[:8], err)
 				return
 			}
 
 			if len(blocks) == 0 {
-				s.logf("No block returned for %x from %s", blockHash[:8], peer.Address)
+				log.Printf(s.config.NodeID+"\t"+"No block returned for %x from %s", blockHash[:8], peer.Address)
 				return
 			}
 
@@ -1056,7 +1025,7 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 			<-ProcessBlock(s, blocks[0], peer.Address)
 		}()
 	} else {
-		s.logf("Ignoring block header %x (height %d, %s)", blockHash[:8], header.Height, evaluation.Reason)
+		log.Printf(s.config.NodeID+"\t"+"Ignoring block header %x (height %d, %s)", blockHash[:8], header.Height, evaluation.Reason)
 	}
 
 	// Always relay the header to other peers (except sender)
@@ -1067,11 +1036,11 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 	var headersPayload HeadersPayload
 	if err := msg.ParsePayload(&headersPayload); err != nil {
-		s.logf("Failed to parse headers: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse headers: %v", err)
 		return
 	}
 
-	s.logf("Received %d headers from %s", len(headersPayload.Headers), peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received %d headers from %s", len(headersPayload.Headers), peer.Address)
 
 	if len(headersPayload.Headers) == 0 {
 		return
@@ -1079,14 +1048,14 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 
 	// Validate the header chain
 	if !blockchain.ValidateHeaderChain(headersPayload.Headers) {
-		s.logf("Invalid header chain from %s, rejecting", peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Invalid header chain from %s, rejecting", peer.Address)
 		return
 	}
 
 	// Check if these headers represent a better chain than ours
 	ourChain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get our chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get our chain: %v", err)
 		return
 	}
 
@@ -1097,11 +1066,11 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 
 	finalHeaderWork := headersPayload.Headers[len(headersPayload.Headers)-1].TotalWork
 	if blockchain.CompareWork(finalHeaderWork, ourWork) <= 0 {
-		s.logf("Headers from %s not better than our chain, ignoring", peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Headers from %s not better than our chain, ignoring", peer.Address)
 		return
 	}
 
-	s.logf("Headers from %s represent better chain, starting candidate download", peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Headers from %s represent better chain, starting candidate download", peer.Address)
 
 	// Create a mock chain head payload from the final header
 	finalHeader := headersPayload.Headers[len(headersPayload.Headers)-1]
@@ -1116,14 +1085,14 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 	// Start candidate chain download using consensus manager
 	candidate, err := s.consensusManager.CreateCandidateChain(peer.Address, headersPayload.Headers, chainHead)
 	if err != nil {
-		s.logf("Failed to create candidate chain from %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create candidate chain from %s: %v", peer.Address, err)
 		return
 	}
 
 	// Start download in background
 	go func() {
 		if err := s.chainDownloader.DownloadCandidateChain(candidate); err != nil {
-			s.logf("Candidate chain download failed: %v", err)
+			log.Printf(s.config.NodeID+"\t"+"Candidate chain download failed: %v", err)
 		}
 	}()
 }
@@ -1132,16 +1101,16 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 func (s *Server) ProcessBlocks(msg *Message, peer *Peer) {
 	var blocksPayload BlocksPayload
 	if err := msg.ParsePayload(&blocksPayload); err != nil {
-		s.logf("Failed to parse blocks: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse blocks: %v", err)
 		return
 	}
 
-	s.logf("Received %d blocks from %s", len(blocksPayload.Blocks), peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received %d blocks from %s", len(blocksPayload.Blocks), peer.Address)
 
 	// Process each block sequentially
 	for _, block := range blocksPayload.Blocks {
 		blockHash := block.Header.GetHash()
-		s.logf("Processing batch block %x from %s", blockHash[:8], peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Processing batch block %x from %s", blockHash[:8], peer.Address)
 
 		// Process block through the normal pipeline
 		go func(b *blockchain.Block) {
@@ -1154,7 +1123,7 @@ func (s *Server) ProcessBlocks(msg *Message, peer *Peer) {
 func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 	var blockPayload NewBlockPayload
 	if err := msg.ParsePayload(&blockPayload); err != nil {
-		s.logf("Failed to parse block payload: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse block payload: %v", err)
 		return
 	}
 
@@ -1165,13 +1134,13 @@ func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
 		if time.Now().Sub(addedTime) <= config.RecentBlocksTTL {
-			s.logf("Ignoring new block: %x because its in recentblocks", blockHash[:8])
+			log.Printf(s.config.NodeID+"\t"+"Ignoring new block: %x because its in recentblocks", blockHash[:8])
 			return
 		}
 	}
 	s.recentBlocks[blockHash] = time.Now()
 
-	s.logf("Received new block %x from peer %s", blockHash[:8], peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received new block %x from peer %s", blockHash[:8], peer.Address)
 
 	// Process the block using the service layer (exclude the sender from relay)
 	go func() { <-ProcessBlock(s, blockPayload.Block, peer.Address) }()
@@ -1179,18 +1148,18 @@ func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 
 // ProcessPong handles pong responses
 func (s *Server) ProcessPong(peer *Peer) {
-	s.logf("Received pong from peer %s", peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received pong from peer %s", peer.Address)
 }
 
 // ProcessSharedPeers handles received peer lists
 func (s *Server) ProcessSharedPeers(msg *Message, peer *Peer) {
 	var sharePayload SharePeersPayload
 	if err := msg.ParsePayload(&sharePayload); err != nil {
-		s.logf("Failed to parse shared peers: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse shared peers: %v", err)
 		return
 	}
 
-	s.logf("Received %d peers from %s", len(sharePayload.Peers), peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received %d peers from %s", len(sharePayload.Peers), peer.Address)
 	// The discovery component handles adding these peers
 }
 
@@ -1202,14 +1171,14 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 		// Try legacy format with wrapper
 		var txPayload NewTxPayload
 		if err := msg.ParsePayload(&txPayload); err != nil {
-			s.logf("Failed to parse transaction payload: %v", err)
+			log.Printf(s.config.NodeID+"\t"+"Failed to parse transaction payload: %v", err)
 			return
 		}
 		tx = txPayload.Transaction
 	}
 
 	if tx == nil {
-		s.logf("Received nil transaction from peer %s", peer.Address)
+		log.Printf(s.config.NodeID+"\t"+"Received nil transaction from peer %s", peer.Address)
 		return
 	}
 
@@ -1217,11 +1186,11 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 
 	// Check if we've recently seen this transaction (prevent loops)
 	if s.IsRecentTransaction(txHash) {
-		s.logf("Already seen transaction %x, skipping", txHash[:8])
+		log.Printf(s.config.NodeID+"\t"+"Already seen transaction %x, skipping", txHash[:8])
 		return
 	}
 
-	s.logf("Received new transaction %x from peer %s", txHash[:8], peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Received new transaction %x from peer %s", txHash[:8], peer.Address)
 
 	// Mark as seen to prevent loops
 	s.MarkTransactionSeen(txHash)
@@ -1229,7 +1198,7 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 	// Add to our mempool if we have a transaction processor
 	if s.config.TransactionProcessor != nil {
 		if err := s.config.TransactionProcessor(tx); err != nil {
-			s.logf("Transaction %x rejected by mempool: %v", txHash[:8], err)
+			log.Printf(s.config.NodeID+"\t"+"Transaction %x rejected by mempool: %v", txHash[:8], err)
 			return // Don't relay invalid transactions
 		}
 	}
@@ -1242,13 +1211,13 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 func (s *Server) ProcessSubmitBlock(msg *Message, conn net.Conn) {
 	var submitPayload SubmitBlockPayload
 	if err := msg.ParsePayload(&submitPayload); err != nil {
-		s.logf("Failed to parse submit block payload: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to parse submit block payload: %v", err)
 		return
 	}
 
 	blockHash := submitPayload.Block.Header.GetHash()
 	remoteAddr := conn.RemoteAddr().String()
-	s.logf("Received block submission %x from miner %s", blockHash[:8], remoteAddr)
+	log.Printf(s.config.NodeID+"\t"+"Received block submission %x from miner %s", blockHash[:8], remoteAddr)
 
 	// Process the block through the same pipeline
 	// (no excludePeerAddr since this isn't from a peer)
@@ -1272,13 +1241,13 @@ func (s *Server) ProcessSubmitBlock(msg *Message, conn net.Conn) {
 func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 	var payload RequestHeadersPayload
 	if err := msg.ParsePayload(&payload); err != nil {
-		s.logf("Failed to decode request headers payload: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to decode request headers payload: %v", err)
 		return
 	}
 
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain: %v", err)
 		return
 	}
 
@@ -1286,7 +1255,7 @@ func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 
 	if len(payload.Hashes) > 0 {
 		// Hash-based request
-		s.logf("Peer %s requested %d specific headers by hash", peer.Address, len(payload.Hashes))
+		log.Printf(s.config.NodeID+"\t"+"Peer %s requested %d specific headers by hash", peer.Address, len(payload.Hashes))
 
 		hashMap := make(map[string]bool)
 		for _, hashStr := range payload.Hashes {
@@ -1302,7 +1271,7 @@ func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 		}
 	} else {
 		// Height-based request
-		s.logf("Peer %s requested %d headers starting from height %d",
+		log.Printf(s.config.NodeID+"\t"+"Peer %s requested %d headers starting from height %d",
 			peer.Address, payload.Count, payload.StartHeight)
 
 		for _, block := range chain.Blocks {
@@ -1313,11 +1282,11 @@ func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 		}
 	}
 
-	s.logf("Sending %d headers to %s", len(headers), peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Sending %d headers to %s", len(headers), peer.Address)
 
 	response, err := NewMessage(MessageTypeHeaders, HeadersPayload{Headers: headers})
 	if err != nil {
-		s.logf("Failed to create headers response: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create headers response: %v", err)
 		return
 	}
 
@@ -1325,7 +1294,7 @@ func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 	response.ReplyTo = msg.RequestID
 
 	if err := s.sendMessage(conn, response); err != nil {
-		s.logf("Failed to send headers to %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to send headers to %s: %v", peer.Address, err)
 	}
 }
 
@@ -1337,7 +1306,7 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 	if msg.Type == MessageTypeRequestBlocks {
 		var reqPayload RequestBlocksPayload
 		if err := msg.ParsePayload(&reqPayload); err != nil {
-			s.logf("Failed to decode request blocks payload: %v", err)
+			log.Printf(s.config.NodeID+"\t"+"Failed to decode request blocks payload: %v", err)
 			return
 		}
 		payload = reqPayload
@@ -1345,7 +1314,7 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 
 	chain, err := s.config.Store.GetChain()
 	if err != nil {
-		s.logf("Failed to get chain: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to get chain: %v", err)
 		return
 	}
 
@@ -1355,7 +1324,7 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 	case RequestBlocksPayload:
 		if len(p.Hashes) > 0 {
 			// Hash-based request
-			s.logf("Peer %s requested %d specific blocks by hash",
+			log.Printf(s.config.NodeID+"\t"+"Peer %s requested %d specific blocks by hash",
 				peer.Address, len(p.Hashes))
 
 			// Create a map for quick lookup
@@ -1373,7 +1342,7 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 			}
 		} else {
 			// Height-based request
-			s.logf("Peer %s requested %d blocks starting from height %d",
+			log.Printf(s.config.NodeID+"\t"+"Peer %s requested %d blocks starting from height %d",
 				peer.Address, p.Count, p.StartHeight)
 
 			for _, block := range chain.Blocks {
@@ -1385,11 +1354,11 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 		}
 	}
 
-	s.logf("Sending %d blocks to %s", len(blocks), peer.Address)
+	log.Printf(s.config.NodeID+"\t"+"Sending %d blocks to %s", len(blocks), peer.Address)
 
 	response, err := NewMessage(MessageTypeBlocks, BlocksPayload{Blocks: blocks})
 	if err != nil {
-		s.logf("Failed to create blocks response: %v", err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to create blocks response: %v", err)
 		return
 	}
 
@@ -1397,6 +1366,6 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 	response.ReplyTo = msg.RequestID
 
 	if err := s.sendMessage(conn, response); err != nil {
-		s.logf("Failed to send blocks to %s: %v", peer.Address, err)
+		log.Printf(s.config.NodeID+"\t"+"Failed to send blocks to %s: %v", peer.Address, err)
 	}
 }

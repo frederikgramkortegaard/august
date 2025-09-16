@@ -9,16 +9,6 @@ import (
 	"log"
 )
 
-// DebugLogging controls whether to output verbose validation logs
-var DebugLogging = false
-
-// debugLog logs a message only if debug logging is enabled
-func debugLog(format string, args ...interface{}) {
-	if DebugLogging {
-		log.Printf(format, args...)
-	}
-}
-
 // ErrMissingParent is returned when a block's parent is not found in the chain
 type ErrMissingParent struct {
 	Hash Hash32
@@ -164,15 +154,15 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 
 // validateTransactionSignature validates just the cryptographic signature
 func validateTransactionSignature(tsx *Transaction) bool {
-	debugLog("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
+	log.Printf("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
 	hash := tsx.GetHash()
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
 	valid := ed25519.Verify(publicKey, hash[:], signature)
 	if !valid {
-		debugLog("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
+		log.Printf("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
 	} else {
-		debugLog("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
+		log.Printf("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
 	}
 	return valid
 }
@@ -182,15 +172,15 @@ func validateTransactionSignature(tsx *Transaction) bool {
 func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) bool {
 	// First validate
 	if err := ValidateTransaction(tsx, accountStates); err != nil {
-		debugLog("VALIDATION\tTRANSACTION REJECTED: %v", err)
+		log.Printf("VALIDATION\tTRANSACTION REJECTED: %v", err)
 		return false
 	}
 
 	// Then apply
-	debugLog("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
+	log.Printf("VALIDATION\tTRANSACTION ACCEPTED: Applying transaction")
 	_, err := ApplyTransaction(tsx, accountStates)
 	if err != nil {
-		debugLog("VALIDATION\tTRANSACTION APPLICATION FAILED: %v", err)
+		log.Printf("VALIDATION\tTRANSACTION APPLICATION FAILED: %v", err)
 		return false
 	}
 	return true
@@ -290,12 +280,12 @@ func ValidateStandaloneTransaction(tsx *Transaction, chain *Chain) error {
 // ApplyTransaction applies a valid transaction to account states (assumes already validated)
 // Returns error and gas consumed
 func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) (uint64, error) {
-	debugLog("APPLY\tApplying transaction: %x -> %x, amount=%d, nonce=%d",
+	log.Printf("APPLY\tApplying transaction: %x -> %x, amount=%d, nonce=%d",
 		tsx.From[:4], tsx.To[:4], tsx.Amount, tsx.Nonce)
 
 	// Coinbase transactions
 	if tsx.From == (PublicKey{}) {
-		debugLog("APPLY\tProcessing coinbase transaction")
+		log.Printf("APPLY\tProcessing coinbase transaction")
 
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
@@ -427,7 +417,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		}
 		fromState.Balance = newFromBalance
 		fromState.Nonce += 1
-		debugLog("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
+		log.Printf("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
 
 		return gasUsed, nil
 	} else if tsx.To != (PublicKey{}) {
@@ -518,7 +508,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		}
 		fromState.Balance = newFromBalance
 		fromState.Nonce += 1
-		debugLog("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
+		log.Printf("APPLY\tSender %x new balance=%d, nonce=%d, gasUsed=%d", tsx.From[:4], fromState.Balance, fromState.Nonce, gasUsed)
 
 		return gasUsed, nil
 	}
@@ -678,13 +668,13 @@ func ValidateHeaderChain(headers []BlockHeader) bool {
 
 		// PoW validation - check if hash meets the target specified in header
 		if err := ValidateHeaderStructure(&headers[i]); err != nil {
-			debugLog("VALIDATION\tHeader %d failed structure validation: %v", i, err)
+			log.Printf("VALIDATION\tHeader %d failed structure validation: %v", i, err)
 			return false
 		}
 
 		// Timestamp validation - must be greater than previous block
 		if headers[i].Timestamp <= headers[i-1].Timestamp {
-			debugLog("VALIDATION\tHeader %d timestamp not greater than previous", i)
+			log.Printf("VALIDATION\tHeader %d timestamp not greater than previous", i)
 			return false
 		}
 	}
@@ -746,9 +736,9 @@ func ValidateCompleteChain(candidateChain *Chain) error {
 		AccountStates: make(map[PublicKey]*AccountState),
 	}
 
-	// Initialize with genesis account (FirstUser gets 10 AUG)
-	validationChain.AccountStates[FirstUser] = &AccountState{
-		Address: FirstUser,
+	// Initialize with genesis account (config.FirstUser gets 10 AUG)
+	validationChain.AccountStates[config.FirstUser] = &AccountState{
+		Address: config.FirstUser,
 		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
