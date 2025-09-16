@@ -3,6 +3,7 @@ package contracts
 import (
 	"august/avm"
 	"august/blockchain"
+	"august/config"
 	"math/big"
 	"testing"
 )
@@ -100,7 +101,7 @@ func TestStorageRootWithContractExecution(t *testing.T) {
 	testAccount := blockchain.PublicKey{0x42}
 	chain.AccountStates[testAccount] = &blockchain.AccountState{
 		Address: testAccount,
-		Balance: 10 * blockchain.AUG,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -125,7 +126,7 @@ func TestStorageRootWithContractExecution(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             testAccount,
 		To:               blockchain.PublicKey{}, // Empty = contract deployment
-		Amount:           1 * blockchain.AUG,
+		Amount:           1 * config.AUG,
 		Nonce:            1,
 		Instructions:     []avm.Instruction{{Opcode: avm.STOP}}, // Runtime code
 		InitInstructions: initInstructions,                      // Init code

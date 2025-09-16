@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// Create seed node configuration
-	config := node.Config{
+	config := node.NodeConfig{
 		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,

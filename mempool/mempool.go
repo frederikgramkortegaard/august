@@ -44,8 +44,8 @@ func (pq *GasPriceQueue) Pop() interface{} {
 	return item
 }
 
-// Config holds mempool configuration
-type Config struct {
+// MempoolConfig holds mempool configuration
+type MempoolConfig struct {
 	MaxSize    int           // Maximum number of transactions (default: 1000)
 	MaxExpiry  time.Duration // Maximum age before expiry (default: 7 days)
 }
@@ -55,11 +55,11 @@ type Mempool struct {
 	mu           sync.RWMutex
 	queue        *GasPriceQueue
 	transactions map[string]*MempoolEntry // Hash -> Entry for O(1) lookups
-	config       Config
+	config       MempoolConfig
 }
 
 // NewMempool creates a new mempool with given configuration
-func NewMempool(config Config) *Mempool {
+func NewMempool(config MempoolConfig) *Mempool {
 	if config.MaxSize <= 0 {
 		config.MaxSize = 1000
 	}
@@ -84,7 +84,7 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 	defer mp.mu.Unlock()
 
 	// Generate transaction hash for deduplication
-	txHash := blockchain.HashTransaction(&tx)
+	txHash := tx.GetHash()
 	hashStr := string(txHash[:])
 
 	// Check if transaction already exists
@@ -161,7 +161,7 @@ func (mp *Mempool) RemoveTransactions(transactions []blockchain.Transaction) int
 
 	removed := 0
 	for _, tx := range transactions {
-		txHash := blockchain.HashTransaction(&tx)
+		txHash := tx.GetHash()
 		hashStr := string(txHash[:])
 
 		if _, exists := mp.transactions[hashStr]; exists {
@@ -235,7 +235,7 @@ func (mp *Mempool) removeLowestGasPrice() {
 
 	// Remove from hash map
 	lowestEntry := (*mp.queue)[lowestIdx]
-	txHash := blockchain.HashTransaction(&lowestEntry.Transaction)
+	txHash := lowestEntry.Transaction.GetHash()
 	hashStr := string(txHash[:])
 	delete(mp.transactions, hashStr)
 

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"august/node"
 	"log"
@@ -39,7 +40,7 @@ func createTestNode(idx int) *node.FullNode {
 
 	portAsString := strconv.Itoa(PORT_START_RANGE + idx)
 
-	conf := node.Config{
+	conf := node.NodeConfig{
 		Port:      portAsString,
 		NodeID:    "test-node-id-" + portAsString,
 		SeedPeers: []string{},
@@ -73,8 +74,8 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		t.Fatalf("Expected genesis block (height 0), got height %d", lastBlock.Header.Height)
 	}
 
-	genesisHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
-	lastBlockHash := blockchain.HashBlockHeader(&lastBlock.Header)
+	genesisHash := blockchain.GenesisBlock.Header.GetHash()
+	lastBlockHash := lastBlock.Header.GetHash()
 	if genesisHash != lastBlockHash {
 		t.Fatalf("Last block is not genesis: expected %x, got %x", genesisHash[:8], lastBlockHash[:8])
 	}
@@ -93,7 +94,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		Coinbase: blockchain.Transaction{
 			From:      blockchain.PublicKey{}, // Empty for coinbase
 			To:        blockchain.FirstUser,   // Mine to first user
-			Amount:    blockchain.BlockReward,
+			Amount:    config.BlockReward,
 			GasLimit:  0,  // Coinbase transactions use no gas
 			GasPrice:  0,
 			Nonce:     0,
@@ -102,7 +103,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		},
 		Transactions: []blockchain.Transaction{}, // No other transactions
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact, // Super easy difficulty for testing
+		TargetBits:   config.TestTargetCompact, // Super easy difficulty for testing
 	}
 
 	// Mine the block
@@ -112,7 +113,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		t.Fatalf("Failed to mine block: %v", err)
 	}
 
-	blockHash := blockchain.HashBlockHeader(&block.Header)
+	blockHash := block.Header.GetHash()
 	log.Printf("Mined block %x (height %d, nonce %d)", blockHash[:8], block.Header.Height, block.Header.Nonce)
 
 	// Submit block directly (no HTTP API)
@@ -165,7 +166,7 @@ func TestBlockchainSaveLoad(t *testing.T) {
 		t.Fatalf("Expected mined block at height 1, got %d", minedBlock.Header.Height)
 	}
 
-	minedBlockHash := blockchain.HashBlockHeader(&minedBlock.Header)
+	minedBlockHash := minedBlock.Header.GetHash()
 	if minedBlockHash != blockHash {
 		t.Fatalf("Mined block hash mismatch: expected %x, got %x", blockHash[:8], minedBlockHash[:8])
 	}

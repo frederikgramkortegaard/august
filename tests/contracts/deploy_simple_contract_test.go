@@ -3,6 +3,7 @@ package contracts
 import (
 	"august/avm"
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"crypto/ed25519"
 	"testing"
@@ -20,7 +21,7 @@ func TestDeploySimpleContract(t *testing.T) {
 	// Create initial account state from genesis
 	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 		Address: blockchain.FirstUser,
-		Balance: 10 * blockchain.AUG, // From genesis
+		Balance: 10 * config.AUG, // From genesis
 		Nonce:   0,
 	}
 
@@ -33,16 +34,16 @@ func TestDeploySimpleContract(t *testing.T) {
 	copy(minerPublicKey[:], minerPub)
 
 	t.Logf("Miner address: %x", minerPublicKey[:8])
-	t.Logf("Genesis user balance: %d AUG", chain.AccountStates[blockchain.FirstUser].Balance/blockchain.AUG)
+	t.Logf("Genesis user balance: %d AUG", chain.AccountStates[blockchain.FirstUser].Balance/config.AUG)
 
 	// Mine a block to give the miner some coins
 	coinbaseTx := blockchain.Transaction{
 		From:             blockchain.PublicKey{}, // Coinbase
 		To:               minerPublicKey,
-		Amount:           blockchain.BlockReward,
+		Amount:           config.BlockReward,
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0,
@@ -50,7 +51,7 @@ func TestDeploySimpleContract(t *testing.T) {
 	}
 
 	// Create and mine block 1
-	previousHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
+	previousHash := blockchain.GenesisBlock.Header.GetHash()
 	blockParams := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
@@ -59,7 +60,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		Coinbase:      coinbaseTx,
 		Transactions:  []blockchain.Transaction{}, // No regular transactions yet
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates, // Pass current blockchain state
 	}
 
@@ -74,7 +75,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		t.Fatalf("Failed to apply block 1: %v", err)
 	}
 
-	t.Logf("Mined block 1, miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/blockchain.AUG)
+	t.Logf("Mined block 1, miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/config.AUG)
 
 	// Create simple contract with just NOOP instructions
 	initInstructions := []avm.Instruction{
@@ -90,10 +91,10 @@ func TestDeploySimpleContract(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             minerPublicKey,
 		To:               blockchain.PublicKey{}, // Empty To address = contract deployment
-		Amount:           1 * blockchain.AUG,     // Send 1 AUG to the contract
+		Amount:           1 * config.AUG,     // Send 1 AUG to the contract
 		Nonce:            1,                      // Miner's first transaction
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         25000, // 25k gas limit
@@ -101,15 +102,15 @@ func TestDeploySimpleContract(t *testing.T) {
 	}
 
 	// Sign the transaction with miner's private key
-	blockchain.SignTransaction(&deployTx, minerPriv)
+	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	t.Logf("Creating contract deployment transaction...")
-	t.Logf("Miner balance before deployment: %d AUG", chain.AccountStates[minerPublicKey].Balance/blockchain.AUG)
+	t.Logf("Miner balance before deployment: %d AUG", chain.AccountStates[minerPublicKey].Balance/config.AUG)
 
 	// Calculate expected gas fees (actual execution: base deployment + init gas)
-	actualGas := blockchain.GasContractDeploy + 1 // Base deployment + 1 NOOP instruction
+	actualGas := config.GasContractDeploy + 1 // Base deployment + 1 NOOP instruction
 	actualGasFees := actualGas * deployTx.GasPrice
-	expectedCoinbaseAmount := blockchain.BlockReward + actualGasFees
+	expectedCoinbaseAmount := config.BlockReward + actualGasFees
 
 	// Create a coinbase transaction for the next block
 	coinbaseTx2 := blockchain.Transaction{
@@ -118,7 +119,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		Amount:           expectedCoinbaseAmount,
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0,
@@ -126,10 +127,10 @@ func TestDeploySimpleContract(t *testing.T) {
 	}
 
 	t.Logf("Expected coinbase amount: %d (block reward %d + gas fees %d)",
-		expectedCoinbaseAmount, blockchain.BlockReward, actualGasFees)
+		expectedCoinbaseAmount, config.BlockReward, actualGasFees)
 
 	// Mine block 2 with the contract deployment transaction
-	previousHash2 := blockchain.HashBlockHeader(&block1.Header)
+	previousHash2 := block1.Header.GetHash()
 	blockParams2 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
@@ -138,7 +139,7 @@ func TestDeploySimpleContract(t *testing.T) {
 		Coinbase:      coinbaseTx2,
 		Transactions:  []blockchain.Transaction{deployTx}, // Include deployment transaction
 		Timestamp:     block1.Header.Timestamp + 1,        // Ensure timestamp is after block 1
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates, // Pass current blockchain state
 	}
 
@@ -157,7 +158,7 @@ func TestDeploySimpleContract(t *testing.T) {
 
 	// Check that miner's balance was deducted correctly
 	minerState := chain.AccountStates[minerPublicKey]
-	t.Logf("Miner balance after deployment: %d AUG", minerState.Balance/blockchain.AUG)
+	t.Logf("Miner balance after deployment: %d AUG", minerState.Balance/config.AUG)
 
 	// Check that miner's nonce was incremented
 	if minerState.Nonce != 1 {
@@ -211,7 +212,7 @@ func TestDeploySimpleContract(t *testing.T) {
 	}
 
 	t.Logf("Simple NOOP contract deployed successfully at: %x", contractAddr[:8])
-	t.Logf("Contract has %d AUG balance", contractState.Balance/blockchain.AUG)
+	t.Logf("Contract has %d AUG balance", contractState.Balance/config.AUG)
 	t.Logf("Blockchain now has %d blocks", len(chain.Blocks))
 }
 

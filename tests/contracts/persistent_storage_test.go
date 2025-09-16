@@ -3,6 +3,7 @@ package contracts
 import (
 	"august/avm"
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"crypto/ed25519"
 	"math/big"
@@ -21,7 +22,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 	// Create initial account state from genesis
 	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 		Address: blockchain.FirstUser,
-		Balance: 10 * blockchain.AUG,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -37,15 +38,15 @@ func TestPersistentStorageBasics(t *testing.T) {
 	coinbaseTx1 := blockchain.Transaction{
 		From:      blockchain.PublicKey{}, // Coinbase
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward,
+		Amount:    config.BlockReward,
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
-	previousHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
+	previousHash := blockchain.GenesisBlock.Header.GetHash()
 	blockParams1 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
@@ -54,7 +55,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Coinbase:      coinbaseTx1,
 		Transactions:  []blockchain.Transaction{},
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -68,7 +69,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		t.Fatalf("Failed to apply block 1: %v", err)
 	}
 
-	t.Logf("Miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/blockchain.AUG)
+	t.Logf("Miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/config.AUG)
 
 	// Create a contract that uses persistent storage
 	// Init: Store initial value 42 at address 1
@@ -102,17 +103,17 @@ func TestPersistentStorageBasics(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             minerPublicKey,
 		To:               blockchain.PublicKey{}, // Empty = contract deployment
-		Amount:           1 * blockchain.AUG,
+		Amount:           1 * config.AUG,
 		Nonce:            1,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         30000,
 		GasPrice:         1000,
 	}
 
-	blockchain.SignTransaction(&deployTx, minerPriv)
+	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	// Execute to get actual gas usage for coinbase
 	tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
@@ -142,16 +143,16 @@ func TestPersistentStorageBasics(t *testing.T) {
 	coinbaseTx2 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward + (actualDeployGas * deployTx.GasPrice),
+		Amount:    config.BlockReward + (actualDeployGas * deployTx.GasPrice),
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
 	// Mine block 2 with contract deployment
-	previousHash2 := blockchain.HashBlockHeader(&block1.Header)
+	previousHash2 := block1.Header.GetHash()
 	blockParams2 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
@@ -160,7 +161,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Coinbase:      coinbaseTx2,
 		Transactions:  []blockchain.Transaction{deployTx},
 		Timestamp:     block1.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -216,14 +217,14 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Amount:           0,
 		Nonce:            2,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         30000,
 		GasPrice:         1000,
 	}
 
-	blockchain.SignTransaction(&callTx, minerPriv)
+	callTx.Signature = callTx.GetSignature(minerPriv)
 
 	// Execute to get actual gas usage
 	tempStates2 := make(map[blockchain.PublicKey]*blockchain.AccountState)
@@ -253,16 +254,16 @@ func TestPersistentStorageBasics(t *testing.T) {
 	coinbaseTx3 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward + (actualCallGas * callTx.GasPrice),
+		Amount:    config.BlockReward + (actualCallGas * callTx.GasPrice),
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
 	// Mine block 3 with contract call
-	previousHash3 := blockchain.HashBlockHeader(&block2.Header)
+	previousHash3 := block2.Header.GetHash()
 	blockParams3 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash3,
@@ -271,7 +272,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Coinbase:      coinbaseTx3,
 		Transactions:  []blockchain.Transaction{callTx},
 		Timestamp:     block2.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -319,7 +320,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 
 	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 		Address: blockchain.FirstUser,
-		Balance: 10 * blockchain.AUG,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -335,15 +336,15 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	coinbaseTx1 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward,
+		Amount:    config.BlockReward,
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
-	previousHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
+	previousHash := blockchain.GenesisBlock.Header.GetHash()
 	blockParams1 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
@@ -352,7 +353,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		Coinbase:      coinbaseTx1,
 		Transactions:  []blockchain.Transaction{},
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -400,17 +401,17 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             minerPublicKey,
 		To:               blockchain.PublicKey{},
-		Amount:           1 * blockchain.AUG,
+		Amount:           1 * config.AUG,
 		Nonce:            1,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         30000,
 		GasPrice:         1000,
 	}
 
-	blockchain.SignTransaction(&deployTx, minerPriv)
+	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	// Get gas usage and deploy
 	tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
@@ -439,16 +440,16 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	coinbaseTx2 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward + (actualDeployGas * deployTx.GasPrice),
+		Amount:    config.BlockReward + (actualDeployGas * deployTx.GasPrice),
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
 	// Mine deployment block
-	previousHash2 := blockchain.HashBlockHeader(&block1.Header)
+	previousHash2 := block1.Header.GetHash()
 	blockParams2 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
@@ -457,7 +458,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		Coinbase:      coinbaseTx2,
 		Transactions:  []blockchain.Transaction{deployTx},
 		Timestamp:     block1.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -514,12 +515,12 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		Amount:    0,
 		Nonce:     2,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  30000,
 		GasPrice:  1000,
 	}
 
-	blockchain.SignTransaction(&callTx, minerPriv)
+	callTx.Signature = callTx.GetSignature(minerPriv)
 
 	tempStates2 := make(map[blockchain.PublicKey]*blockchain.AccountState)
 	for pubKey, state := range chain.AccountStates {
@@ -547,16 +548,16 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	coinbaseTx3 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward + (actualCallGas * callTx.GasPrice),
+		Amount:    config.BlockReward + (actualCallGas * callTx.GasPrice),
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
 	// Mine call block
-	previousHash3 := blockchain.HashBlockHeader(&block2.Header)
+	previousHash3 := block2.Header.GetHash()
 	blockParams3 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash3,
@@ -565,7 +566,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		Coinbase:      coinbaseTx3,
 		Transactions:  []blockchain.Transaction{callTx},
 		Timestamp:     block2.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 

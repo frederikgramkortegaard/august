@@ -3,6 +3,7 @@ package contracts
 import (
 	"august/avm"
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"crypto/ed25519"
 	"math/big"
@@ -21,7 +22,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 
 	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 		Address: blockchain.FirstUser,
-		Balance: 10 * blockchain.AUG,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -37,15 +38,15 @@ func TestSimpleStorageDebug(t *testing.T) {
 	coinbaseTx1 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward,
+		Amount:    config.BlockReward,
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
-	previousHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
+	previousHash := blockchain.GenesisBlock.Header.GetHash()
 	blockParams1 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
@@ -54,7 +55,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 		Coinbase:      coinbaseTx1,
 		Transactions:  []blockchain.Transaction{},
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -87,17 +88,17 @@ func TestSimpleStorageDebug(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             minerPublicKey,
 		To:               blockchain.PublicKey{},
-		Amount:           1 * blockchain.AUG,
+		Amount:           1 * config.AUG,
 		Nonce:            1,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         25000,
 		GasPrice:         1000,
 	}
 
-	blockchain.SignTransaction(&deployTx, minerPriv)
+	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	// Execute to get gas
 	tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
@@ -126,16 +127,16 @@ func TestSimpleStorageDebug(t *testing.T) {
 	coinbaseTx2 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
 		To:        minerPublicKey,
-		Amount:    blockchain.BlockReward + (actualDeployGas * deployTx.GasPrice),
+		Amount:    config.BlockReward + (actualDeployGas * deployTx.GasPrice),
 		Nonce:     0,
 		Timestamp: uint64(time.Now().Unix()),
-		ChainID:   blockchain.MainnetChainID,
+		ChainID:   config.MainnetChainID,
 		GasLimit:  0,
 		GasPrice:  0,
 	}
 
 	// Deploy the contract
-	previousHash2 := blockchain.HashBlockHeader(&block1.Header)
+	previousHash2 := block1.Header.GetHash()
 	blockParams2 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
@@ -144,7 +145,7 @@ func TestSimpleStorageDebug(t *testing.T) {
 		Coinbase:      coinbaseTx2,
 		Transactions:  []blockchain.Transaction{deployTx},
 		Timestamp:     block1.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 

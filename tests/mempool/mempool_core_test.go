@@ -2,9 +2,11 @@ package tests
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/mempool"
 	"august/miner"
 	"august/node"
+	"august/utils"
 	"crypto/ed25519"
 	"fmt"
 	"log"
@@ -38,7 +40,7 @@ const MEMPOOL_PORT_START = 9400
 func createMempoolTestNode(idx int) *node.FullNode {
 	portAsString := strconv.Itoa(MEMPOOL_PORT_START + idx)
 
-	conf := node.Config{
+	conf := node.NodeConfig{
 		Port:           portAsString,
 		NodeID:         "mempool-test-node-" + portAsString,
 		SeedPeers:      []string{},
@@ -72,7 +74,7 @@ func createTestTransaction(from, to blockchain.PublicKey, amount, fee uint64, no
 	}
 
 	// Sign the transaction
-	blockchain.SignTransaction(&tx, privateKey)
+	tx.Signature = tx.GetSignature(privateKey)
 	return tx
 }
 
@@ -112,7 +114,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 
 	// Set up some initial balances (simulate mining rewards)
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -162,7 +164,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 
 	// Set up balance for second user
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -236,7 +238,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 		t.Fatalf("Failed to get chain: %v", err)
 	}
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -252,7 +254,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	copy(keyC[:], pubC)
 
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -319,7 +321,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 				t.Fatalf("Failed to apply transaction for gas calculation: %v", err)
 			}
 			txFee := actualGasUsed * tx1.GasPrice
-			coinbaseAmount, err := blockchain.SafeAdd(blockchain.BlockReward, txFee)
+			coinbaseAmount, err := utils.SafeAdd(config.BlockReward, txFee)
 			if err != nil {
 				panic(fmt.Sprintf("coinbase amount overflow in test: %v", err))
 			}
@@ -336,7 +338,7 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 		}(),
 		Transactions: []blockchain.Transaction{tx1}, // Include tx1 in the block
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact, // Easy difficulty for testing
+		TargetBits:   config.TestTargetCompact, // Easy difficulty for testing
 	}
 
 	// Mine the block
@@ -403,7 +405,7 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 		t.Fatalf("Failed to get chain: %v", err)
 	}
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -419,7 +421,7 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 	copy(keyC[:], pubC)
 
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 
@@ -479,7 +481,7 @@ func TestMempoolSizeLimits(t *testing.T) {
 	nodeA.Config.MaxMempoolSize = 2
 
 	// Recreate the mempool with the new configuration
-	mempoolConfig := mempool.Config{
+	mempoolConfig := mempool.MempoolConfig{
 		MaxSize:   nodeA.Config.MaxMempoolSize,
 		MaxExpiry: nodeA.Config.MempoolExpiry,
 	}
@@ -511,15 +513,15 @@ func TestMempoolSizeLimits(t *testing.T) {
 
 	// Set up balances for all users
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 	chain.AccountStates[keyC] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 	chain.AccountStates[keyD] = &blockchain.AccountState{
-		Balance: 10 * blockchain.AUG, // 10 AUG = 10M Leaf units
+		Balance: 10 * config.AUG, // 10 AUG = 10M Leaf units
 		Nonce:   0,
 	}
 

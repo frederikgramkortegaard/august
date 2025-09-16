@@ -255,10 +255,10 @@ func handleTransaction(node Node) http.HandlerFunc {
 		// Search for transaction in all blocks
 		for blockHeight, block := range chain.Blocks {
 			for txIndex, tx := range block.Transactions {
-				txHash := blockchain.HashTransaction(&tx)
+				txHash := tx.GetHash()
 				if txHash == targetHash {
 					// Found transaction
-					blockHash := blockchain.HashBlockHeader(&block.Header)
+					blockHash := block.Header.GetHash()
 					response := TransactionResponse{
 						Found:       true,
 						Transaction: tx,
@@ -277,7 +277,7 @@ func handleTransaction(node Node) http.HandlerFunc {
 		// Check mempool for pending transaction
 		transactions := node.GetMempool().GetTransactions(1000) // Get all transactions
 		for _, tx := range transactions {
-			txHash := blockchain.HashTransaction(&tx)
+			txHash := tx.GetHash()
 			if txHash == targetHash {
 				// Found in mempool
 				response := TransactionResponse{
@@ -350,7 +350,7 @@ func handleBlock(node Node) http.HandlerFunc {
 
 		// Search for block
 		for blockHeight, block := range chain.Blocks {
-			blockHash := blockchain.HashBlockHeader(&block.Header)
+			blockHash := block.Header.GetHash()
 			if blockHash == targetHash {
 				// Found block
 				response := BlockResponse{
@@ -400,7 +400,7 @@ func handleSubmitTransaction(node Node) http.HandlerFunc {
 		}
 
 		// Return success response with transaction hash
-		txHash := blockchain.HashTransaction(&tx)
+		txHash := tx.GetHash()
 		response := SubmitTransactionResponse{
 			Status: "submitted",
 			Hash:   hex.EncodeToString(txHash[:]),

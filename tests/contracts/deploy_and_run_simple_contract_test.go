@@ -3,6 +3,7 @@ package contracts
 import (
 	"august/avm"
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"crypto/ed25519"
 	"math/big"
@@ -21,7 +22,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	// Create initial account state from genesis
 	chain.AccountStates[blockchain.FirstUser] = &blockchain.AccountState{
 		Address: blockchain.FirstUser,
-		Balance: 10 * blockchain.AUG, // From genesis
+		Balance: 10 * config.AUG, // From genesis
 		Nonce:   0,
 	}
 
@@ -39,17 +40,17 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	coinbaseTx1 := blockchain.Transaction{
 		From:             blockchain.PublicKey{}, // Coinbase
 		To:               minerPublicKey,
-		Amount:           blockchain.BlockReward,
+		Amount:           config.BlockReward,
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0,
 		GasPrice:         0,
 	}
 
-	previousHash := blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header)
+	previousHash := blockchain.GenesisBlock.Header.GetHash()
 	blockParams1 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash,
@@ -58,7 +59,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Coinbase:      coinbaseTx1,
 		Transactions:  []blockchain.Transaction{},
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -72,7 +73,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		t.Fatalf("Failed to apply block 1: %v", err)
 	}
 
-	t.Logf("Mined block 1, miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/blockchain.AUG)
+	t.Logf("Mined block 1, miner now has %d AUG", chain.AccountStates[minerPublicKey].Balance/config.AUG)
 
 	// Create a simple contract with a counter
 	// Init: Push 0 onto stack and exit (sets initial state)
@@ -95,22 +96,22 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	deployTx := blockchain.Transaction{
 		From:             minerPublicKey,
 		To:               blockchain.PublicKey{}, // Empty = contract deployment
-		Amount:           1 * blockchain.AUG,     // Send 1 AUG to contract
+		Amount:           1 * config.AUG,     // Send 1 AUG to contract
 		Nonce:            1,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         25000, // 25k gas limit (more reasonable)
 		GasPrice:         1000,  // 1000 leaf per gas
 	}
 
-	blockchain.SignTransaction(&deployTx, minerPriv)
+	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	// Calculate actual gas for coinbase (deployment + init)
-	deploymentGas := blockchain.GasContractDeploy + 103 // Base + PUSH instruction (3 gas)
+	deploymentGas := config.GasContractDeploy + 103 // Base + PUSH instruction (3 gas)
 	deploymentGasFees := deploymentGas * deployTx.GasPrice
-	coinbaseAmount2 := blockchain.BlockReward + deploymentGasFees
+	coinbaseAmount2 := config.BlockReward + deploymentGasFees
 
 	coinbaseTx2 := blockchain.Transaction{
 		From:             blockchain.PublicKey{},
@@ -118,7 +119,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Amount:           coinbaseAmount2,
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0,
@@ -126,7 +127,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	}
 
 	// Mine block 2 with contract deployment
-	previousHash2 := blockchain.HashBlockHeader(&block1.Header)
+	previousHash2 := block1.Header.GetHash()
 	blockParams2 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash2,
@@ -135,7 +136,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Coinbase:      coinbaseTx2,
 		Transactions:  []blockchain.Transaction{deployTx},
 		Timestamp:     block1.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -175,14 +176,14 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Amount:           0,            // Don't send any AUG
 		Nonce:            2,            // Miner's second transaction
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil, // No new code - we're calling existing contract
 		InitInstructions: nil,
 		GasLimit:         25000, // 25k gas limit for execution
 		GasPrice:         1000,  // 1000 leaf per gas
 	}
 
-	blockchain.SignTransaction(&callTx, minerPriv)
+	callTx.Signature = callTx.GetSignature(minerPriv)
 
 	// Execute the transaction to get actual gas usage
 	tempStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
@@ -210,7 +211,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	t.Logf("Contract call used %d gas", actualCallGas)
 
 	callGasFees := actualCallGas * callTx.GasPrice
-	coinbaseAmount3 := blockchain.BlockReward + callGasFees
+	coinbaseAmount3 := config.BlockReward + callGasFees
 
 	coinbaseTx3 := blockchain.Transaction{
 		From:             blockchain.PublicKey{},
@@ -218,7 +219,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Amount:           coinbaseAmount3,
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0,
@@ -226,7 +227,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	}
 
 	// Mine block 3 with contract call
-	previousHash3 := blockchain.HashBlockHeader(&block2.Header)
+	previousHash3 := block2.Header.GetHash()
 	blockParams3 := miner.BlockCreationParams{
 		Version:       1,
 		PreviousHash:  previousHash3,
@@ -235,7 +236,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 		Coinbase:      coinbaseTx3,
 		Transactions:  []blockchain.Transaction{callTx},
 		Timestamp:     block2.Header.Timestamp + 1,
-		TargetBits:    blockchain.TestTargetCompact,
+		TargetBits:    config.TestTargetCompact,
 		CurrentStates: chain.AccountStates,
 	}
 
@@ -261,7 +262,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 
 	// Verify the contract call was executed
 	finalMinerState := chain.AccountStates[minerPublicKey]
-	t.Logf("Final miner balance: %d AUG", finalMinerState.Balance/blockchain.AUG)
+	t.Logf("Final miner balance: %d AUG", finalMinerState.Balance/config.AUG)
 	t.Logf("Final miner nonce: %d", finalMinerState.Nonce)
 
 	// Verify contract state (should still exist)
@@ -269,7 +270,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	if contractState == nil {
 		t.Errorf("Contract disappeared after call")
 	} else {
-		t.Logf("Contract balance after call: %d AUG", contractState.Balance/blockchain.AUG)
+		t.Logf("Contract balance after call: %d AUG", contractState.Balance/config.AUG)
 	}
 
 	if finalMinerState.Nonce != 2 {

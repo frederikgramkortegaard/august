@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var testNodeConfig node.Config
+var testNodeConfig node.NodeConfig
 
 // TestMain runs before all tests and sets up temporary directories
 func TestMain(m *testing.M) {
@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Setup test config with temp database path
-	testNodeConfig = node.Config{
+	testNodeConfig = node.NodeConfig{
 		Port:      "9372",
 		NodeID:    "test-node-id",
 		SeedPeers: []string{""},
@@ -76,10 +76,10 @@ func TestStartFullNode(t *testing.T) {
 	}
 	firstBlock := chain.Blocks[0]
 	firstHeader := firstBlock.Header
-	firstHeaderHash := blockchain.HashBlockHeader(&firstHeader)
+	firstHeaderHash := firstHeader.GetHash()
 
 	// Validate the Genesis block is accessible and correct
-	if firstHeaderHash != blockchain.HashBlockHeader(&blockchain.GenesisBlock.Header) {
+	if firstHeaderHash != blockchain.GenesisBlock.Header.GetHash() {
 		t.Fatal("Invalid Genesis Block Hash")
 	}
 

@@ -49,7 +49,7 @@ func NewCandidateManager(chainStore store.ChainStore) *CandidateManager {
 
 // AddCandidateBlock stores an orphan block waiting for its parent
 func (cm *CandidateManager) AddCandidateBlock(block *blockchain.Block, source string, parentHash [32]byte) {
-	blockHash := blockchain.HashBlockHeader(&block.Header)
+	blockHash := block.Header.GetHash()
 
 	candidate := &CandidateBlock{
 		Block:        block,
@@ -187,7 +187,7 @@ func (cm *CandidateManager) EvaluateCandidateForPromotion(candidate *CandidateCh
 
 // TryConnectCandidateBlocks attempts to connect orphan blocks when new blocks arrive
 func (cm *CandidateManager) TryConnectCandidateBlocks(newBlock *blockchain.Block) error {
-	newBlockHash := blockchain.HashBlockHeader(&newBlock.Header)
+	newBlockHash := newBlock.Header.GetHash()
 	connected := 0
 
 	// Look for candidate blocks that this block might parent

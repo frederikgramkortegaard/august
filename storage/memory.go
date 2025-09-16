@@ -40,7 +40,7 @@ func (m *MemoryChainStore) AddBlock(block *blockchain.Block) error {
 	if chain.BlockIndex == nil {
 		chain.BlockIndex = make(map[blockchain.Hash32]*blockchain.Block)
 	}
-	blockHash := blockchain.HashBlockHeader(&block.Header)
+	blockHash := block.Header.GetHash()
 	chain.BlockIndex[blockHash] = block
 
 	// Update tip
@@ -132,7 +132,7 @@ func (m *MemoryChainStore) GetBlockByHash(hash blockchain.Hash32) (*blockchain.B
 	}
 
 	for _, block := range chain.Blocks {
-		if blockchain.HashBlockHeader(&block.Header) == hash {
+		if block.Header.GetHash() == hash {
 			return block, nil
 		}
 	}

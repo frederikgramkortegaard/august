@@ -2,9 +2,12 @@ package blockchain
 
 import (
 	"august/avm"
+	"august/utils"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 )
 
 // ChainHead represents the current head of the blockchain
@@ -91,6 +94,45 @@ type Transaction struct {
 	GasPrice         uint64            `json:"gas_price"`         // Price per unit of gas in leaf units
 }
 
+// GetHash returns the hash of this transaction
+func (t *Transaction) GetHash() Hash32 {
+	h := sha256.New()
+	h.Write(t.From[:])
+	h.Write(t.To[:])
+	h.Write(utils.Uint64ToBytes(t.Amount))
+	h.Write(utils.Uint64ToBytes(t.Nonce))
+	h.Write(utils.Uint64ToBytes(t.Timestamp))
+	h.Write(utils.Uint64ToBytes(t.ChainID)) // Include ChainID for replay protection
+	h.Write(utils.Uint64ToBytes(t.GasLimit)) // Include gas limit
+	h.Write(utils.Uint64ToBytes(t.GasPrice)) // Include gas price
+
+	// Hash the contract instructions if present
+	if len(t.Instructions) > 0 {
+		codeHash := ComputeCodeHash(t.Instructions)
+		h.Write(codeHash[:])
+	}
+
+	// Hash the init instructions if present
+	if len(t.InitInstructions) > 0 {
+		initHash := ComputeCodeHash(t.InitInstructions)
+		h.Write(initHash[:])
+	}
+
+	var hash Hash32
+	copy(hash[:], h.Sum(nil))
+	return hash
+}
+
+// GetSignature computes the signature for this transaction using the given private key
+func (t *Transaction) GetSignature(privateKey []byte) Signature {
+	// Sign the transaction hash
+	hash := t.GetHash()
+	sig := ed25519.Sign(privateKey, hash[:])
+	var signature Signature
+	copy(signature[:], sig)
+	return signature
+}
+
 type Hash32 [32]byte
 
 // Custom JSON marshaling for Hash32
@@ -132,9 +174,41 @@ type BlockHeader struct {
 	Beneficiary  PublicKey `json:"beneficiary"`     // Miner/validator address receiving rewards
 }
 
+// GetHash returns the hash of this block header
+func (h *BlockHeader) GetHash() Hash32 {
+	hasher := sha256.New()
+	hasher.Write(utils.Uint64ToBytes(h.Version))
+	hasher.Write(h.PreviousHash[:])
+	hasher.Write(utils.Uint64ToBytes(h.Height))
+	hasher.Write(utils.Uint64ToBytes(h.Timestamp))
+	hasher.Write(h.MerkleRoot[:])
+	hasher.Write(h.StateRoot[:])
+	hasher.Write(h.ReceiptRoot[:])
+	hasher.Write(utils.Uint32ToBytes(h.Bits)) // Include Bits field!
+
+	// Encode TotalWork as big.Int bytes, not string
+	workInt := new(big.Int)
+	workInt.SetString(h.TotalWork, 10)
+	hasher.Write(workInt.Bytes())
+
+	hasher.Write(utils.Uint64ToBytes(h.GasLimit))
+	hasher.Write(utils.Uint64ToBytes(h.GasUsed))
+	hasher.Write(h.Beneficiary[:])
+	hasher.Write(utils.Uint64ToBytes(h.Nonce))
+
+	var hash Hash32
+	copy(hash[:], hasher.Sum(nil))
+	return hash
+}
+
 type Block struct {
 	Header       BlockHeader   `json:"header"`
 	Transactions []Transaction `json:"transactions"`
+}
+
+// GetHash returns the hash of this block (which is the hash of its header)
+func (b *Block) GetHash() Hash32 {
+	return b.Header.GetHash()
 }
 
 type AccountState struct {
@@ -145,6 +219,34 @@ type AccountState struct {
 	Persistent   map[string]string `json:"persistent"`
 	StorageRoot  Hash32            `json:"storage_root"` // Merkle Patricia trie root of contract storage
 	CodeHash     Hash32            `json:"code_hash"`    // Hash of the contract code (Instructions)
+}
+
+// GetHash computes the hash of this account state
+func (s *AccountState) GetHash() Hash32 {
+	h := sha256.New()
+	h.Write(s.Address[:])
+	h.Write(utils.Uint64ToBytes(s.Balance))
+	h.Write(utils.Uint64ToBytes(s.Nonce))
+
+	// Hash the instructions (contract code)
+	if len(s.Instructions) > 0 {
+		// Serialize instructions and hash them
+		for _, instruction := range s.Instructions {
+			h.Write([]byte{byte(instruction.Opcode)})
+			if instruction.Value != nil {
+				h.Write(instruction.Value.Bytes())
+			}
+			h.Write(utils.Uint32ToBytes(uint32(instruction.Param)))
+		}
+	}
+
+	// Hash the persistent storage
+	h.Write(s.StorageRoot[:])
+	h.Write(s.CodeHash[:])
+
+	var hash Hash32
+	copy(hash[:], h.Sum(nil))
+	return hash
 }
 
 type Chain struct {
@@ -208,7 +310,7 @@ func (c *Chain) AddBlock(block *Block) {
 		c.BlockIndex = make(map[Hash32]*Block)
 	}
 
-	blockHash := HashBlockHeader(&block.Header)
+	blockHash := block.GetHash()
 	c.BlockIndex[blockHash] = block
 }
 
@@ -226,7 +328,7 @@ func (c *Chain) InitializeIndexes() {
 	c.BlockIndex = make(map[Hash32]*Block)
 
 	for _, block := range c.Blocks {
-		blockHash := HashBlockHeader(&block.Header)
+		blockHash := block.GetHash()
 		c.BlockIndex[blockHash] = block
 	}
 

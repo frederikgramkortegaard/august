@@ -2,6 +2,8 @@ package blockchain
 
 import (
 	"august/avm"
+	"august/config"
+	"august/utils"
 	"crypto/ed25519"
 	"fmt"
 	"log"
@@ -36,7 +38,7 @@ func (e ErrSwitchChain) Error() string { return "chain switch" }
 // This is used by networking layer to validate headers from peers
 func ValidateHeaderStructure(header *BlockHeader) error {
 	// 1. Proof of Work - check if hash meets the target specified in header
-	hash := HashBlockHeader(header)
+	hash := header.GetHash()
 	if !BlockHashMeetsDifficulty(hash, header.Bits) {
 		difficulty := CalculateDifficulty(header.Bits)
 		diffFloat, _ := difficulty.Float64()
@@ -46,8 +48,8 @@ func ValidateHeaderStructure(header *BlockHeader) error {
 	// 2. Basic field validation
 	if header.Height == 0 {
 		// Genesis block validation
-		genesisHash := HashBlockHeader(&GenesisBlock.Header)
-		headerHash := HashBlockHeader(header)
+		genesisHash := GenesisBlock.Header.GetHash()
+		headerHash := header.GetHash()
 		if genesisHash != headerHash {
 			return fmt.Errorf("invalid genesis header")
 		}
@@ -93,8 +95,8 @@ func ValidateBlockStructure(block *Block) error {
 
 func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
 	// Ensure the first block is genesis
-	genesisHash := HashBlockHeader(&GenesisBlock.Header)
-	firstBlockHash := HashBlockHeader(header)
+	genesisHash := GenesisBlock.Header.GetHash()
+	firstBlockHash := header.GetHash()
 
 	// Direct comparison for [32]byte arrays
 	if genesisHash != firstBlockHash {
@@ -126,14 +128,14 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		}
 
 		// Check if this is a fork (parent exists but is not the tip)
-		if chain.Tip != nil && HashBlockHeader(&chain.Tip.Header) != block.Header.PreviousHash {
+		if chain.Tip != nil && chain.Tip.Header.GetHash() != block.Header.PreviousHash {
 			// This is a fork - let ValidateAndApplyBlock handle chain switching
 			return ErrSwitchChain{Block: block, CommonAncestor: prevBlock}
 		}
 	}
 
 	// 2. Proof Of Work - check if hash meets the target specified in block header
-	hash := HashBlockHeader(&block.Header)
+	hash := block.Header.GetHash()
 	if !BlockHashMeetsDifficulty(hash, block.Header.Bits) {
 		difficulty := CalculateDifficulty(block.Header.Bits)
 		diffFloat, _ := difficulty.Float64()
@@ -163,10 +165,10 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 // validateTransactionSignature validates just the cryptographic signature
 func validateTransactionSignature(tsx *Transaction) bool {
 	debugLog("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
-	signingData := GetSigningBytesFromTransaction(tsx)
+	hash := tsx.GetHash()
 	publicKey := tsx.From[:]
 	signature := tsx.Signature[:]
-	valid := ed25519.Verify(publicKey, signingData, signature)
+	valid := ed25519.Verify(publicKey, hash[:], signature)
 	if !valid {
 		debugLog("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
 	} else {
@@ -198,13 +200,13 @@ func ValidateAndApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*
 func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountState) error {
 
 	// Validate amounts are within range
-	if err := ValidateAmount(tsx.Amount); err != nil {
+	if err := utils.ValidateAmount(tsx.Amount); err != nil {
 		return fmt.Errorf("invalid transaction amount: %w", err)
 	}
-	if err := ValidateAmount(tsx.GasLimit); err != nil {
+	if err := utils.ValidateAmount(tsx.GasLimit); err != nil {
 		return fmt.Errorf("invalid transaction gas limit: %w", err)
 	}
-	if err := ValidateAmount(tsx.GasPrice); err != nil {
+	if err := utils.ValidateAmount(tsx.GasPrice); err != nil {
 		return fmt.Errorf("invalid transaction gas price: %w", err)
 	}
 
@@ -242,7 +244,7 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	}
 
 	// Calculate total cost: amount + max gas cost
-	total, err := SafeAdd(tsx.Amount, maxGasCost)
+	total, err := utils.SafeAdd(tsx.Amount, maxGasCost)
 	if err != nil {
 		return fmt.Errorf("transaction total with gas cost overflow: %w", err)
 	}
@@ -251,7 +253,7 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	isContractDeployment := tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0
 	if isContractDeployment {
 		// Add deployment fee to total cost
-		total, err = SafeAdd(total, ContractDeploymentFee)
+		total, err = utils.SafeAdd(total, config.ContractDeploymentFee)
 		if err != nil {
 			return fmt.Errorf("transaction total with deployment fee overflow: %w", err)
 		}
@@ -262,7 +264,7 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 			fromState.Balance, total, tsx.Amount, maxGasCost,
 			func() uint64 {
 				if isContractDeployment {
-					return ContractDeploymentFee
+					return config.ContractDeploymentFee
 				} else {
 					return 0
 				}
@@ -297,7 +299,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		// Credit the recipient
 		if toState, ok := accountStates[tsx.To]; ok {
-			newBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+			newBalance, err := utils.SafeAdd(toState.Balance, tsx.Amount)
 			if err != nil {
 				// This should never happen in practice due to validation, but safety check
 				panic(fmt.Sprintf("coinbase balance overflow: %v", err))
@@ -328,7 +330,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	if isContractDeployment {
 		// Add deployment fee to total cost
 		var err error
-		totalCostSoFar, err = SafeAdd(totalCostSoFar, ContractDeploymentFee)
+		totalCostSoFar, err = utils.SafeAdd(totalCostSoFar, config.ContractDeploymentFee)
 		if err != nil {
 			panic(fmt.Sprintf("deployment fee overflow during apply: %v", err))
 		}
@@ -353,7 +355,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		// Track whether contract deployment succeeds
 		contractDeployed := false
 
-		gasUsed := GasContractDeploy // Base gas for contract deployment
+		gasUsed := config.GasContractDeploy // Base gas for contract deployment
 
 		// Execute initialization instructions if present
 		if len(tsx.InitInstructions) > 0 {
@@ -413,13 +415,13 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		// Calculate actual gas cost and deduct from sender balance
 		actualGasCost := gasUsed * tsx.GasPrice
 		var err error
-		totalCostSoFar, err = SafeAdd(totalCostSoFar, actualGasCost)
+		totalCostSoFar, err = utils.SafeAdd(totalCostSoFar, actualGasCost)
 		if err != nil {
 			panic(fmt.Sprintf("total cost with gas overflow during apply: %v", err))
 		}
 
 		// Deduct total cost from sender
-		newFromBalance, err := SafeSubtract(fromState.Balance, totalCostSoFar)
+		newFromBalance, err := utils.SafeSubtract(fromState.Balance, totalCostSoFar)
 		if err != nil {
 			panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
 		}
@@ -430,11 +432,11 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		return gasUsed, nil
 	} else if tsx.To != (PublicKey{}) {
 		// Regular transfer to existing or new account
-		gasUsed := GasTransfer // Base gas for transfer
+		gasUsed := config.GasTransfer // Base gas for transfer
 
 		if toState, ok := accountStates[tsx.To]; ok {
 			// Transfer amount to recipient
-			newToBalance, err := SafeAdd(toState.Balance, tsx.Amount)
+			newToBalance, err := utils.SafeAdd(toState.Balance, tsx.Amount)
 			if err != nil {
 				panic(fmt.Sprintf("recipient balance overflow during apply: %v", err))
 			}
@@ -504,13 +506,13 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		// Calculate actual gas cost and deduct from sender balance
 		actualGasCost := gasUsed * tsx.GasPrice
 		var err error
-		totalCostSoFar, err = SafeAdd(totalCostSoFar, actualGasCost)
+		totalCostSoFar, err = utils.SafeAdd(totalCostSoFar, actualGasCost)
 		if err != nil {
 			panic(fmt.Sprintf("total cost with gas overflow during apply: %v", err))
 		}
 
 		// Deduct total cost from sender
-		newFromBalance, err := SafeSubtract(fromState.Balance, totalCostSoFar)
+		newFromBalance, err := utils.SafeSubtract(fromState.Balance, totalCostSoFar)
 		if err != nil {
 			panic(fmt.Sprintf("sender balance underflow during apply: %v", err))
 		}
@@ -520,7 +522,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		return gasUsed, nil
 	}
-	return GasTransfer, nil // Base gas for regular transfer
+	return config.GasTransfer, nil // Base gas for regular transfer
 }
 
 // ValidateBlock validates a block and its transactions WITHOUT applying changes
@@ -571,7 +573,7 @@ func ValidateBlock(block *Block, chain *Chain) error {
 			maxGasCost := tsx.GasLimit * tsx.GasPrice
 			maxCost := tsx.Amount + maxGasCost
 			if tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0 {
-				maxCost += ContractDeploymentFee
+				maxCost += config.ContractDeploymentFee
 			}
 			fromState.Balance -= maxCost
 		}
@@ -605,7 +607,7 @@ func ApplyBlock(block *Block, chain *Chain) error {
 		}
 
 		// Track total gas used
-		newGasUsed, err := SafeAdd(totalGasUsed, gasUsed)
+		newGasUsed, err := utils.SafeAdd(totalGasUsed, gasUsed)
 		if err != nil {
 			return fmt.Errorf("gas used sum overflow: %w", err)
 		}
@@ -614,7 +616,7 @@ func ApplyBlock(block *Block, chain *Chain) error {
 		// Calculate gas fees for non-coinbase transactions
 		if tsx.From != (PublicKey{}) {
 			gasFee := gasUsed * tsx.GasPrice
-			newGasFees, err := SafeAdd(totalGasFees, gasFee)
+			newGasFees, err := utils.SafeAdd(totalGasFees, gasFee)
 			if err != nil {
 				return fmt.Errorf("gas fees sum overflow: %w", err)
 			}
@@ -628,13 +630,13 @@ func ApplyBlock(block *Block, chain *Chain) error {
 	}
 
 	// Validate coinbase transaction amount based on actual gas fees
-	expectedCoinbaseAmount, err := SafeAdd(totalGasFees, BlockReward)
+	expectedCoinbaseAmount, err := utils.SafeAdd(totalGasFees, config.BlockReward)
 	if err != nil {
 		return fmt.Errorf("coinbase amount calculation overflow: %w", err)
 	}
 	if block.Transactions[0].Amount != expectedCoinbaseAmount {
 		return fmt.Errorf("coinbase transaction amount %d != expected %d (gas fees %d + block reward %d)",
-			block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, BlockReward)
+			block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, config.BlockReward)
 	}
 
 	// Add the block to the chain and update tip/index
@@ -664,7 +666,7 @@ func ValidateHeaderChain(headers []BlockHeader) bool {
 
 	// Basic validation - each header should link to the previous
 	for i := 1; i < len(headers); i++ {
-		prevHash := HashBlockHeader(&headers[i-1])
+		prevHash := headers[i-1].GetHash()
 		if headers[i].PreviousHash != prevHash {
 			return false
 		}
@@ -747,7 +749,7 @@ func ValidateCompleteChain(candidateChain *Chain) error {
 	// Initialize with genesis account (FirstUser gets 10 AUG)
 	validationChain.AccountStates[FirstUser] = &AccountState{
 		Address: FirstUser,
-		Balance: 10 * AUG,
+		Balance: 10 * config.AUG,
 		Nonce:   0,
 	}
 
@@ -780,7 +782,7 @@ func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockE
 		// This might be the next block in sequence
 		if len(currentChain.Blocks) > 0 {
 			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
-			if HashBlockHeader(&ourTip.Header) == header.PreviousHash {
+			if ourTip.Header.GetHash() == header.PreviousHash {
 				return BlockEvaluationResult{
 					ShouldRequest: true,
 					Reason:        "next block in sequence",

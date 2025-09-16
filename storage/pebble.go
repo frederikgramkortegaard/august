@@ -2,6 +2,8 @@ package storage
 
 import (
 	"august/blockchain"
+	"august/config"
+	"august/utils"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -25,7 +27,7 @@ func StoreBlock(db *pebble.DB, block *blockchain.Block) error {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
 
-	hash := blockchain.HashBlockHeader(&block.Header)
+	hash := block.Header.GetHash()
 	blockKey := append([]byte("block:"), hash[:]...)
 
 	if err := db.Set(blockKey, jsonData, pebble.NoSync); err != nil {
@@ -96,7 +98,7 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 			// Coinbase transaction
 			if tx.From == (blockchain.PublicKey{}) {
 				if toState, ok := chain.AccountStates[tx.To]; ok {
-					newBalance, err := blockchain.SafeAdd(toState.Balance, tx.Amount)
+					newBalance, err := utils.SafeAdd(toState.Balance, tx.Amount)
 					if err != nil {
 						return nil, fmt.Errorf("coinbase balance overflow: %w", err)
 					}
@@ -113,17 +115,17 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 				fromState := chain.AccountStates[tx.From]
 				if fromState != nil {
 					// Calculate estimated gas cost for this transaction
-					estimatedGas := blockchain.GasTransfer
+					estimatedGas := config.GasTransfer
 					if tx.To == (blockchain.PublicKey{}) && len(tx.Instructions) > 0 {
-						estimatedGas = blockchain.GasContractDeploy
+						estimatedGas = config.GasContractDeploy
 					}
 					estimatedGasCost := estimatedGas * tx.GasPrice
 
-					total, err := blockchain.SafeAdd(tx.Amount, estimatedGasCost)
+					total, err := utils.SafeAdd(tx.Amount, estimatedGasCost)
 					if err != nil {
 						return nil, fmt.Errorf("transaction total overflow: %w", err)
 					}
-					newBalance, err := blockchain.SafeSubtract(fromState.Balance, total)
+					newBalance, err := utils.SafeSubtract(fromState.Balance, total)
 					if err != nil {
 						return nil, fmt.Errorf("sender balance underflow: %w", err)
 					}
@@ -132,7 +134,7 @@ func GetChain(db *pebble.DB) (*blockchain.Chain, error) {
 				}
 
 				if toState, ok := chain.AccountStates[tx.To]; ok {
-					newBalance, err := blockchain.SafeAdd(toState.Balance, tx.Amount)
+					newBalance, err := utils.SafeAdd(toState.Balance, tx.Amount)
 					if err != nil {
 						return nil, fmt.Errorf("recipient balance overflow: %w", err)
 					}
@@ -159,7 +161,7 @@ func StoreChainManifest(db *pebble.DB, chain *blockchain.Chain) error {
 	// Build list of block hashes
 	blockHashes := make([]blockchain.Hash32, len(chain.Blocks))
 	for i, block := range chain.Blocks {
-		blockHashes[i] = blockchain.HashBlockHeader(&block.Header)
+		blockHashes[i] = block.Header.GetHash()
 	}
 
 	// Marshal to JSON

@@ -14,17 +14,17 @@ type LogFunc func(format string, args ...interface{})
 
 // ChainDownloader handles downloading candidate chains
 type ChainDownloader struct {
-	manager      *CandidateManager
+	manager       *CandidateManager
 	requestBlocks BlockRequestFunc
-	logf         LogFunc
+	logf          LogFunc
 }
 
 // NewChainDownloader creates a new chain downloader
 func NewChainDownloader(manager *CandidateManager, requestBlocks BlockRequestFunc, logf LogFunc) *ChainDownloader {
 	return &ChainDownloader{
-		manager:      manager,
+		manager:       manager,
 		requestBlocks: requestBlocks,
-		logf:         logf,
+		logf:          logf,
 	}
 }
 
@@ -61,7 +61,7 @@ func (cd *ChainDownloader) DownloadCandidateChain(candidate *CandidateChain) err
 		var blockHashes []string
 		for _, header := range candidate.Headers {
 			if header.Height >= startHeight && header.Height < startHeight+count {
-				hash := blockchain.HashBlockHeader(&header)
+				hash := header.GetHash()
 				hashStr := base64.StdEncoding.EncodeToString(hash[:])
 				blockHashes = append(blockHashes, hashStr)
 			}

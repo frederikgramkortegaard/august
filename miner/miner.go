@@ -2,6 +2,8 @@ package miner
 
 import (
 	"august/blockchain"
+	"august/config"
+	"august/utils"
 	"errors"
 	"fmt"
 	"time"
@@ -70,13 +72,13 @@ func NewBlock(params BlockCreationParams) (blockchain.Block, error) {
 
 		// Calculate actual gas fee
 		gasFee := gasUsed * tx.GasPrice
-		newGasFeeSum, err := blockchain.SafeAdd(gasFeeSum, gasFee)
+		newGasFeeSum, err := utils.SafeAdd(gasFeeSum, gasFee)
 		if err != nil {
 			return blockchain.Block{}, fmt.Errorf("gas fees sum overflow: %w", err)
 		}
 		gasFeeSum = newGasFeeSum
 
-		newTotalGasUsed, err := blockchain.SafeAdd(totalGasUsed, gasUsed)
+		newTotalGasUsed, err := utils.SafeAdd(totalGasUsed, gasUsed)
 		if err != nil {
 			return blockchain.Block{}, fmt.Errorf("total gas used overflow: %w", err)
 		}
@@ -84,13 +86,13 @@ func NewBlock(params BlockCreationParams) (blockchain.Block, error) {
 	}
 
 	// Validate Coinbase amount
-	expectedCoinbaseAmount, err := blockchain.SafeAdd(blockchain.BlockReward, gasFeeSum)
+	expectedCoinbaseAmount, err := utils.SafeAdd(config.BlockReward, gasFeeSum)
 	if err != nil {
 		return blockchain.Block{}, fmt.Errorf("coinbase amount calculation overflow: %w", err)
 	}
 	if params.Coinbase.Amount != expectedCoinbaseAmount {
 		return blockchain.Block{}, fmt.Errorf("Coinbase amount (%d) must equal BlockReward (%d) + gas fees (%d)",
-			params.Coinbase.Amount, blockchain.BlockReward, gasFeeSum)
+			params.Coinbase.Amount, config.BlockReward, gasFeeSum)
 	}
 
 	// Calculate Merkle root
@@ -144,7 +146,7 @@ func NewBlock(params BlockCreationParams) (blockchain.Block, error) {
 // MineCorrectNonce finds a nonce such that the block hash meets the target
 func MineCorrectNonce(header *blockchain.BlockHeader, targetBits uint32) (NonceType, error) {
 	for {
-		hash := blockchain.HashBlockHeader(header)
+		hash := header.GetHash()
 		if blockchain.BlockHashMeetsDifficulty(hash, targetBits) {
 			return header.Nonce, nil
 		}

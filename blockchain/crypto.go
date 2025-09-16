@@ -2,101 +2,10 @@ package blockchain
 
 import (
 	"august/avm"
-	"crypto/ed25519"
+	"august/utils"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
-	"math/big"
 )
-
-func uint64ToBytes(n uint64) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, n)
-	return b
-}
-
-func uint32ToBytes(n uint32) []byte {
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, n)
-	return b
-}
-
-// HashTransaction deterministically hashes a transaction
-func HashTransaction(tsx *Transaction) Hash32 {
-	h := sha256.New()
-	h.Write(tsx.From[:])
-	h.Write(tsx.To[:])
-	h.Write(uint64ToBytes(tsx.Amount))
-	h.Write(uint64ToBytes(tsx.Nonce))
-	h.Write(uint64ToBytes(tsx.Timestamp))
-	h.Write(uint64ToBytes(tsx.ChainID)) // Include ChainID for replay protection
-	h.Write(uint64ToBytes(tsx.GasLimit)) // Include gas limit
-	h.Write(uint64ToBytes(tsx.GasPrice)) // Include gas price
-
-	// Hash the contract instructions if present
-	if len(tsx.Instructions) > 0 {
-		codeHash := ComputeCodeHash(tsx.Instructions)
-		h.Write(codeHash[:])
-	}
-
-	// Hash the init instructions if present
-	if len(tsx.InitInstructions) > 0 {
-		initHash := ComputeCodeHash(tsx.InitInstructions)
-		h.Write(initHash[:])
-	}
-
-	var hash Hash32
-	copy(hash[:], h.Sum(nil))
-	return hash
-}
-
-// GetSigningBytesFromTransaction returns bytes used for signing
-func GetSigningBytesFromTransaction(tsx *Transaction) []byte {
-	h := sha256.New()
-	h.Write(tsx.From[:])
-	h.Write(tsx.To[:])
-	h.Write(uint64ToBytes(tsx.Amount))
-	h.Write(uint64ToBytes(tsx.Nonce))
-	h.Write(uint64ToBytes(tsx.Timestamp))
-	h.Write(uint64ToBytes(tsx.GasLimit))
-	h.Write(uint64ToBytes(tsx.GasPrice))
-	return h.Sum(nil)
-}
-
-// SignTransaction signs the transaction with the given private key
-func SignTransaction(tsx *Transaction, privateKey []byte) []byte {
-	signingBytes := GetSigningBytesFromTransaction(tsx)
-	sig := ed25519.Sign(privateKey, signingBytes)
-	copy(tsx.Signature[:], sig)
-	return sig
-}
-
-// HashBlockHeader deterministically hashes a block header
-func HashBlockHeader(header *BlockHeader) Hash32 {
-	h := sha256.New()
-	h.Write(uint64ToBytes(header.Version))
-	h.Write(header.PreviousHash[:])
-	h.Write(uint64ToBytes(header.Height))
-	h.Write(uint64ToBytes(header.Timestamp))
-	h.Write(header.MerkleRoot[:])
-	h.Write(header.StateRoot[:])
-	h.Write(header.ReceiptRoot[:])
-	h.Write(uint32ToBytes(header.Bits)) // Include Bits field!
-
-	// Encode TotalWork as big.Int bytes, not string
-	workInt := new(big.Int)
-	workInt.SetString(header.TotalWork, 10)
-	h.Write(workInt.Bytes())
-
-	h.Write(uint64ToBytes(header.GasLimit))
-	h.Write(uint64ToBytes(header.GasUsed))
-	h.Write(header.Beneficiary[:])
-	h.Write(uint64ToBytes(header.Nonce))
-
-	var hash Hash32
-	copy(hash[:], h.Sum(nil))
-	return hash
-}
 
 // MerkleTransactions computes a Merkle root for a list of transactions
 func MerkleTransactions(transactions []Transaction) Hash32 {
@@ -106,7 +15,7 @@ func MerkleTransactions(transactions []Transaction) Hash32 {
 
 	hashes := make([][]byte, len(transactions))
 	for i, tx := range transactions {
-		h := HashTransaction(&tx)
+		h := tx.GetHash()
 		hashes[i] = h[:]
 	}
 
@@ -139,40 +48,12 @@ func EncodeHash(hash Hash32) string {
 func GenerateContractAddress(deployer PublicKey, nonce uint64) PublicKey {
 	h := sha256.New()
 	h.Write(deployer[:])
-	h.Write(uint64ToBytes(nonce))
+	h.Write(utils.Uint64ToBytes(nonce))
 	hash := h.Sum(nil)
 
 	var addr PublicKey
 	copy(addr[:], hash[:32])
 	return addr
-}
-
-// HashAccountState computes the hash of an account state
-func HashAccountState(state *AccountState) Hash32 {
-	h := sha256.New()
-	h.Write(state.Address[:])
-	h.Write(uint64ToBytes(state.Balance))
-	h.Write(uint64ToBytes(state.Nonce))
-
-	// Hash the instructions (contract code)
-	if len(state.Instructions) > 0 {
-		// Serialize instructions and hash them
-		for _, instruction := range state.Instructions {
-			h.Write([]byte{byte(instruction.Opcode)})
-			if instruction.Value != nil {
-				h.Write(instruction.Value.Bytes())
-			}
-			h.Write(uint32ToBytes(uint32(instruction.Param)))
-		}
-	}
-
-	// Hash the persistent storage
-	h.Write(state.StorageRoot[:])
-	h.Write(state.CodeHash[:])
-
-	var hash Hash32
-	copy(hash[:], h.Sum(nil))
-	return hash
 }
 
 // ComputeStateRoot calculates the Merkle root of all account states
@@ -205,7 +86,7 @@ func ComputeStateRoot(accountStates map[PublicKey]*AccountState) Hash32 {
 	hashes := make([][]byte, len(addresses))
 	for i, addr := range addresses {
 		state := accountStates[addr]
-		h := HashAccountState(state)
+		h := state.GetHash()
 		hashes[i] = h[:]
 	}
 
@@ -242,7 +123,7 @@ func ComputeCodeHash(instructions []avm.Instruction) Hash32 {
 		if instruction.Value != nil {
 			h.Write(instruction.Value.Bytes())
 		}
-		h.Write(uint32ToBytes(uint32(instruction.Param)))
+		h.Write(utils.Uint32ToBytes(uint32(instruction.Param)))
 	}
 
 	var hash Hash32

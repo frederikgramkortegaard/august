@@ -93,7 +93,7 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 	go func() {
 		defer close(complete)
 
-		blockHash := blockchain.HashBlockHeader(&block.Header)
+		blockHash := block.Header.GetHash()
 
 		// Create map for quick exclusion lookup
 		excludeMap := make(map[string]bool)
@@ -151,7 +151,7 @@ func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAdd
 	go func() {
 		defer close(complete)
 
-		txHash := blockchain.HashTransaction(tx)
+		txHash := tx.GetHash()
 
 		// Mark this transaction as seen (for deduplication)
 		server.MarkTransactionSeen(txHash)
@@ -205,7 +205,7 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 	go func() {
 		defer close(complete)
 
-		blockHash := blockchain.HashBlockHeader(header)
+		blockHash := header.GetHash()
 
 		// Create map for quick exclusion lookup
 		excludeMap := make(map[string]bool)
@@ -745,7 +745,7 @@ func (s *Server) SendBlockResponse(conn net.Conn, msg *Message, peer *Peer) {
 	// Find the requested block
 	var foundBlock *blockchain.Block
 	for _, block := range chain.Blocks {
-		blockHash := blockchain.HashBlockHeader(&block.Header)
+		blockHash := block.Header.GetHash()
 		blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
 		if blockHashStr == payload.BlockHash {
 			foundBlock = block
@@ -796,7 +796,7 @@ func (s *Server) SendChainHeadResponse(conn net.Conn, msg *Message, peer *Peer) 
 
 	// Get our chain head
 	headBlock := chain.Blocks[len(chain.Blocks)-1]
-	headHash := blockchain.HashBlockHeader(&headBlock.Header)
+	headHash := headBlock.Header.GetHash()
 
 	headPayload := consensus.ChainHeadPayload{
 		HeadHash:  base64.StdEncoding.EncodeToString(headHash[:]),
@@ -1006,7 +1006,7 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 	}
 
 	header := &headerPayload.Header
-	blockHash := blockchain.HashBlockHeader(header)
+	blockHash := header.GetHash()
 
 	// Check if we already have this block header in our recent blocks (deduplication)
 	s.recentBlocksMu.Lock()
@@ -1104,7 +1104,7 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 
 	// Create a mock chain head payload from the final header
 	finalHeader := headersPayload.Headers[len(headersPayload.Headers)-1]
-	finalHash := blockchain.HashBlockHeader(&finalHeader)
+	finalHash := finalHeader.GetHash()
 	chainHead := &consensus.ChainHeadPayload{
 		HeadHash:  base64.StdEncoding.EncodeToString(finalHash[:]),
 		Height:    finalHeader.Height,
@@ -1139,7 +1139,7 @@ func (s *Server) ProcessBlocks(msg *Message, peer *Peer) {
 
 	// Process each block sequentially
 	for _, block := range blocksPayload.Blocks {
-		blockHash := blockchain.HashBlockHeader(&block.Header)
+		blockHash := block.Header.GetHash()
 		s.logf("Processing batch block %x from %s", blockHash[:8], peer.Address)
 
 		// Process block through the normal pipeline
@@ -1158,7 +1158,7 @@ func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 	}
 
 	// Mitigate Broadcast Storm by keeping list of blocks to ignore
-	blockHash := blockchain.HashBlockHeader(&blockPayload.Block.Header)
+	blockHash := blockPayload.Block.Header.GetHash()
 	s.recentBlocksMu.Lock()
 	defer s.recentBlocksMu.Unlock()
 
@@ -1212,7 +1212,7 @@ func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {
 		return
 	}
 
-	txHash := blockchain.HashTransaction(tx)
+	txHash := tx.GetHash()
 
 	// Check if we've recently seen this transaction (prevent loops)
 	if s.IsRecentTransaction(txHash) {
@@ -1245,7 +1245,7 @@ func (s *Server) ProcessSubmitBlock(msg *Message, conn net.Conn) {
 		return
 	}
 
-	blockHash := blockchain.HashBlockHeader(&submitPayload.Block.Header)
+	blockHash := submitPayload.Block.Header.GetHash()
 	remoteAddr := conn.RemoteAddr().String()
 	s.logf("Received block submission %x from miner %s", blockHash[:8], remoteAddr)
 
@@ -1293,7 +1293,7 @@ func (s *Server) SendHeadersResponse(conn net.Conn, msg *Message, peer *Peer) {
 		}
 
 		for _, block := range chain.Blocks {
-			blockHash := blockchain.HashBlockHeader(&block.Header)
+			blockHash := block.Header.GetHash()
 			blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
 			if hashMap[blockHashStr] {
 				headers = append(headers, block.Header)
@@ -1364,7 +1364,7 @@ func (s *Server) SendBlocksResponse(conn net.Conn, msg *Message, peer *Peer) {
 			}
 
 			for _, block := range chain.Blocks {
-				blockHash := blockchain.HashBlockHeader(&block.Header)
+				blockHash := block.Header.GetHash()
 				blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
 				if hashMap[blockHashStr] {
 					blocks = append(blocks, block)

@@ -2,8 +2,10 @@ package tests
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"august/node"
+	"august/utils"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -42,7 +44,7 @@ func createQueryAPITestNode(idx int) *node.FullNode {
 	portAsString := strconv.Itoa(QUERYAPI_PORT_START + idx)
 	queryPortAsString := strconv.Itoa(QUERYAPI_PORT_START + 100 + idx)
 
-	conf := node.Config{
+	conf := node.NodeConfig{
 		Port:           portAsString,
 		NodeID:         "queryapi-test-node-" + portAsString,
 		SeedPeers:      []string{},
@@ -220,7 +222,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	}
 
 	chain.AccountStates[keyA] = &blockchain.AccountState{
-		Balance: 20 * blockchain.AUG, // 20 AUG = 20M Leaf units, enough for transaction + gas
+		Balance: 20 * config.AUG, // 20 AUG = 20M Leaf units, enough for transaction + gas
 		Nonce:   0,
 	}
 
@@ -240,7 +242,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	if resp["exists"].(bool) != true {
 		t.Fatalf("Expected keyA to exist")
 	}
-	expectedBalance := float64(20 * blockchain.AUG)
+	expectedBalance := float64(20 * config.AUG)
 	if resp["balance"].(float64) != expectedBalance {
 		t.Fatalf("Expected balance %v, got %v", expectedBalance, resp["balance"])
 	}
@@ -251,7 +253,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	tx := blockchain.Transaction{
 		From:      keyA,
 		To:        keyB,
-		Amount:    100 * blockchain.Leaf,
+		Amount:    100 * config.Leaf,
 		GasLimit:  25000,  // 25k gas limit
 		GasPrice:  400,    // 400 leaf per gas (25k * 400 = 10M leaf total)
 		Nonce:     1,
@@ -259,7 +261,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	}
 
 	// Sign the transaction
-	blockchain.SignTransaction(&tx, privA)
+	tx.Signature = tx.GetSignature(privA)
 
 	// Add to mempool
 	err = nodeA.SubmitTransaction(&tx)
@@ -280,7 +282,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	log.Printf("✓ /mempool endpoint shows transaction in pool")
 
 	// Test transaction endpoint with pending transaction
-	txHash := blockchain.HashTransaction(&tx)
+	txHash := tx.GetHash()
 	txHashHex := hex.EncodeToString(txHash[:])
 
 	resp, err = httpGet(baseURL + "/transaction/" + txHashHex)
@@ -339,7 +341,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		CurrentStates: chain.AccountStates,
 		Coinbase: func() blockchain.Transaction {
 			txFee := actualGasUsed * tx.GasPrice
-			coinbaseAmount, err := blockchain.SafeAdd(blockchain.BlockReward, txFee)
+			coinbaseAmount, err := utils.SafeAdd(config.BlockReward, txFee)
 			if err != nil {
 				panic(fmt.Sprintf("coinbase amount overflow in test: %v", err))
 			}
@@ -356,7 +358,7 @@ func TestQueryAPIWithData(t *testing.T) {
 		}(),
 		Transactions: []blockchain.Transaction{tx},
 		Timestamp:    uint64(time.Now().Unix()),
-		TargetBits:   blockchain.TestTargetCompact,
+		TargetBits:   config.TestTargetCompact,
 	}
 
 	block, err := miner.NewBlock(params)
@@ -392,7 +394,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	log.Printf("✓ /transaction endpoint finds confirmed transaction with block info")
 
 	// Test block endpoint with mined block
-	blockHash := blockchain.HashBlockHeader(&block.Header)
+	blockHash := block.Header.GetHash()
 	blockHashHex := hex.EncodeToString(blockHash[:])
 
 	resp, err = httpGet(baseURL + "/block/" + blockHashHex)

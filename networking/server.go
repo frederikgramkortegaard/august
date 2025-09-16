@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// Config holds network server configuration
-type Config struct {
+// NetworkConfig holds network server configuration
+type NetworkConfig struct {
 	Port                 string
 	NodeID               string
 	Store                store.ChainStore
@@ -29,7 +29,7 @@ type Config struct {
 
 // Server handles network communication and message passing
 type Server struct {
-	config            Config
+	config            NetworkConfig
 	listener          net.Listener
 	peerManager       *PeerManager
 	peerConnections   map[string]net.Conn // Active connections by peer address
@@ -85,7 +85,7 @@ func (s *Server) MarkTransactionSeen(txHash blockchain.Hash32) {
 }
 
 // NewServer creates a new network server
-func NewServer(config Config) *Server {
+func NewServer(config NetworkConfig) *Server {
 	server := &Server{
 		config:                config,
 		peerManager:           NewPeerManager([]string{}), // Will be set by discovery
@@ -222,7 +222,7 @@ func (s *Server) logChainStatus() {
 	}
 
 	latestBlock := chain.Blocks[len(chain.Blocks)-1]
-	blockHash := blockchain.HashBlockHeader(&latestBlock.Header)
+	blockHash := latestBlock.Header.GetHash()
 	s.logf("CHAIN STATUS: Height %d, Head %x, TxCount %d",
 		latestBlock.Header.Height,
 		blockHash[:8],

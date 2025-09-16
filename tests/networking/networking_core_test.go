@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var testNodeConfig node.Config
+var testNodeConfig node.NodeConfig
 
 const NUM_NODES = 10
 const PORT_START_RANGE = 9370
@@ -55,7 +55,7 @@ func createTestNodes(nodeCount int) []*node.FullNode {
 			seedPeers = []string{"127.0.0.1:" + strconv.Itoa(PORT_START_RANGE)}
 		}
 
-		conf := node.Config{
+		conf := node.NodeConfig{
 			Port:      portAsString,
 			NodeID:    "test-node-id-" + portAsString,
 			SeedPeers: seedPeers,

@@ -215,7 +215,7 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
-	blockchain.SignTransaction(&tsx, *priv)
+	tsx.Signature = tsx.GetSignature(*priv)
 
 	// Marshal transaction to JSON
 	txJSON, err := json.Marshal(tsx)
@@ -334,7 +334,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 		InitInstructions: initInstructions,    // Initialization code
 	}
 
-	blockchain.SignTransaction(&tsx, *priv)
+	tsx.Signature = tsx.GetSignature(*priv)
 
 	// Submit transaction
 	txJSON, err := json.Marshal(tsx)
@@ -421,7 +421,7 @@ func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint6
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
-	blockchain.SignTransaction(&tsx, *priv)
+	tsx.Signature = tsx.GetSignature(*priv)
 
 	// Submit transaction
 	txJSON, err := json.Marshal(tsx)

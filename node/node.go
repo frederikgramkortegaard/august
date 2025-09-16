@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// Config holds all configuration for a full node
-type Config struct {
+// NodeConfig holds all configuration for a full node
+type NodeConfig struct {
 	Port           string
 	NodeID         string
 	SeedPeers      []string
@@ -32,7 +32,7 @@ type FullNode struct {
 	Store store.ChainStore
 
 	// Configuration
-	Config Config
+	Config NodeConfig
 
 	// Components (each package handles its own concern)
 	NetworkServer *networking.Server // Network message handling
@@ -45,12 +45,12 @@ type FullNode struct {
 }
 
 // NewFullNode creates a node that runs all services
-func NewFullNode(config Config) *FullNode {
+func NewFullNode(config NodeConfig) *FullNode {
 	// Create shared store
 	chainStore := store.NewPersistentChainStore(config.DBName)
 
 	// Create mempool with configuration
-	mempoolConfig := mempool.Config{
+	mempoolConfig := mempool.MempoolConfig{
 		MaxSize:   config.MaxMempoolSize,
 		MaxExpiry: config.MempoolExpiry,
 	}
@@ -241,7 +241,7 @@ func (n *FullNode) startNetworking() <-chan bool {
 	go func() {
 		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
 
-		networkConfig := networking.Config{
+		networkConfig := networking.NetworkConfig{
 			Port:              n.Config.Port,
 			NodeID:            n.Config.NodeID,
 			Store:             n.Store,
@@ -335,7 +335,7 @@ func (n *FullNode) SubmitTransaction(tx *blockchain.Transaction) error {
 		return fmt.Errorf("transaction rejected by mempool (invalid, duplicate, or fee too low)")
 	}
 
-	txHash := blockchain.HashTransaction(tx)
+	txHash := tx.GetHash()
 	log.Printf("%s\tTransaction added to mempool: %x", n.Config.NodeID, txHash[:8])
 
 	// Broadcast the transaction to all connected peers
@@ -387,7 +387,7 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 			return
 		}
 
-		blockHash := blockchain.HashBlockHeader(&block.Header)
+		blockHash := block.Header.GetHash()
 
 		// Determine exclude address for relay
 		var excludeAddr string
@@ -562,7 +562,7 @@ func (n *FullNode) GetChainHead() blockchain.ChainHead {
 	}
 
 	lastBlock := chain.Blocks[len(chain.Blocks)-1]
-	hash := blockchain.HashBlockHeader(&lastBlock.Header)
+	hash := lastBlock.Header.GetHash()
 
 	return blockchain.ChainHead{
 		Height:    lastBlock.Header.Height,

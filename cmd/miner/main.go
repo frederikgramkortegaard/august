@@ -2,6 +2,7 @@ package main
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/miner"
 	"august/node/queryapi"
 	"bytes"
@@ -85,7 +86,7 @@ func (m *SimpleMiner) StartMining() {
 			continue
 		}
 
-		blockHash := blockchain.HashBlockHeader(&block.Header)
+		blockHash := block.Header.GetHash()
 		log.Printf("%s\tMined block %x (height %d, nonce %d)",
 			m.ID, blockHash[:8], block.Header.Height, block.Header.Nonce)
 
@@ -181,7 +182,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 	log.Printf("%s\tCalculated total gas fees: %d", m.ID, totalGasFees)
 
 	// Create coinbase transaction with block reward + gas fees
-	coinbaseAmount := blockchain.BlockReward + totalGasFees
+	coinbaseAmount := config.BlockReward + totalGasFees
 	coinbase := blockchain.Transaction{
 		From:             blockchain.PublicKey{}, // Empty for coinbase
 		To:               m.MinerAddress,
@@ -189,7 +190,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Nonce:            0,
 		Timestamp:        uint64(time.Now().Unix()),
 		Signature:        blockchain.Signature{}, // Empty for coinbase
-		ChainID:          blockchain.MainnetChainID,
+		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         0, // Coinbase doesn't consume gas
@@ -208,7 +209,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Coinbase:      coinbase,
 		Transactions:  mempoolTxs, // Include mempool transactions
 		Timestamp:     uint64(time.Now().Unix()),
-		TargetBits:    blockchain.TestTargetCompact, // Use easy difficulty for testing
+		TargetBits:    config.TestTargetCompact, // Use easy difficulty for testing
 		CurrentStates: currentStates,                // Include current account states for validation
 	}
 
