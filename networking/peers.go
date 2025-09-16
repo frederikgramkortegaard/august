@@ -1,8 +1,8 @@
 package networking
 
 import (
+	"august/config"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -24,56 +24,39 @@ type Peer struct {
 	IsOutgoing bool // True if we initiated the connection
 }
 
-type PeerManager struct {
-	peers           map[string]*Peer
-	maxPeers        int
-	currentPeers    int
-	seedPeers       []string
-	discoveredPeers []string     // Peers learned from other peers
-	mu              sync.RWMutex // Protects the peers map and discoveredPeers
-}
+// Peer management methods (integrated directly into Server)
 
-func NewPeerManager(seeds []string) *PeerManager {
-	return &PeerManager{
-		peers:           make(map[string]*Peer),
-		maxPeers:        128,
-		currentPeers:    0,
-		seedPeers:       seeds,
-		discoveredPeers: make([]string, 0),
-	}
-}
+// AddPeer adds a peer to the server's peer list
+func (s *Server) AddPeer(address string) *Peer {
+	s.peersMu.Lock()
+	defer s.peersMu.Unlock()
 
-func (pm *PeerManager) AddPeer(address string) *Peer {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if pm.currentPeers >= pm.maxPeers {
+	if len(s.peers) >= config.MaxPeers {
 		return nil
 	}
-	existingPeer, exists := pm.peers[address]
+	existingPeer, exists := s.peers[address]
 	if exists {
 		// Peer already exists, return it so connection can proceed
 		return existingPeer
 	}
 
-	pm.peers[address] = &Peer{
+	s.peers[address] = &Peer{
 		ID:       fmt.Sprintf("peer-%d", time.Now().Unix()),
 		Address:  address,
 		LastSeen: time.Now(),
 		Status:   PeerConnecting,
 	}
 
-	pm.currentPeers += 1
-
-	return pm.peers[address]
+	return s.peers[address]
 }
 
-func (pm *PeerManager) GetConnectedPeers() []*Peer {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+// GetConnectedPeers returns all currently connected peers
+func (s *Server) GetConnectedPeers() []*Peer {
+	s.peersMu.RLock()
+	defer s.peersMu.RUnlock()
 
-	connectedPeers := make([]*Peer, 0, pm.maxPeers)
-	for _, p := range pm.peers {
+	connectedPeers := make([]*Peer, 0, config.MaxPeers)
+	for _, p := range s.peers {
 		if p.Status == PeerConnected {
 			connectedPeers = append(connectedPeers, p)
 		}
@@ -83,19 +66,18 @@ func (pm *PeerManager) GetConnectedPeers() []*Peer {
 }
 
 // CleanupDeadPeers removes peers that have been disconnected or failed for too long
-func (pm *PeerManager) CleanupDeadPeers() int {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
+func (s *Server) CleanupDeadPeers() int {
+	s.peersMu.Lock()
+	defer s.peersMu.Unlock()
 
 	removed := 0
 	cutoffTime := time.Now().Add(-5 * time.Minute)
 
-	for addr, peer := range pm.peers {
+	for addr, peer := range s.peers {
 		// Remove peers that have been disconnected/failed for > 5 minutes
 		if (peer.Status == PeerDisconnected || peer.Status == PeerFailed) &&
 			peer.LastSeen.Before(cutoffTime) {
-			delete(pm.peers, addr)
-			pm.currentPeers--
+			delete(s.peers, addr)
 			removed++
 		}
 	}
@@ -105,23 +87,23 @@ func (pm *PeerManager) CleanupDeadPeers() int {
 
 // AddDiscoveredPeers adds newly discovered peer addresses to the discovered list
 // Returns the count of newly added unique peers
-func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
+func (s *Server) AddDiscoveredPeers(addresses []string) int {
+	s.peersMu.Lock()
+	defer s.peersMu.Unlock()
 
 	// Deduplicate against existing discovered peers and current peers
 	seen := make(map[string]bool)
-	for _, addr := range pm.discoveredPeers {
+	for _, addr := range s.discoveredPeers {
 		seen[addr] = true
 	}
-	for addr := range pm.peers {
+	for addr := range s.peers {
 		seen[addr] = true
 	}
 
 	newPeers := 0
 	for _, addr := range addresses {
 		if !seen[addr] {
-			pm.discoveredPeers = append(pm.discoveredPeers, addr)
+			s.discoveredPeers = append(s.discoveredPeers, addr)
 			seen[addr] = true
 			newPeers++
 		}
@@ -131,11 +113,11 @@ func (pm *PeerManager) AddDiscoveredPeers(addresses []string) int {
 }
 
 // GetDiscoveredPeers returns a copy of discovered peer addresses
-func (pm *PeerManager) GetDiscoveredPeers() []string {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+func (s *Server) GetDiscoveredPeers() []string {
+	s.peersMu.RLock()
+	defer s.peersMu.RUnlock()
 
-	peers := make([]string, len(pm.discoveredPeers))
-	copy(peers, pm.discoveredPeers)
+	peers := make([]string, len(s.discoveredPeers))
+	copy(peers, s.discoveredPeers)
 	return peers
 }

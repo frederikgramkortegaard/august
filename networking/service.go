@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"august/blockchain"
+	"august/config"
 	"august/consensus"
 )
 
@@ -47,7 +48,7 @@ func DefaultPeerRequestConfig() PeerRequestConfig {
 // selectPeersForRequest implements Bitcoin-style peer selection with randomization and limits
 func selectPeersForRequest(server *Server) []*Peer {
 	// Get all connected peers
-	availablePeers := server.peerManager.GetConnectedPeers()
+	availablePeers := server.GetConnectedPeers()
 	if len(availablePeers) == 0 {
 		return nil
 	}
@@ -125,7 +126,7 @@ func RelayBlock(server *Server, block *blockchain.Block, excludePeerAddrs ...str
 
 		// Send to all connected peers except the excluded ones
 		relayCount := 0
-		for _, peer := range server.peerManager.GetConnectedPeers() {
+		for _, peer := range server.GetConnectedPeers() {
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
 				if err := server.SendNotification(peer, msg); err != nil {
@@ -163,7 +164,7 @@ func RelayTransaction(server *Server, tx *blockchain.Transaction, excludePeerAdd
 		}
 
 		// Get list of connected peers
-		peers := server.peerManager.GetConnectedPeers()
+		peers := server.GetConnectedPeers()
 
 		// Track how many we actually relay to
 		relayCount := 0
@@ -238,7 +239,7 @@ func RelayBlockHeader(server *Server, header *blockchain.BlockHeader, excludePee
 
 		// Send to all connected peers except the excluded ones
 		relayCount := 0
-		for _, peer := range server.peerManager.GetConnectedPeers() {
+		for _, peer := range server.GetConnectedPeers() {
 			if !excludeMap[peer.Address] && peer.Status == PeerConnected {
 				// Use SendNotification for fire-and-forget broadcast
 				if err := server.SendNotification(peer, msg); err != nil {
@@ -697,7 +698,7 @@ func (s *Server) SendPeerList(conn net.Conn, msg *Message, requesterAddr string)
 	s.logf("Peer %s requested peer list", requesterAddr)
 
 	// Get list of connected peers (excluding the requester)
-	peers := s.peerManager.GetConnectedPeers()
+	peers := s.GetConnectedPeers()
 	var peerAddresses []string
 	for _, p := range peers {
 		if p.Address != requesterAddr && p.Status == PeerConnected {
@@ -844,11 +845,11 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 		peer.Address, handshake.NodeID, properPeerAddr)
 
 	// Consistent lock ordering to prevent deadlocks
-	// Always acquire peerConnectionsMu before peerManager.mu
+	// Always acquire peerConnectionsMu before peersMu
 	s.peerConnectionsMu.Lock()
-	s.peerManager.mu.Lock()
+	s.peersMu.Lock()
 
-	existingPeer, exists := s.peerManager.peers[properPeerAddr]
+	existingPeer, exists := s.peers[properPeerAddr]
 
 	if exists {
 		// Check if this is the same peer object (outgoing connection) or a different one (race condition)
@@ -856,7 +857,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 			// Same peer object, just update it
 			existingPeer.ID = handshake.NodeID
 			existingPeer.Status = PeerConnected
-			s.peerManager.mu.Unlock()
+			s.peersMu.Unlock()
 			s.peerConnectionsMu.Unlock()
 		} else {
 			// Different peer objects - this is a race condition with bidirectional connections
@@ -871,7 +872,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 					existingPeer.Status = PeerConnected
 					existingPeer.ID = handshake.NodeID
 				}
-				s.peerManager.mu.Unlock()
+				s.peersMu.Unlock()
 				s.peerConnectionsMu.Unlock()
 				conn.Close()
 				return
@@ -895,7 +896,7 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 				existingPeer.Status = PeerConnected
 				existingPeer.IsOutgoing = peer.IsOutgoing
 				existingPeer.LastSeen = time.Now() // Update last seen time
-				s.peerManager.mu.Unlock()
+				s.peersMu.Unlock()
 				s.peerConnectionsMu.Unlock()
 			}
 		}
@@ -923,8 +924,8 @@ func (s *Server) ProcessHandshake(msg *Message, peer *Peer, conn net.Conn) {
 		}
 
 		// Add to peer manager with proper address
-		s.peerManager.peers[properPeerAddr] = peer
-		s.peerManager.mu.Unlock()
+		s.peers[properPeerAddr] = peer
+		s.peersMu.Unlock()
 		s.peerConnectionsMu.Unlock()
 	}
 
@@ -973,7 +974,7 @@ func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 		go func() {
 			requestPeers := []*Peer{peer}
 			// Add other peers as backup
-			otherPeers := s.peerManager.GetConnectedPeers()
+			otherPeers := s.GetConnectedPeers()
 			for _, otherPeer := range otherPeers {
 				if otherPeer.Address != peer.Address && len(requestPeers) < 3 {
 					requestPeers = append(requestPeers, otherPeer)
@@ -1013,7 +1014,7 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 	defer s.recentBlocksMu.Unlock()
 
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
-		if time.Now().Sub(addedTime) <= s.recentBlocksTTL {
+		if time.Now().Sub(addedTime) <= config.RecentBlocksTTL {
 			s.logf("Ignoring duplicate block header: %x", blockHash[:8])
 			return
 		}
@@ -1163,7 +1164,7 @@ func (s *Server) ProcessNewBlock(msg *Message, peer *Peer) {
 	defer s.recentBlocksMu.Unlock()
 
 	if addedTime, seen := s.recentBlocks[blockHash]; seen {
-		if time.Now().Sub(addedTime) <= s.recentBlocksTTL {
+		if time.Now().Sub(addedTime) <= config.RecentBlocksTTL {
 			s.logf("Ignoring new block: %x because its in recentblocks", blockHash[:8])
 			return
 		}

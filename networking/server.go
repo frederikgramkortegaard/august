@@ -2,6 +2,7 @@ package networking
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/consensus"
 	store "august/storage"
 	"encoding/json"
@@ -30,7 +31,11 @@ type NetworkConfig struct {
 type Server struct {
 	config            NetworkConfig
 	listener          net.Listener
-	peerManager       *PeerManager
+	// Peer management (integrated directly)
+	peers             map[string]*Peer
+	seedPeers         []string
+	discoveredPeers   []string
+	peersMu           sync.RWMutex        // Protects peers map and discoveredPeers
 	peerConnections   map[string]net.Conn // Active connections by peer address
 	peerConnectionsMu sync.RWMutex        // Protects peerConnections map
 	shutdown          chan bool           // Signal to stop server
@@ -39,12 +44,10 @@ type Server struct {
 	pendingRequests   map[string]chan *Message
 	pendingMutex      sync.RWMutex
 	recentBlocks      map[blockchain.Hash32]time.Time
-	recentBlocksTTL   time.Duration
 	recentBlocksMu    sync.RWMutex
 
 	// Transaction relay tracking (same pattern as blocks)
 	recentTransactions    map[blockchain.Hash32]time.Time
-	recentTransactionsTTL time.Duration
 	recentTransactionsMu  sync.RWMutex
 
 	// Consensus management
@@ -56,7 +59,6 @@ type Server struct {
 
 	// Unified cleanup system
 	cleanupTicker   *time.Ticker
-	cleanupInterval time.Duration
 }
 
 // logf logs with node ID prefix
@@ -72,7 +74,7 @@ func (s *Server) IsRecentTransaction(txHash blockchain.Hash32) bool {
 
 	if seenTime, exists := s.recentTransactions[txHash]; exists {
 		// Check if it's still within TTL
-		return time.Since(seenTime) < s.recentTransactionsTTL
+		return time.Since(seenTime) < config.RecentTransactionsTTL
 	}
 	return false
 }
@@ -89,15 +91,15 @@ func (s *Server) MarkTransactionSeen(txHash blockchain.Hash32) {
 func NewServer(config NetworkConfig) *Server {
 	server := &Server{
 		config:                config,
-		peerManager:           NewPeerManager([]string{}), // Will be set by discovery
+		// Initialize peer management
+		peers:                 make(map[string]*Peer),
+		seedPeers:             config.SeedPeers,
+		discoveredPeers:       make([]string, 0),
 		peerConnections:       make(map[string]net.Conn),
 		shutdown:              make(chan bool),
 		shutdownComplete:      make(chan bool),
 		recentBlocks:          make(map[blockchain.Hash32]time.Time),
-		recentBlocksTTL:       5 * time.Minute,
-		cleanupInterval:       30 * time.Second,
 		recentTransactions:    make(map[blockchain.Hash32]time.Time),
-		recentTransactionsTTL: 5 * time.Minute,
 	}
 
 	// Initialize consensus management
@@ -141,7 +143,7 @@ func (s *Server) StartListener() error {
 // StartPeriodicProcesses starts the periodic cleanup and sync processes
 func (s *Server) StartPeriodicProcesses() error {
 	// Start unified periodic cleanup system
-	s.cleanupTicker = time.NewTicker(s.cleanupInterval)
+	s.cleanupTicker = time.NewTicker(config.CleanupInterval)
 	go s.unifiedPeriodicCleanup()
 
 	go s.periodicChainSync()
@@ -217,7 +219,7 @@ func (s *Server) cleanRecentBlocks(now time.Time) {
 
 	cleaned := 0
 	for hash, addedTime := range s.recentBlocks {
-		if now.Sub(addedTime) > s.recentBlocksTTL {
+		if now.Sub(addedTime) > config.RecentBlocksTTL {
 			delete(s.recentBlocks, hash)
 			cleaned++
 		}
@@ -234,7 +236,7 @@ func (s *Server) cleanRecentTransactions(now time.Time) {
 
 	cleaned := 0
 	for hash, addedTime := range s.recentTransactions {
-		if now.Sub(addedTime) > s.recentTransactionsTTL {
+		if now.Sub(addedTime) > config.RecentTransactionsTTL {
 			delete(s.recentTransactions, hash)
 			cleaned++
 		}
@@ -262,7 +264,7 @@ func (s *Server) periodicChainSync() {
 
 // checkPeerChains requests chain heads from all connected peers to see if we need to sync
 func (s *Server) checkPeerChains() {
-	connectedPeers := s.peerManager.GetConnectedPeers()
+	connectedPeers := s.GetConnectedPeers()
 	if len(connectedPeers) == 0 {
 		return // No peers to sync with
 	}
@@ -358,12 +360,12 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 		}
 		s.peerConnectionsMu.Unlock()
 
-		// Mark peer as disconnected if it's in the manager
-		s.peerManager.mu.Lock()
-		if p, exists := s.peerManager.peers[peer.Address]; exists {
+		// Mark peer as disconnected
+		s.peersMu.Lock()
+		if p, exists := s.peers[peer.Address]; exists {
 			p.Status = PeerDisconnected
 		}
-		s.peerManager.mu.Unlock()
+		s.peersMu.Unlock()
 	}()
 
 	// Send handshake
@@ -373,45 +375,6 @@ func (s *Server) HandlePeerConnection(conn net.Conn) {
 	// Handle incoming messages
 	s.logf("Starting message handler for %s", connAddr)
 	s.handleMessages(conn, peer)
-}
-
-// sendHandshake sends initial handshake to a peer
-func (s *Server) sendHandshake(peerAddr string) {
-	height, err := s.config.Store.GetChainHeight()
-	if err != nil {
-		s.logf("Failed to get chain height: %v", err)
-		height = 0
-	}
-
-	handshake := HandshakePayload{
-		NodeID:      s.config.NodeID,
-		ChainHeight: int(height),
-		Version:     "1.0",
-		ListenPort:  s.config.Port,
-	}
-
-	msg, err := NewMessage(MessageTypeHandshake, handshake)
-	if err != nil {
-		s.logf("Failed to create handshake message: %v", err)
-		return
-	}
-
-	s.logf("Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
-	// Create a temporary peer object for handshake (we don't have a full peer yet)
-	tempPeer := &Peer{Address: peerAddr}
-	if err := s.SendNotification(tempPeer, msg); err != nil {
-		s.logf("Failed to send handshake: %v", err)
-	}
-}
-
-// sendMessage sends a message over the connection
-func (s *Server) sendMessage(conn net.Conn, msg *Message) error {
-	encoder := json.NewEncoder(conn)
-	err := encoder.Encode(msg)
-	if err != nil {
-		s.logf("Failed to encode/send message %s: %v", msg.Type, err)
-	}
-	return err
 }
 
 // handleMessages processes incoming messages from a peer
@@ -444,10 +407,6 @@ func (s *Server) GetListener() net.Listener {
 	return s.listener
 }
 
-// GetPeerManager returns the peer manager (for testing)
-func (s *Server) GetPeerManager() *PeerManager {
-	return s.peerManager
-}
 
 // GetConsensusManager returns the consensus manager
 func (s *Server) GetConsensusManager() *consensus.CandidateManager {
@@ -522,13 +481,12 @@ func (s *Server) connectToSeeds() <-chan bool {
 		}
 
 		// Get current peers to avoid duplicate connections
-		pm := s.GetPeerManager()
-		pm.mu.RLock()
+		s.peersMu.RLock()
 		currentPeers := make(map[string]bool)
-		for addr := range pm.peers {
+		for addr := range s.peers {
 			currentPeers[addr] = true
 		}
-		pm.mu.RUnlock()
+		s.peersMu.RUnlock()
 
 		var connectionTasks []<-chan bool
 		for _, seedAddr := range s.config.SeedPeers {
@@ -559,16 +517,15 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		pm := s.GetPeerManager()
-		discoveredPeers := pm.GetDiscoveredPeers()
+		discoveredPeers := s.GetDiscoveredPeers()
 
 		// Get current peers to avoid duplicate connections
-		pm.mu.RLock()
+		s.peersMu.RLock()
 		currentPeers := make(map[string]bool)
-		for addr := range pm.peers {
+		for addr := range s.peers {
 			currentPeers[addr] = true
 		}
-		pm.mu.RUnlock()
+		s.peersMu.RUnlock()
 
 		// Try connecting to discovered peers we're not already connected to
 		var connectionTasks []<-chan bool
@@ -600,13 +557,9 @@ func (s *Server) connectToDiscoveredPeers() <-chan bool {
 }
 
 func (s *Server) requestPeerSharing() {
-	pm := s.GetPeerManager()
-	if pm == nil {
-		return
-	}
 
 	// Get connected peers
-	connectedPeers := pm.GetConnectedPeers()
+	connectedPeers := s.GetConnectedPeers()
 	if len(connectedPeers) == 0 {
 		return
 	}
@@ -629,7 +582,7 @@ func (s *Server) requestPeerSharing() {
 
 		// Add all discovered peers to our peer manager
 		if len(allDiscoveredPeers) > 0 {
-			newPeerCount := pm.AddDiscoveredPeers(allDiscoveredPeers)
+			newPeerCount := s.AddDiscoveredPeers(allDiscoveredPeers)
 			if newPeerCount > 0 {
 				s.logf("Discovered %d new peers through peer sharing", newPeerCount)
 			}
@@ -664,16 +617,15 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 		defer func() { result <- false }() // Default to failure
 
 		// Check if we're already connected to this peer
-		pm := s.GetPeerManager()
-		pm.mu.RLock()
-		existingPeer, exists := pm.peers[address]
+		s.peersMu.RLock()
+		existingPeer, exists := s.peers[address]
 		if exists && existingPeer.Status == PeerConnected {
-			pm.mu.RUnlock()
+			s.peersMu.RUnlock()
 			s.logf("Already connected to peer %s, skipping connection attempt", address)
 			result <- true // Already connected counts as success
 			return
 		}
-		pm.mu.RUnlock()
+		s.peersMu.RUnlock()
 
 		s.logf("Attempting to connect to peer: %s", address)
 
@@ -692,7 +644,7 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 		}
 
 		// Add to peer manager
-		actualPeer := s.GetPeerManager().AddPeer(address)
+		actualPeer := s.AddPeer(address)
 		if actualPeer != nil {
 			// Update the peer object with our info
 			actualPeer.ConnAddr = conn.LocalAddr().String()
@@ -742,15 +694,14 @@ func (s *Server) ConnectToPeer(address string) <-chan bool {
 						return
 					case <-ticker.C:
 						// Check if ANY connection to this peer exists (not just the one we initiated)
-						pm := s.GetPeerManager()
-						pm.mu.RLock()
-						if peerObj, exists := pm.peers[address]; exists && peerObj.Status == PeerConnected {
-							pm.mu.RUnlock()
+						s.peersMu.RLock()
+						if peerObj, exists := s.peers[address]; exists && peerObj.Status == PeerConnected {
+							s.peersMu.RUnlock()
 							s.logf("Peer connection established: %s (may be incoming due to race)", address)
 							handshakeComplete <- true
 							return
 						}
-						pm.mu.RUnlock()
+						s.peersMu.RUnlock()
 					}
 				}
 			}()
@@ -788,8 +739,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 	go func() {
 		defer func() { done <- true }()
 
-		pm := s.GetPeerManager()
-		connected := pm.GetConnectedPeers()
+		connected := s.GetConnectedPeers()
 		var connectedAddrs []string
 		for _, peer := range connected {
 			connectedAddrs = append(connectedAddrs, peer.Address)
@@ -797,7 +747,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 		s.logf("Manual discovery check: %d connected peers: %v", len(connected), connectedAddrs)
 
 		// Clean up dead peers
-		removed := pm.CleanupDeadPeers()
+		removed := s.CleanupDeadPeers()
 		if removed > 0 {
 			s.logf("Cleaned up %d dead peers", removed)
 		}
@@ -836,4 +786,5 @@ func (s *Server) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer,
 		return !existingPeer.IsOutgoing
 	}
 }
+
 

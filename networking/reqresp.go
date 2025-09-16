@@ -5,6 +5,7 @@ import (
 	"august/utils"
 	"encoding/json"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -117,4 +118,43 @@ func (s *Server) sendMessageToPeer(peerAddress string, msg *Message) error {
 		s.logf("Failed to encode/send message %s: %v", msg.Type, err)
 	}
 	return err
+}
+
+// sendMessage sends a message over a connection (used when connection is already known)
+func (s *Server) sendMessage(conn net.Conn, msg *Message) error {
+	encoder := json.NewEncoder(conn)
+	err := encoder.Encode(msg)
+	if err != nil {
+		s.logf("Failed to encode/send message %s: %v", msg.Type, err)
+	}
+	return err
+}
+
+// sendHandshake sends a handshake message to a peer using the reqresp pattern
+func (s *Server) sendHandshake(peerAddr string) {
+	height, err := s.config.Store.GetChainHeight()
+	if err != nil {
+		s.logf("Failed to get chain height: %v", err)
+		height = 0
+	}
+
+	handshake := HandshakePayload{
+		NodeID:      s.config.NodeID,
+		ChainHeight: int(height),
+		Version:     "1.0",
+		ListenPort:  s.config.Port,
+	}
+
+	msg, err := NewMessage(MessageTypeHandshake, handshake)
+	if err != nil {
+		s.logf("Failed to create handshake message: %v", err)
+		return
+	}
+
+	s.logf("Sending handshake message to %s (port: %s)", peerAddr, handshake.ListenPort)
+	// Create a temporary peer object for handshake (we don't have a full peer yet)
+	tempPeer := &Peer{Address: peerAddr}
+	if err := s.SendNotification(tempPeer, msg); err != nil {
+		s.logf("Failed to send handshake: %v", err)
+	}
 }

@@ -42,4 +42,12 @@ const (
 	// Network request-response constants
 	RequestTimeout     = 5 * time.Second         // How long to wait for responses
 	MaxPendingRequests = 100                     // Maximum number of pending requests
+
+	// Network peer constants
+	MaxPeers = 128                               // Maximum number of peers
+
+	// Network TTL constants
+	RecentBlocksTTL       = 5 * time.Minute      // How long to keep blocks in recent cache
+	RecentTransactionsTTL = 5 * time.Minute      // How long to keep transactions in recent cache
+	CleanupInterval       = 30 * time.Second     // How often to cleanup dead peers
 )

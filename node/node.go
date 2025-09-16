@@ -421,7 +421,7 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 				// Request missing parent block from multiple peers
 				log.Printf("%s\tNeed to request parent block %x from peers", n.Config.NodeID, missingParentErr.Hash[:8])
 
-				connectedPeers := n.NetworkServer.GetPeerManager().GetConnectedPeers()
+				connectedPeers := n.NetworkServer.GetConnectedPeers()
 				if len(connectedPeers) > 0 {
 					hashString := base64.StdEncoding.EncodeToString(missingParentErr.Hash[:])
 					go func() {
