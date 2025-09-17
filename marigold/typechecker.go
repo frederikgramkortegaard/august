@@ -94,7 +94,12 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 			return Bool
 		}
 
-		// Arithmetic operators return the left operand type
+		// Plus operator: if both are strings, return String; otherwise return left operand type
+		if expr.Operator == Plus && lhs == String && rhs == String {
+			return String
+		}
+
+		// Other arithmetic operators return the left operand type
 		return lhs
 
 	case CallExpr:
@@ -110,21 +115,28 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 				ctx.logFatalWithToken(fmt.Sprintf("len() expects 1 argument, got %d", len(expr.Args)), expr.Token)
 			}
 
-			// Check that argument is an array
+			// Check that argument is an array or string
 			argExpr := expr.Args[0]
+			argType := typecheckExpression(ctx, argExpr)
+
+			if argType == String {
+				// len(str) is valid
+				return Int
+			}
+
 			if argExpr.Type == IdentifierExpr {
 				varName := argExpr.Value.(string)
 				variable := ctx.currentScope.findVariable(varName)
 				if variable == nil {
 					ctx.logFatalWithToken(fmt.Sprintf("Undefined variable '%s'", varName), argExpr.Token)
 				}
-				if variable.ArrayType == nil {
-					ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays, got variable of type '%s'", variable.Type), argExpr.Token)
+				if variable.ArrayType != nil {
+					// len(array) is valid
+					return Int
 				}
-			} else {
-				ctx.logFatalWithToken("len() argument must be an array variable", argExpr.Token)
 			}
 
+			ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays or strings, got '%s'", argType), argExpr.Token)
 			return Int // len() returns int
 		}
 
@@ -165,16 +177,21 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		return firstType // Return element type, array type will be handled in assignment
 
 	case IndexExpr:
-		// Array indexing arr[i]
-		_ = typecheckExpression(ctx, expr.Lhs) // Validate the array expression
+		// Array or string indexing: arr[i] or str[i]
+		lhsType := typecheckExpression(ctx, expr.Lhs)
 		indexType := typecheckExpression(ctx, expr.Rhs)
 
 		// Index must be int
 		if indexType != Int {
-			ctx.logFatalWithToken(fmt.Sprintf("Array index must be int, got '%s'", indexType), expr.Token)
+			ctx.logFatalWithToken(fmt.Sprintf("Index must be int, got '%s'", indexType), expr.Token)
 		}
 
-		// Get the actual array variable to find element type
+		// Handle string indexing
+		if lhsType == String {
+			return String // str[i] returns a single-character string
+		}
+
+		// Handle array indexing
 		if expr.Lhs.Type == IdentifierExpr {
 			varName := expr.Lhs.Value.(string)
 			variable := ctx.currentScope.findVariable(varName)
@@ -183,7 +200,7 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 			}
 		}
 
-		ctx.logFatalWithToken(fmt.Sprintf("Cannot index non-array expression"), expr.Token)
+		ctx.logFatalWithToken(fmt.Sprintf("Cannot index expression of type '%s'", lhsType), expr.Token)
 		return ""
 
 	}
@@ -208,8 +225,11 @@ func isValidBinaryOperatorUse(op, lhs, rhs TokenType) bool {
 	}
 
 	switch op {
-	case Plus, Minus, Multiply, Divide:
-		// Arithmetic operators only work on numeric types
+	case Plus:
+		// Plus works on numeric types AND strings (concatenation)
+		return lhs == Int || lhs == Float || lhs == String
+	case Minus, Multiply, Divide:
+		// Other arithmetic operators only work on numeric types
 		return lhs == Int || lhs == Float
 	case LessThan, LessEqual, GreaterThan, GreaterEqual:
 		// Comparison operators work on numeric types and strings
