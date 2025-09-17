@@ -814,6 +814,14 @@ func parseAtom(ctx *ParserContext) *Expression {
 			ctx.logFatal("stop must be followed by parentheses", token)
 			return nil
 		}
+	case Assert:
+		// assert keyword - must be a function call
+		if ctx.cursor+1 < len(ctx.tokens) && ctx.tokens[ctx.cursor+1].Type == LParen {
+			return parseFunctionCall(ctx)
+		} else {
+			ctx.logFatal("assert must be followed by parentheses", token)
+			return nil
+		}
 
 
 	case LParen:

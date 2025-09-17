@@ -50,6 +50,7 @@ const (
 	Len                     = "Len"
 	Emit                    = "Emit"
 	Stop                    = "Stop"
+	Assert                  = "Assert"
 	Map                     = "Map"
 	TFunction               = "TFunction"
 	Eof                     = "Eof"
@@ -97,6 +98,7 @@ var TokenTypeMap = map[string]TokenType{
 	"len":    Len,
 	"emit":   Emit,
 	"stop":   Stop,
+	"assert": Assert,
 	"map":    Map,
 	"true":   BoolLiteral,
 	"false":  BoolLiteral,

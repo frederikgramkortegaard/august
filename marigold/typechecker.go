@@ -187,6 +187,22 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			return AnyType  // Use AnyType as placeholder for void
 		}
 
+		if funcName == "assert" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("assert() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// assert() takes a boolean expression
+			argType := typecheckExpression(ctx, expr.Args[0])
+
+			if !argType.Equals(BoolType) {
+				ctx.logFatalWithToken(fmt.Sprintf("assert() expects a boolean expression, got '%s'", argType.String()), expr.Token)
+			}
+
+			// assert() returns a boolean
+			return BoolType
+		}
+
 		fd, ok := ctx.ast.Functions[funcName]
 		if !ok {
 			ctx.logFatalWithToken(fmt.Sprintf("Function '%s' does not exist", funcName), expr.Token)
