@@ -34,17 +34,17 @@ func TestParserOnlyFunctionsInGlobalScope(t *testing.T) {
 		},
 		{
 			name:        "Global if statement not allowed",
-			input:       `if true { emit "hello" }`,
+			input:       `if true { emit("hello") }`,
 			shouldPanic: true,
 		},
 		{
 			name:        "Global while loop not allowed",
-			input:       `while true { emit "loop" }`,
+			input:       `while true { emit("loop") }`,
 			shouldPanic: true,
 		},
 		{
 			name:        "Global emit not allowed",
-			input:       `emit "hello"`,
+			input:       `emit("hello")`,
 			shouldPanic: true,
 		},
 		{

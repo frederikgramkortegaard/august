@@ -490,6 +490,21 @@ func Typecheck(ast *Ast) {
 		currentScope: ast.Scope,
 	}
 
+	// Check for required main function
+	mainFunc, hasMain := ast.Functions["main"]
+	if !hasMain {
+		ctx.logFatal("Program must have a main() function")
+	}
+
+	// Validate main function signature: main() : int
+	if len(mainFunc.Parameters) != 0 {
+		ctx.logFatal("main() function must take no parameters")
+	}
+
+	if !mainFunc.ReturnType.Equals(IntType) {
+		ctx.logFatal("main() function must return int")
+	}
+
 	for _, funcdef := range ast.Functions {
 		typecheckFunctionDefinition(ctx, funcdef)
 	}
