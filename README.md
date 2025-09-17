@@ -2,17 +2,15 @@
 
 **Go · Distributed Systems · Blockchain · Virtual Machines · Compiler Design**
 
-A complete blockchain platform built from scratch in Go, featuring proof-of-work consensus, a custom virtual machine, and a high-level smart contract programming language. Implements Bitcoin-inspired consensus with Ethereum-style smart contracts and gas-metered execution.
+A blockchain platform built from scratch in Go, featuring proof-of-work consensus, a custom virtual machine, and a high-level smart contract programming language. Implements Bitcoin-inspired consensus with Ethereum-style smart contracts and gas-metered execution.
 
 ## Project Overview
 
-**August** is a full-featured blockchain implementation demonstrating the complete technology stack from peer-to-peer networking to high-level programming languages:
+August is a blockchain platform implementing the technology stack from consensus protocols to high-level programming languages. The system combines Bitcoin's proof-of-work consensus model with Ethereum-style smart contracts, featuring a custom virtual machine (AVM) and the Marigold programming language.
 
-- **Blockchain Core**: Implemented Bitcoin-inspired proof-of-work consensus with SHA-256 mining, longest-chain fork resolution, and difficulty adjustment targeting consistent block times
-- **Virtual Machine**: Built AVM (August Virtual Machine), a stack-based bytecode runtime with 256-bit arithmetic, gas metering, and persistent contract storage using PSTORE/PLOAD instructions
-- **Programming Language**: Designed Marigold, a C-like statically-typed language with lexer, parser, type checker, and code generator targeting AVM bytecode
-- **P2P Networking**: Engineered decentralized peer discovery, headers-first chain synchronization, and request-response protocols for block propagation without hardcoded seed nodes
-- **Development Tools**: Created comprehensive toolchain including compiler, wallet, miner, bytecode parser, and HTTP API for blockchain interaction
+The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a compiler pipeline with lexer, parser, type checker, and code generator (code generator is WIP).
+
+The P2P network implements decentralized peer discovery and headers-first synchronization without hardcoded seed nodes. The toolchain includes wallet, miner, compiler, and HTTP API for development and interaction.
 
 ## Architecture
 
@@ -45,9 +43,9 @@ A complete blockchain platform built from scratch in Go, featuring proof-of-work
 
 ### Programming Language (Marigold)
 - **Type System**: Static typing with int, float, string, bool, arrays, and maps with full type checking
-- **Control Structures**: C-like syntax with if/else, while loops, break/continue statements, and function definitions
+- **Control Structures**: High-level syntax with if/else, while loops, break/continue statements, and function definitions
 - **Blockchain Integration**: Built-in access to blockchain context via @-prefixed variables (@caller, @balance, @timestamp, etc.)
-- **Compiler Pipeline**: Complete lexer→parser→typechecker→codegen pipeline with comprehensive error reporting
+- **Compiler Pipeline**: Complete lexer->parser->typechecker->codegen pipeline with comprehensive error reporting
 
 ### Networking & Distribution
 - **Peer Discovery**: Decentralized bootstrap mechanism without hardcoded seed nodes
@@ -74,14 +72,17 @@ go run cmd/miner/main.go --privkey <private_key> --node localhost:8080
 # Write contract in Marigold
 cat > token.mg << 'EOF'
 define main() : int {
-    if persistent["initialized"] == "" {
-        persistent["total_supply"] = "1000000"
-        persistent[@caller] = "1000000"
-        persistent["initialized"] = "true"
-        emit("Token initialized")
+    if @callvalue > 0 {
+        // Mint tokens: 1 AUG sent = 1 token minted
+        current: int = persistent[@caller]
+        new_balance: int = current + @callvalue
+        persistent[@caller] = new_balance
+        emit("Tokens minted:")
+        emit(new_balance)
     } else {
-        balance: string = persistent[@caller]
-        emit("Balance:")
+        // Query balance
+        balance: int = persistent[@caller]
+        emit("Token balance:")
         emit(balance)
     }
     return 0
@@ -93,9 +94,13 @@ go run cmd/marigold/main.go token.mg
 
 # Deploy to blockchain
 go run cmd/wallet/main.go --privkey <key> --node localhost:8080 deploy \
-  --init empty.avmbc --body token.avmbc --amount 1000000 --gas-limit 100000
+  --init empty.avmbc --body token.avmbc --amount 0 --gas-limit 100000
 
-# Interact with deployed contract
+# Mint tokens by sending AUG to contract
+go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
+  --contract <address> --amount 1000 --gas-limit 50000
+
+# Query token balance
 go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
   --contract <address> --amount 0 --gas-limit 50000
 ```
