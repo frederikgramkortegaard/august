@@ -42,6 +42,7 @@ type Expression struct {
 
 type Block struct {
 	Statements []*Statement `json:"statements"`
+	Scope      *Scope       `json:"scope"`
 }
 
 type Statement struct {
@@ -54,16 +55,26 @@ type Statement struct {
 	ElseBlock   *Block        `json:"elseblock,omitempty"`
 }
 
+type Scope struct {
+	Variables map[string]*Variable `json:"variables"`
+	Parent    *Scope               `json:"parent"`
+}
 type Ast struct {
 	Tokens    []*Token    `json:"tokens,omitempty"`
 	Functions []*Function `json:"functions"`
-	Block     *Block      `json:"block,omitempty"`
+	Scope     *Scope      `json:"scope,omitempty"`
 }
 
 func NewAst(tokens []*Token) *Ast {
 	return &Ast{
 		Tokens:    tokens,
 		Functions: make([]*Function, 0),
-		Block:     nil,
+		Scope:     nil,
 	}
+}
+
+type Variable struct {
+	Name  string    `json:"name"`
+	Value string    `json:"value"`
+	Type  TokenType `json:"type"` // IntLiteral, StringLiteral, FloatLiteral
 }

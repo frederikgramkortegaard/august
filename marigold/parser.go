@@ -6,9 +6,10 @@ import (
 )
 
 type ParserContext struct {
-	tokens []*Token
-	ast    *Ast
-	cursor int
+	tokens       []*Token
+	ast          *Ast
+	cursor       int
+	currentScope *Scope
 }
 
 func (ctx *ParserContext) peek() *Token {
@@ -83,9 +84,10 @@ func (ctx *ParserContext) currentType() TokenType {
 
 func NewParserContext(tokens []*Token, ast *Ast, cursor int) *ParserContext {
 	return &ParserContext{
-		tokens: tokens,
-		ast:    ast,
-		cursor: cursor,
+		tokens:       tokens,
+		ast:          ast,
+		cursor:       cursor,
+		currentScope: ast.Scope,
 	}
 }
 
@@ -113,9 +115,20 @@ func parseExpression(ctx *ParserContext) *Expression {
 	return parseLogicalOr(ctx)
 }
 
-func parseBlock(ctx *ParserContext) *Block {
+func parseBlock(ctx *ParserContext, parentScope *Scope) *Block {
+	// Create new scope for this block
+	blockScope := &Scope{
+		Variables: make(map[string]*Variable),
+		Parent:    parentScope,
+	}
 
-	block := Block{}
+	// Save current scope and set new one
+	previousScope := ctx.currentScope
+	ctx.currentScope = blockScope
+
+	block := Block{
+		Scope: blockScope,
+	}
 	var statements []*Statement
 	for {
 		stmt := parseStatement(ctx)
@@ -125,6 +138,10 @@ func parseBlock(ctx *ParserContext) *Block {
 		statements = append(statements, stmt)
 	}
 	block.Statements = statements
+
+	// Restore previous scope
+	ctx.currentScope = previousScope
+
 	return &block
 }
 
@@ -217,7 +234,7 @@ func parseStatement(ctx *ParserContext) *Statement {
 		}
 		statement.Conditional = conditional
 		_ = ctx.consumeAssert(LBrace)
-		block := parseBlock(ctx)
+		block := parseBlock(ctx, ctx.currentScope)
 		_ = ctx.consumeAssert(RBrace)
 
 		if block == nil {
@@ -232,7 +249,7 @@ func parseStatement(ctx *ParserContext) *Statement {
 			_ = ctx.consumeAssert(Else)
 
 			_ = ctx.consumeAssert(LBrace)
-			elseblock := parseBlock(ctx)
+			elseblock := parseBlock(ctx, ctx.currentScope)
 			_ = ctx.consumeAssert(RBrace)
 
 			if elseblock == nil {
@@ -251,7 +268,7 @@ func parseStatement(ctx *ParserContext) *Statement {
 		}
 		statement.Conditional = conditional
 		_ = ctx.consumeAssert(LBrace)
-		block := parseBlock(ctx)
+		block := parseBlock(ctx, ctx.currentScope)
 		_ = ctx.consumeAssert(RBrace)
 
 		if block == nil {
@@ -392,7 +409,7 @@ func parseFunctionDefinition(ctx *ParserContext) *Function {
 
 	// Parse Body
 	_ = ctx.consumeAssert(LBrace)
-	block := parseBlock(ctx)
+	block := parseBlock(ctx, ctx.ast.Scope)
 	functionDefinition.Block = block
 	if block == nil {
 		ctx.logError(fmt.Sprintf("failed to parse body of function definition for function '%s'", functionIdent.Value), ctx.current())
@@ -407,6 +424,13 @@ func Parse(tokens []*Token) (*Ast, error) {
 
 	fmt.Println("Parsing")
 	ast := NewAst(tokens)
+
+	// Initialize global scope
+	ast.Scope = &Scope{
+		Variables: make(map[string]*Variable),
+		Parent:    nil,
+	}
+
 	if len(tokens) == 0 {
 		return ast, nil
 	}
