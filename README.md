@@ -104,13 +104,13 @@ go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
 
 ### Marigold Syntax
 ```marigold
-// Type declarations and initialization
-balance: int = 1000
-rates: map[string]float = {}
-active: bool = true
-
-// Control flow with blockchain context
 define transfer(to: string, amount: int) : bool {
+    // Type declarations and initialization
+    balance: int = 1000
+    rates: map[string]float = {}
+    active: bool = true
+
+    // Control flow with blockchain context
     if @balance < amount {
         emit("Insufficient contract balance")
         return false
@@ -123,16 +123,19 @@ define transfer(to: string, amount: int) : bool {
     return true
 }
 
-// Loop constructs with break/continue
-i: int = 0
-while i < 10 {
-    if i % 2 == 0 {
+define main() : int {
+    // Loop constructs with break/continue
+    i: int = 0
+    while i < 10 {
+        if i % 2 == 0 {
+            i = i + 1
+            continue
+        }
+        emit(i)
+        if i > 7 { break }
         i = i + 1
-        continue
     }
-    emit(i)
-    if i > 7 { break }
-    i = i + 1
+    return 0
 }
 ```
 
