@@ -41,10 +41,11 @@ const (
 	While                   = "While"
 	Return                  = "Return"
 	Define                  = "Define"
-	Emit                    = "Emit"
 	If                      = "If"
 	Else                    = "Else"
 	Len                     = "Len"
+	Emit                    = "Emit"
+	Stop                    = "Stop"
 	Map                     = "Map"
 	TFunction               = "TFunction"
 	Eof                     = "Eof"
@@ -83,10 +84,11 @@ var TokenTypeMap = map[string]TokenType{
 	"while":  While,
 	"return": Return,
 	"define": Define,
-	"emit":   Emit,
 	"if":     If,
 	"else":   Else,
 	"len":    Len,
+	"emit":   Emit,
+	"stop":   Stop,
 	"map":    Map,
 	"true":   BoolLiteral,
 	"false":  BoolLiteral,

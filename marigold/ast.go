@@ -8,7 +8,6 @@ const (
 	ReturnStmt                   = "ReturnStmt"
 	IfStmt                       = "IfStmt"
 	WhileStmt                    = "WhileStmt"
-	EmitStmt                     = "EmitStmt"
 	ExpressionStmt               = "ExpressionStmt"
 )
 

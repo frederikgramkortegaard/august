@@ -112,6 +112,7 @@ var (
 	FloatType  = &SimpleType{Kind: "float"}
 	StringType = &SimpleType{Kind: "string"}
 	BoolType   = &SimpleType{Kind: "bool"}
+	AnyType    = &SimpleType{Kind: "any"}  // Internal use only
 )
 
 // NewArrayType creates an array type

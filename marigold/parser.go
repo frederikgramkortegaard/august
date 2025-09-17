@@ -320,6 +320,14 @@ func parseFunctionCall(ctx *ParserContext) *Expression {
 		lenToken := ctx.consumeAssert(Len)
 		functionCall.Value = "len"
 		functionCall.Token = lenToken
+	} else if token.Type == Emit {
+		emitToken := ctx.consumeAssert(Emit)
+		functionCall.Value = "emit"
+		functionCall.Token = emitToken
+	} else if token.Type == Stop {
+		stopToken := ctx.consumeAssert(Stop)
+		functionCall.Value = "stop"
+		functionCall.Token = stopToken
 	} else {
 		ctx.logError("Expected function name", token)
 		return nil
@@ -410,15 +418,6 @@ func parseStatement(ctx *ParserContext) *Statement {
 		statement.Type = WhileStmt
 		statement.Block = block
 
-	case Emit:
-		_ = ctx.consumeAssert(Emit)
-		rhs := parseExpression(ctx)
-		if rhs == nil {
-			ctx.logErrorAtCurrent("Expected expression after emit")
-			return nil
-		}
-		statement.Rhs = rhs
-		statement.Type = EmitStmt
 	case Return:
 		_ = ctx.consumeAssert(Return)
 		rhs := parseExpression(ctx)
@@ -766,7 +765,23 @@ func parseAtom(ctx *ParserContext) *Expression {
 		if ctx.cursor+1 < len(ctx.tokens) && ctx.tokens[ctx.cursor+1].Type == LParen {
 			return parseFunctionCall(ctx)
 		} else {
-			ctx.logError("len must be followed by parentheses", token)
+			ctx.logFatal("len must be followed by parentheses", token)
+			return nil
+		}
+	case Emit:
+		// emit keyword - must be a function call
+		if ctx.cursor+1 < len(ctx.tokens) && ctx.tokens[ctx.cursor+1].Type == LParen {
+			return parseFunctionCall(ctx)
+		} else {
+			ctx.logFatal("emit must be followed by parentheses", token)
+			return nil
+		}
+	case Stop:
+		// stop keyword - must be a function call
+		if ctx.cursor+1 < len(ctx.tokens) && ctx.tokens[ctx.cursor+1].Type == LParen {
+			return parseFunctionCall(ctx)
+		} else {
+			ctx.logFatal("stop must be followed by parentheses", token)
 			return nil
 		}
 

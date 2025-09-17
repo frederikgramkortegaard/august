@@ -56,14 +56,6 @@ func TestStatementTypes(t *testing.T) {
 			expected: marigold.WhileStmt,
 		},
 		{
-			name: "emit statement",
-			input: `define test() : int {
-				emit 42
-				return 0
-			}`,
-			expected: marigold.EmitStmt,
-		},
-		{
 			name: "expression statement - function call",
 			input: `define test() : int {
 				func(1, 2)

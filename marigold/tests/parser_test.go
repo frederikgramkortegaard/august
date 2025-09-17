@@ -93,7 +93,7 @@ func TestParserFunctionBodies(t *testing.T) {
 		`define loop() : int {
 			i: int = 0
 			while i < 10 {
-				emit i
+				emit(i)
 				i = i + 1
 			}
 			return 0

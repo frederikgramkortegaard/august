@@ -147,6 +147,32 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			return IntType
 		}
 
+		if funcName == "emit" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("emit() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// emit() can only take simple types that can be printed
+			argType := typecheckExpression(ctx, expr.Args[0])
+
+			if !argType.Equals(IntType) && !argType.Equals(FloatType) &&
+			   !argType.Equals(StringType) && !argType.Equals(BoolType) {
+				ctx.logFatalWithToken(fmt.Sprintf("emit() can only print simple types (int, float, string, bool), got '%s'", argType.String()), expr.Token)
+			}
+
+			// emit() doesn't return a value (void function)
+			return AnyType  // Use AnyType as placeholder for void
+		}
+
+		if funcName == "stop" {
+			if len(expr.Args) != 0 {
+				ctx.logFatalWithToken(fmt.Sprintf("stop() expects no arguments, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// stop() doesn't return a value (exits program)
+			return AnyType  // Use AnyType as placeholder for void
+		}
+
 		fd, ok := ctx.ast.Functions[funcName]
 		if !ok {
 			ctx.logFatalWithToken(fmt.Sprintf("Function '%s' does not exist", funcName), expr.Token)
@@ -424,9 +450,6 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 			// Type check the expression (could be function call, etc.)
 			typecheckExpression(ctx, stmt.Rhs)
 
-		case EmitStmt:
-			// Type check the emitted expression
-			typecheckExpression(ctx, stmt.Rhs)
 
 		default:
 			ctx.logFatal(fmt.Sprintf("Unknown statement type '%s'", stmt.Type))
