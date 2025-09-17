@@ -426,6 +426,14 @@ func parseStatement(ctx *ParserContext) *Statement {
 		}
 		statement.Rhs = rhs
 		statement.Type = ReturnStmt
+	case Break:
+		breakToken := ctx.consumeAssert(Break)
+		statement.Type = BreakStmt
+		statement.Token = breakToken
+	case Continue:
+		continueToken := ctx.consumeAssert(Continue)
+		statement.Type = ContinueStmt
+		statement.Token = continueToken
 
 	// More complex case, could be variable declaration/assignments, function calls, etc
 	case Identifier:

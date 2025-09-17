@@ -43,6 +43,8 @@ const (
 	While                   = "While"
 	Return                  = "Return"
 	Define                  = "Define"
+	Break                   = "Break"
+	Continue                = "Continue"
 	If                      = "If"
 	Else                    = "Else"
 	Len                     = "Len"
@@ -88,6 +90,8 @@ var TokenTypeMap = map[string]TokenType{
 	"while":  While,
 	"return": Return,
 	"define": Define,
+	"break":  Break,
+	"continue": Continue,
 	"if":     If,
 	"else":   Else,
 	"len":    Len,

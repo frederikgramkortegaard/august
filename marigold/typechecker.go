@@ -9,6 +9,7 @@ type TypeCheckContext struct {
 	ast             *Ast
 	currentFunction *Function
 	currentScope    *Scope
+	inLoop          bool
 }
 
 func (ctx *TypeCheckContext) logFatal(message string) {
@@ -451,12 +452,25 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 			if !conditionType.Equals(BoolType) {
 				ctx.logFatalWithToken(fmt.Sprintf("While condition must be Bool, got %s", conditionType.String()), stmt.Token)
 			}
-			// Type check the while block with its scope
+			// Type check the while block with its scope and loop context
 			if stmt.Block != nil {
 				previousScope := ctx.currentScope
+				previousLoop := ctx.inLoop
 				ctx.currentScope = stmt.Block.Scope
+				ctx.inLoop = true  // Set loop context
 				typecheckBlock(ctx, stmt.Block)
 				ctx.currentScope = previousScope
+				ctx.inLoop = previousLoop  // Restore previous loop context
+			}
+
+		case BreakStmt:
+			if !ctx.inLoop {
+				ctx.logFatalWithToken("break statement can only be used inside a loop", stmt.Token)
+			}
+
+		case ContinueStmt:
+			if !ctx.inLoop {
+				ctx.logFatalWithToken("continue statement can only be used inside a loop", stmt.Token)
 			}
 
 		case ExpressionStmt:
