@@ -191,8 +191,129 @@ func TestStopFunction(t *testing.T) {
 	}
 }
 
+func TestAssertFunction(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		shouldError bool
+		description string
+	}{
+		{
+			name: "assert true",
+			input: `define main() : int {
+				assert(true)
+				return 0
+			}`,
+			shouldError: false,
+			description: "Should allow assert with true",
+		},
+		{
+			name: "assert false",
+			input: `define main() : int {
+				assert(false)
+				return 0
+			}`,
+			shouldError: false,
+			description: "Should allow assert with false",
+		},
+		{
+			name: "assert comparison",
+			input: `define main() : int {
+				assert(5 > 3)
+				return 0
+			}`,
+			shouldError: false,
+			description: "Should allow assert with boolean expressions",
+		},
+		{
+			name: "assert variable",
+			input: `define main() : int {
+				x: bool = true
+				assert(x)
+				return 0
+			}`,
+			shouldError: false,
+			description: "Should allow assert with boolean variables",
+		},
+		{
+			name: "assert wrong type",
+			input: `define main() : int {
+				assert("not boolean")
+				return 0
+			}`,
+			shouldError: true,
+			description: "Should reject assert with non-boolean argument",
+		},
+		{
+			name: "assert wrong arg count zero",
+			input: `define main() : int {
+				assert()
+				return 0
+			}`,
+			shouldError: true,
+			description: "Should reject assert with no arguments",
+		},
+		{
+			name: "assert wrong arg count multiple",
+			input: `define main() : int {
+				assert(true, false)
+				return 0
+			}`,
+			shouldError: true,
+			description: "Should reject assert with multiple arguments",
+		},
+		{
+			name: "assert complex expression",
+			input: `define main() : int {
+				x: int = 10
+				y: int = 5
+				assert(x > y && y > 0)
+				return 0
+			}`,
+			shouldError: false,
+			description: "Should allow assert with complex boolean expressions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, err := marigold.Lex(tt.input)
+			if err != nil {
+				if !tt.shouldError {
+					t.Fatalf("Unexpected lex error: %v", err)
+				}
+				return
+			}
+
+			ast, err := marigold.Parse(tokens)
+			if err != nil {
+				if !tt.shouldError {
+					t.Fatalf("Unexpected parse error: %v", err)
+				}
+				return
+			}
+
+			// Test typechecking
+			defer func() {
+				if r := recover(); r != nil {
+					if !tt.shouldError {
+						t.Errorf("Unexpected typecheck panic for %s: %v", tt.description, r)
+					}
+					// Expected error, test passes
+				} else {
+					if tt.shouldError {
+						t.Errorf("Expected typecheck to fail for %s but it succeeded", tt.description)
+					}
+				}
+			}()
+
+			marigold.Typecheck(ast)
+		})
+	}
+}
+
 func TestBuiltinKeywordShadowing(t *testing.T) {
-	// Test that emit and stop cannot be used as function names
+	// Test that emit, stop, and assert cannot be used as function names
 	tests := []struct {
 		name  string
 		input string
@@ -206,6 +327,12 @@ func TestBuiltinKeywordShadowing(t *testing.T) {
 		{
 			name: "cannot define stop function",
 			input: `define stop() : int {
+				return 42
+			}`,
+		},
+		{
+			name: "cannot define assert function",
+			input: `define assert() : int {
 				return 42
 			}`,
 		},

@@ -328,6 +328,10 @@ func parseFunctionCall(ctx *ParserContext) *Expression {
 		stopToken := ctx.consumeAssert(Stop)
 		functionCall.Value = "stop"
 		functionCall.Token = stopToken
+	} else if token.Type == Assert {
+		assertToken := ctx.consumeAssert(Assert)
+		functionCall.Value = "assert"
+		functionCall.Token = assertToken
 	} else {
 		ctx.logError("Expected function name", token)
 		return nil
@@ -434,6 +438,15 @@ func parseStatement(ctx *ParserContext) *Statement {
 		continueToken := ctx.consumeAssert(Continue)
 		statement.Type = ContinueStmt
 		statement.Token = continueToken
+
+	case Emit, Stop, Assert:
+		// Built-in function calls as statements
+		expr := parseExpression(ctx)
+		if expr == nil {
+			ctx.logFatal("Failed to parse built-in function call", currentToken)
+		}
+		statement.Type = ExpressionStmt
+		statement.Rhs = expr
 
 	// More complex case, could be variable declaration/assignments, function calls, etc
 	case Identifier:
