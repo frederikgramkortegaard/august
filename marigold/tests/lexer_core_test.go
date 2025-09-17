@@ -55,7 +55,7 @@ func TestLexBasicTokens(t *testing.T) {
 }
 
 func TestLexOperators(t *testing.T) {
-	input := "= == != < <= > >="
+	input := "= == != < <= > >= && ||"
 	tokens, err := marigold.Lex(input)
 
 	if err != nil {
@@ -73,6 +73,8 @@ func TestLexOperators(t *testing.T) {
 		{marigold.LessEqual, "<="},
 		{marigold.GreaterThan, ">"},
 		{marigold.GreaterEqual, ">="},
+		{marigold.LogicalAnd, "&&"},
+		{marigold.LogicalOr, "||"},
 	}
 
 	if len(tokens) != len(expected) {
@@ -163,5 +165,35 @@ func TestEmptyInput(t *testing.T) {
 
 	if err != marigold.ErrInvalidSourceCode {
 		t.Errorf("Expected ErrInvalidSourceCode, got %v", err)
+	}
+}
+
+func TestLexBooleanLiterals(t *testing.T) {
+	input := "true false"
+	tokens, err := marigold.Lex(input)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expected := []struct {
+		typ   marigold.TokenType
+		value string
+	}{
+		{marigold.BoolLiteral, "true"},
+		{marigold.BoolLiteral, "false"},
+	}
+
+	if len(tokens) != len(expected) {
+		t.Fatalf("Expected %d tokens, got %d", len(expected), len(tokens))
+	}
+
+	for i, token := range tokens {
+		if token.Type != expected[i].typ {
+			t.Errorf("Token %d type: expected %s, got %s", i, expected[i].typ, token.Type)
+		}
+		if token.Value != expected[i].value {
+			t.Errorf("Token %d value: expected %s, got %s", i, expected[i].value, token.Value)
+		}
 	}
 }

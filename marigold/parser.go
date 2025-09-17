@@ -155,7 +155,10 @@ func parseAssignment(ctx *ParserContext) *Statement {
 	statement.Lhs = &Expression{
 		Type:  IdentifierExpr,
 		Value: ident.Value,
+		Token: ident,
+		// ValueType will be determined during typechecking
 	}
+	statement.Token = ident
 
 	if ctx.peek() == nil {
 		ctx.logError("Unreachable - expected token after identifier", nil)
@@ -194,6 +197,8 @@ func parseFunctionCall(ctx *ParserContext) *Expression {
 	functionCall := Expression{}
 	functionCall.Type = CallExpr
 	ident := ctx.consumeAssert(Identifier)
+	functionCall.Value = ident.Value
+	functionCall.Token = ident
 	_ = ctx.consumeAssert(LParen)
 	// Parameter Parsing
 	for {
@@ -227,7 +232,7 @@ func parseStatement(ctx *ParserContext) *Statement {
 	switch currentToken.Type {
 
 	case If:
-		_ = ctx.consumeAssert(If)
+		ifToken := ctx.consumeAssert(If)
 		conditional := parseExpression(ctx)
 		if conditional == nil {
 			ctx.logFatal("Expected condition after if", ctx.current())
@@ -244,6 +249,7 @@ func parseStatement(ctx *ParserContext) *Statement {
 
 		statement.Type = IfStmt
 		statement.Block = block
+		statement.Token = ifToken
 
 		if ctx.peek() != nil && ctx.peek().Type == Else {
 			_ = ctx.consumeAssert(Else)
@@ -444,19 +450,51 @@ func Parse(tokens []*Token) (*Ast, error) {
 		if functionDefinition == nil {
 			ctx.logFatal("could not parse function def", ctx.current())
 		}
-		ast.Functions = append(ast.Functions, functionDefinition)
+		ast.Functions[functionDefinition.Name] = functionDefinition
 	}
 
 	return ast, nil
 }
 func parseLogicalOr(ctx *ParserContext) *Expression {
-	// TODO: Implement logical OR (||) operator
-	return parseLogicalAnd(ctx)
+	left := parseLogicalAnd(ctx)
+	if left == nil {
+		return nil
+	}
+
+	for ctx.peek() != nil && ctx.peek().Type == LogicalOr {
+		op := ctx.consume()
+		right := parseLogicalAnd(ctx)
+		left = &Expression{
+			Type:     BinaryExpr,
+			Operator: op.Type,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
+		}
+	}
+
+	return left
 }
 
 func parseLogicalAnd(ctx *ParserContext) *Expression {
-	// TODO: Implement logical AND (&&) operator
-	return parseRelational(ctx)
+	left := parseRelational(ctx)
+	if left == nil {
+		return nil
+	}
+
+	for ctx.peek() != nil && ctx.peek().Type == LogicalAnd {
+		op := ctx.consume()
+		right := parseRelational(ctx)
+		left = &Expression{
+			Type:     BinaryExpr,
+			Operator: op.Type,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
+		}
+	}
+
+	return left
 }
 
 func parseRelational(ctx *ParserContext) *Expression {
@@ -471,8 +509,9 @@ func parseRelational(ctx *ParserContext) *Expression {
 		left = &Expression{
 			Type:     BinaryExpr,
 			Operator: op.Type,
-			Left:     left,
-			Right:    right,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
 		}
 	}
 
@@ -491,8 +530,9 @@ func parseAdditive(ctx *ParserContext) *Expression {
 		left = &Expression{
 			Type:     BinaryExpr,
 			Operator: op.Type,
-			Left:     left,
-			Right:    right,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
 		}
 	}
 
@@ -511,8 +551,9 @@ func parseTerm(ctx *ParserContext) *Expression {
 		left = &Expression{
 			Type:     BinaryExpr,
 			Operator: op.Type,
-			Left:     left,
-			Right:    right,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
 		}
 	}
 
@@ -526,7 +567,7 @@ func parseFactor(ctx *ParserContext) *Expression {
 		return &Expression{
 			Type:     UnaryExpr,
 			Operator: op.Type,
-			Right:    parseFactor(ctx),
+			Rhs:      parseFactor(ctx),
 		}
 	}
 
@@ -540,11 +581,24 @@ func parseAtom(ctx *ParserContext) *Expression {
 	}
 
 	switch token.Type {
-	case IntLiteral, FloatLiteral, StringLiteral:
+	case IntLiteral, FloatLiteral, StringLiteral, BoolLiteral:
 		ctx.consume()
+		var valueType TokenType
+		switch token.Type {
+		case IntLiteral:
+			valueType = Int
+		case FloatLiteral:
+			valueType = Float
+		case StringLiteral:
+			valueType = String
+		case BoolLiteral:
+			valueType = Bool
+		}
 		return &Expression{
-			Type:  LiteralExpr,
-			Value: token.Value,
+			Type:      LiteralExpr,
+			Value:     token.Value,
+			ValueType: valueType,
+			Token:     token,
 		}
 
 	case Identifier:
@@ -557,6 +611,8 @@ func parseAtom(ctx *ParserContext) *Expression {
 		return &Expression{
 			Type:  IdentifierExpr,
 			Value: token.Value,
+			Token: token,
+			// ValueType will be determined during typechecking
 		}
 
 	case LParen:

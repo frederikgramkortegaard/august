@@ -33,6 +33,12 @@ func parseFile(filename string) {
 		return
 	}
 
+	// Typecheck the AST
+	marigold.Typecheck(ast)
+
+	// Print symbol tables
+	marigold.PrintSymbolTables(ast)
+
 	fmt.Printf("Parsed %d functions:\n", len(ast.Functions))
 	for _, fn := range ast.Functions {
 		fmt.Printf("  - %s(%v) : %s\n", fn.Name, fn.Parameters, fn.ReturnType)

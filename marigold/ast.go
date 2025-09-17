@@ -32,12 +32,14 @@ type Function struct {
 }
 
 type Expression struct {
-	Type     ExpressionType `json:"type"`
-	Operator TokenType      `json:"operator,omitempty"` // For binary/unary ops
-	Left     *Expression    `json:"left,omitempty"`     // For binary ops
-	Right    *Expression    `json:"right,omitempty"`    // For binary ops
-	Value    interface{}    `json:"value,omitempty"`    // For literals/identifiers
-	Args     []*Expression  `json:"args,omitempty"`     // For function calls
+	Type      ExpressionType `json:"type"`
+	Operator  TokenType      `json:"operator,omitempty"`   // For binary/unary ops
+	Lhs       *Expression    `json:"lhs,omitempty"`        // For binary ops
+	Rhs       *Expression    `json:"rhs,omitempty"`        // For binary/unary ops
+	Value     interface{}    `json:"value,omitempty"`      // For literals/identifiers
+	ValueType TokenType      `json:"value_type,omitempty"` // IntLiteral, FloatLiteral, StringLiteral, etc
+	Args      []*Expression  `json:"args,omitempty"`       // For function calls
+	Token     *Token         `json:"token,omitempty"`      // Position information
 }
 
 type Block struct {
@@ -53,6 +55,7 @@ type Statement struct {
 	Conditional *Expression   `json:"conditional,omitempty"`
 	Block       *Block        `json:"block,omitempty"`
 	ElseBlock   *Block        `json:"elseblock,omitempty"`
+	Token       *Token        `json:"token,omitempty"`    // Position information
 }
 
 type Scope struct {
@@ -60,15 +63,15 @@ type Scope struct {
 	Parent    *Scope               `json:"parent"`
 }
 type Ast struct {
-	Tokens    []*Token    `json:"tokens,omitempty"`
-	Functions []*Function `json:"functions"`
-	Scope     *Scope      `json:"scope,omitempty"`
+	Tokens    []*Token             `json:"tokens,omitempty"`
+	Functions map[string]*Function `json:"functions"`
+	Scope     *Scope               `json:"scope,omitempty"`
 }
 
 func NewAst(tokens []*Token) *Ast {
 	return &Ast{
 		Tokens:    tokens,
-		Functions: make([]*Function, 0),
+		Functions: make(map[string]*Function),
 		Scope:     nil,
 	}
 }

@@ -27,19 +27,24 @@ const (
 	Plus                    = "Plus"
 	Minus                   = "Minus"
 	Multiply                = "Multiply"
+	LogicalAnd              = "LogicalAnd"
+	LogicalOr               = "LogicalOr"
 	Identifier              = "Identifier"
 	StringLiteral           = "StringLiteral"
 	IntLiteral              = "IntLiteral"
 	FloatLiteral            = "FloatLiteral"
+	BoolLiteral             = "BoolLiteral"
 	String                  = "String"
 	Int                     = "Int"
 	Float                   = "Float"
+	Bool                    = "Bool"
 	While                   = "While"
 	Return                  = "Return"
 	Define                  = "Define"
 	Emit                    = "Emit"
 	If                      = "If"
 	Else                    = "Else"
+	TFunction               = "TFunction"
 	Eof                     = "Eof"
 )
 
@@ -67,22 +72,27 @@ var TokenTypeMap = map[string]TokenType{
 	"+":      Plus,
 	"-":      Minus,
 	"*":      Multiply,
+	"&&":     LogicalAnd,
+	"||":     LogicalOr,
 	"string": String,
 	"int":    Int,
 	"float":  Float,
+	"bool":   Bool,
 	"while":  While,
 	"return": Return,
 	"define": Define,
 	"emit":   Emit,
 	"if":     If,
 	"else":   Else,
+	"true":   BoolLiteral,
+	"false":  BoolLiteral,
 }
 
 func (tt *TokenType) IsValidReturnType() bool {
 	if tt == nil {
 		return false
 	}
-	return *tt == String || *tt == Int || *tt == Float
+	return *tt == String || *tt == Int || *tt == Float || *tt == Bool
 }
 
 type Token struct {

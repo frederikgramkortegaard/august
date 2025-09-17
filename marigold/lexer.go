@@ -51,7 +51,7 @@ func Lex(text string) ([]*Token, error) {
 
 		// Operators & Syntax
 		switch currentChar {
-		case '(', ')', '[', ']', '{', '}', ',', '.', '|', ':', ';', '+', '-', '*':
+		case '(', ')', '[', ']', '{', '}', ',', '.', ':', ';', '+', '-', '*':
 			makeToken(string(currentChar))
 			continue
 
@@ -59,6 +59,26 @@ func Lex(text string) ([]*Token, error) {
 		case '=', '!', '<', '>':
 			if cursor+1 < len(text) && text[cursor+1] == '=' {
 				makeToken(string(text[cursor : cursor+2]))
+				cursor++
+			} else {
+				makeToken(string(currentChar))
+			}
+			continue
+
+		case '&':
+			// Logical AND operator &&
+			if cursor+1 < len(text) && text[cursor+1] == '&' {
+				makeToken("&&")
+				cursor++
+			} else {
+				panic(fmt.Sprintf("unexpected character '&' at %d:%d", row+1, col+1))
+			}
+			continue
+
+		case '|':
+			// Logical OR operator || or single pipe |
+			if cursor+1 < len(text) && text[cursor+1] == '|' {
+				makeToken("||")
 				cursor++
 			} else {
 				makeToken(string(currentChar))
@@ -163,7 +183,7 @@ func Lex(text string) ([]*Token, error) {
 			continue
 		}
 
-		panic(fmt.Sprintf("error unknown situation %c\n", text[cursor]))
+		panic(fmt.Sprintf("Unexpected character '%c' at %s:%d:%d", text[cursor], filename, row+1, col+1))
 
 	}
 

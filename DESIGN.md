@@ -1,0 +1,1 @@
+Interesting with the gas fee right, because e.g. using MSTORE could be super practical for implementing stuff such as maps, but the gas costs means that reserving some stack space and using stack swap/dup honestly might be better in some caes?

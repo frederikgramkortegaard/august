@@ -95,7 +95,7 @@ func TestStatementTypes(t *testing.T) {
 				t.Fatalf("No functions parsed")
 			}
 
-			fn := ast.Functions[0]
+			fn := ast.Functions["test"]
 			if fn.Block == nil || len(fn.Block.Statements) == 0 {
 				t.Fatalf("No statements in function")
 			}
@@ -127,7 +127,7 @@ func TestIfElseStatements(t *testing.T) {
 		t.Errorf("Parse error: %v", err)
 	}
 
-	fn := ast.Functions[0]
+	fn := ast.Functions["test"]
 	ifStmt := fn.Block.Statements[0]
 
 	if ifStmt.Type != marigold.IfStmt {
@@ -195,7 +195,7 @@ func TestVariableDeclarationTypes(t *testing.T) {
 				t.Errorf("Parse error: %v", err)
 			}
 
-			fn := ast.Functions[0]
+			fn := ast.Functions["test"]
 			stmt := fn.Block.Statements[0]
 
 			if stmt.Type != marigold.AssignmentStmt {
