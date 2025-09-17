@@ -1,29 +1,41 @@
 package avm
 
 var opcodeGasPrices = [...]uint16{
-	NOOP:   1,  // Minimal cost for no-op
-	PUSH:   3,  // Stack manipulation with data
-	POP:    2,  // Simple stack manipulation
-	DUP:    3,  // Stack duplication
-	SWAP:   3,  // Stack swap operation
-	ADD:    3,  // Basic arithmetic
-	SUB:    3,  // Basic arithmetic
-	MUL:    5,  // More expensive arithmetic
-	DIV:    5,  // More expensive arithmetic
-	AND:    3,  // Bitwise operation
-	OR:     3,  // Bitwise operation
-	EQ:     3,  // Comparison
-	LT:     3,  // Comparison
-	GT:     3,  // Comparison
-	ISZERO: 3,  // Comparison
-	JUMP:   8,  // Control flow change
-	JUMPC:  10, // Conditional control flow
-	MSTORE: 20, // Memory write (expensive)
-	MLOAD:  15, // Memory read (moderately expensive)
-	PSTORE: 1000,
-	PLOAD:  1000,
-	STOP:   0,   // Program termination (free)
-	EMIT:   100, // Debug output (very expensive)
+	NOOP:       1,
+	PUSH:       3,
+	POP:        2,
+	DUP:        3,
+	SWAP:       3,
+	ADD:        3,
+	SUB:        3,
+	MUL:        5,
+	DIV:        5,
+	AND:        3,
+	OR:         3,
+	EQ:         3,
+	LT:         3,
+	GT:         3,
+	ISZERO:     3,
+	JUMP:       8,
+	JUMPC:      10,
+	MSTORE:     20,
+	MLOAD:      15,
+	PSTORE:     1000,
+	PLOAD:      1000,
+	STOP:       0,
+	EMIT:       100,
+	CALLER:     2,
+	ADDRESS:    2,
+	BALANCE:    400,
+	ORIGIN:     2,
+	GASPRICE:   2,
+	CALLVALUE:  2,
+	TIMESTAMP:  2,
+	DIFFICULTY: 2,
+	BLOCKHASH:  20,
+	COINBASE:   2,
+	HEIGHT:     2,
+	GASLIMIT:   2,
 }
 
 func (op OPCODE) Price() uint16 {

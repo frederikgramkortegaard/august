@@ -50,60 +50,98 @@ const (
 	// Debug
 	EMIT
 
+	// Blockchain Context
+	CALLER     // address of message sender
+	ADDRESS    // address of contract currently executing
+	BALANCE    // eth balance of an account (takes address from stack pop)
+	ORIGIN     // transaction originator
+	GASPRICE   // price per gas in this transaction
+	CALLVALUE  // amount of AUG sent in this transaction
+	TIMESTAMP  // current block timestamp
+	DIFFICULTY // current block difficulty
+	BLOCKHASH  // block hash (takes block number from stack)
+	COINBASE   // current block's beneficiary address
+	HEIGHT     // current block number
+	GASLIMIT   // current block gas limit
+
 	// COUNTER
 	LAST
 )
 
 var opcodeNames = [...]string{
-	NOOP:   "NOOP",
-	PUSH:   "PUSH",
-	POP:    "POP",
-	DUP:    "DUP",
-	SWAP:   "SWAP",
-	ADD:    "ADD",
-	SUB:    "SUB",
-	MUL:    "MUL",
-	DIV:    "DIV",
-	AND:    "AND",
-	OR:     "OR",
-	EQ:     "EQ",
-	LT:     "LT",
-	GT:     "GT",
-	ISZERO: "ISZERO",
-	JUMP:   "JUMP",
-	JUMPC:  "JUMPC",
-	MSTORE: "MSTORE",
-	MLOAD:  "MLOAD",
-	PLOAD:  "PLOAD",
-	PSTORE: "PSTORE",
-	STOP:   "STOP",
-	EMIT:   "EMIT",
+	NOOP:       "NOOP",
+	PUSH:       "PUSH",
+	POP:        "POP",
+	DUP:        "DUP",
+	SWAP:       "SWAP",
+	ADD:        "ADD",
+	SUB:        "SUB",
+	MUL:        "MUL",
+	DIV:        "DIV",
+	AND:        "AND",
+	OR:         "OR",
+	EQ:         "EQ",
+	LT:         "LT",
+	GT:         "GT",
+	ISZERO:     "ISZERO",
+	JUMP:       "JUMP",
+	JUMPC:      "JUMPC",
+	MSTORE:     "MSTORE",
+	MLOAD:      "MLOAD",
+	PLOAD:      "PLOAD",
+	PSTORE:     "PSTORE",
+	STOP:       "STOP",
+	EMIT:       "EMIT",
+	CALLER:     "CALLER",
+	ADDRESS:    "ADDRESS",
+	BALANCE:    "BALANCE",
+	ORIGIN:     "ORIGIN",
+	GASPRICE:   "GASPRICE",
+	CALLVALUE:  "CALLVALUE",
+	TIMESTAMP:  "TIMESTAMP",
+	DIFFICULTY: "DIFFICULTY",
+	BLOCKHASH:  "BLOCKHASH",
+	COINBASE:   "COINBASE",
+	HEIGHT:     "HEIGHT",
+	GASLIMIT:   "GASLIMIT",
 }
 
 var opcodeMap = map[string]OPCODE{
-	"NOOP":   NOOP,
-	"PUSH":   PUSH,
-	"POP":    POP,
-	"DUP":    DUP,
-	"SWAP":   SWAP,
-	"ADD":    ADD,
-	"SUB":    SUB,
-	"MUL":    MUL,
-	"DIV":    DIV,
-	"AND":    AND,
-	"OR":     OR,
-	"EQ":     EQ,
-	"LT":     LT,
-	"GT":     GT,
-	"ISZERO": ISZERO,
-	"JUMP":   JUMP,
-	"JUMPC":  JUMPC,
-	"MSTORE": MSTORE,
-	"MLOAD":  MLOAD,
-	"PLOAD":  PLOAD,
-	"PSTORE": PSTORE,
-	"STOP":   STOP,
-	"EMIT":   EMIT,
+	"NOOP":       NOOP,
+	"PUSH":       PUSH,
+	"POP":        POP,
+	"DUP":        DUP,
+	"SWAP":       SWAP,
+	"ADD":        ADD,
+	"SUB":        SUB,
+	"MUL":        MUL,
+	"DIV":        DIV,
+	"AND":        AND,
+	"OR":         OR,
+	"EQ":         EQ,
+	"LT":         LT,
+	"GT":         GT,
+	"ISZERO":     ISZERO,
+	"JUMP":       JUMP,
+	"JUMPC":      JUMPC,
+	"MSTORE":     MSTORE,
+	"MLOAD":      MLOAD,
+	"PLOAD":      PLOAD,
+	"PSTORE":     PSTORE,
+	"STOP":       STOP,
+	"EMIT":       EMIT,
+	"CALLER":     CALLER,
+	"ADDRESS":    ADDRESS,
+	"BALANCE":    BALANCE,
+	"ORIGIN":     ORIGIN,
+	"GASPRICE":   GASPRICE,
+	"CALLVALUE":  CALLVALUE,
+	"TIMESTAMP":  TIMESTAMP,
+	"DIFFICULTY": DIFFICULTY,
+	"BLOCKHASH":  BLOCKHASH,
+	"COINBASE":   COINBASE,
+	"HEIGHT":     HEIGHT,
+	"GASLIMIT":   GASLIMIT,
 }
 
 func (op OPCODE) Valid() bool {
@@ -165,7 +203,9 @@ func (ins Instruction) ValidateInstruction() error {
 	// All other instructions work with stack values, no parameters needed
 	case POP, DUP, SWAP, NOOP, EMIT, STOP,
 		 ADD, SUB, MUL, DIV, AND, OR, EQ, LT, GT, ISZERO,
-		 JUMP, JUMPC, MSTORE, MLOAD, PC, PSTORE, PLOAD:
+		 JUMP, JUMPC, MSTORE, MLOAD, PC, PSTORE, PLOAD,
+		 CALLER, ADDRESS, BALANCE, ORIGIN, GASPRICE, CALLVALUE,
+		 TIMESTAMP, DIFFICULTY, BLOCKHASH, COINBASE, HEIGHT, GASLIMIT:
 		// These instructions should not have Value
 		if ins.Value != nil {
 			return ErrUnexpectedInstructionParameter
