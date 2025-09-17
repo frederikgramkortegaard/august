@@ -67,6 +67,25 @@ go run cmd/keygen/main.go
 go run cmd/miner/main.go --privkey <private_key> --node localhost:8080
 ```
 
+### Basic Wallet Operations
+```bash
+# Check account balance
+go run cmd/wallet/main.go --privkey <private_key> --node localhost:8080 balance
+
+# Send AUG to another address
+go run cmd/wallet/main.go --privkey <sender_key> --node localhost:8080 send \
+  --amount 1000 --to <recipient_public_key>
+
+# Check transaction status via HTTP API
+curl http://localhost:8080/transaction/<transaction_hash>
+
+# View current chain information
+curl http://localhost:8080/chain-info
+
+# Check account balance via HTTP API
+curl http://localhost:8080/balance/<public_key_address>
+```
+
 ### Smart Contract Development
 ```bash
 # Write contract in Marigold
@@ -184,21 +203,27 @@ CALLVALUE   - Push call value (2 gas)
 
 ### Blockchain Queries
 ```bash
-# Account information
-curl http://localhost:8080/balance/<address>
+# Account information with balance and nonce
+curl http://localhost:8080/balance/993fe6a36d19ed527890a7698e940c3c1c629ca06443837871cb0ed19435229b
 
-# Transaction details
-curl http://localhost:8080/transaction/<hash>
+# Transaction lookup with block information
+curl http://localhost:8080/transaction/d1cef77df9dff5b5abcd1234567890abcdef1234567890abcdef1234567890ab
 
-# Block information
-curl http://localhost:8080/block/<hash>
+# Block details by hash
+curl http://localhost:8080/block/000046f22dc6219e1234567890abcdef1234567890abcdef1234567890abcdef
 
-# Chain state
+# Current chain head and height
 curl http://localhost:8080/chain-info
+
+# Full chain state including account balances and contract storage
 curl http://localhost:8080/chain-state
 
-# Mempool status
+# Pending transactions ordered by fee
 curl http://localhost:8080/mempool?limit=10
+
+# Example responses:
+# Balance: {"address": "993fe6a3...", "exists": true, "balance": 1000000, "nonce": 5}
+# Chain Info: {"height": 42, "head_hash": "000046f2...", "difficulty": 12345}
 ```
 
 ## Testing Framework

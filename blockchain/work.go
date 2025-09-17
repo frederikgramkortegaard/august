@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"august/utils"
 	"math/big"
 )
 
@@ -40,6 +41,18 @@ func AddWork(work1Str, work2Str string) string {
 	}
 
 	return new(big.Int).Add(work1, work2).String()
+}
+
+// CalculateBlockWorkFromBits calculates work from compact target bits (like Bitcoin)
+func CalculateBlockWorkFromBits(targetBits uint32) string {
+	target := utils.CompactToBig(targetBits)
+
+	// Work = 2^256 / (target + 1)
+	two256 := new(big.Int).Lsh(big.NewInt(1), 256)
+	denom := new(big.Int).Add(target, big.NewInt(1))
+	work := new(big.Int).Div(two256, denom)
+
+	return work.String()
 }
 
 // CompareWork compares two chainwork values given as decimal strings.

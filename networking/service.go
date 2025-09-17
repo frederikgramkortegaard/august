@@ -1064,12 +1064,6 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 		return
 	}
 
-	// Validate the header chain
-	if !blockchain.ValidateHeaderChain(headersPayload.Headers) {
-		log.Printf(s.config.NodeID+"\t"+"Invalid header chain from %s, rejecting", peer.Address)
-		return
-	}
-
 	// Check if these headers represent a better chain than ours
 	ourChain, err := s.config.Store.GetChain()
 	if err != nil {
@@ -1077,9 +1071,16 @@ func (s *Server) ProcessHeaders(msg *Message, peer *Peer) {
 		return
 	}
 
+	// Get our current total work for validation
 	ourWork := "0"
 	if len(ourChain.Blocks) > 0 {
 		ourWork = ourChain.Blocks[len(ourChain.Blocks)-1].Header.TotalWork
+	}
+
+	// Validate the header chain WITH TotalWork validation
+	if !blockchain.ValidateHeaderChainWithWork(headersPayload.Headers, ourWork) {
+		log.Printf(s.config.NodeID+"\t"+"Invalid header chain from %s, rejecting", peer.Address)
+		return
 	}
 
 	finalHeaderWork := headersPayload.Headers[len(headersPayload.Headers)-1].TotalWork

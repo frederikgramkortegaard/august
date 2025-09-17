@@ -37,7 +37,17 @@ func (c *Chain) DeepCopy() *Chain {
 			var instructions []avm.Instruction
 			if state.Instructions != nil {
 				instructions = make([]avm.Instruction, len(state.Instructions))
-				copy(instructions, state.Instructions)
+				for i, instr := range state.Instructions {
+					instructions[i] = avm.Instruction{
+						Opcode: instr.Opcode,
+						Value:  nil,
+					}
+					// Deep copy the Value pointer if it exists
+					if instr.Value != nil {
+						valueCopy := *instr.Value  // Dereference and copy string
+						instructions[i].Value = &valueCopy
+					}
+				}
 			}
 
 			// Deep copy Persistent storage map

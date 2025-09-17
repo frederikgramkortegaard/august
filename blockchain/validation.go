@@ -51,6 +51,27 @@ func ValidateHeaderStructure(header *BlockHeader) error {
 	return nil
 }
 
+// ValidateHeaderWithParent validates a header including TotalWork calculation
+func ValidateHeaderWithParent(header *BlockHeader, parentTotalWork string) error {
+	// First do basic structure validation
+	if err := ValidateHeaderStructure(header); err != nil {
+		return err
+	}
+
+	// Validate TotalWork calculation
+	if header.Height > 0 {
+		blockWork := CalculateBlockWorkFromBits(header.Bits)
+		expectedTotalWork := AddWork(parentTotalWork, blockWork)
+
+		if header.TotalWork != expectedTotalWork {
+			return fmt.Errorf("invalid total work: got %s, expected %s",
+				header.TotalWork, expectedTotalWork)
+		}
+	}
+
+	return nil
+}
+
 // ValidateBlockStructure validates a single block without chain context
 // This is used by networking layer to validate blocks from peers
 func ValidateBlockStructure(block *Block) error {
@@ -676,6 +697,49 @@ func ValidateHeaderChain(headers []BlockHeader) bool {
 			log.Printf("VALIDATION\tHeader %d timestamp not greater than previous", i)
 			return false
 		}
+	}
+
+	return true
+}
+
+// ValidateHeaderChainWithWork validates headers including TotalWork calculations
+func ValidateHeaderChainWithWork(headers []BlockHeader, startingTotalWork string) bool {
+	if len(headers) == 0 {
+		return false
+	}
+
+	currentTotalWork := startingTotalWork
+
+	for i, header := range headers {
+		// Validate with parent total work
+		if err := ValidateHeaderWithParent(&header, currentTotalWork); err != nil {
+			log.Printf("VALIDATION\tHeader %d failed TotalWork validation: %v", i, err)
+			return false
+		}
+
+		// Validate linking to previous header (except first)
+		if i > 0 {
+			prevHash := headers[i-1].GetHash()
+			if header.PreviousHash != prevHash {
+				log.Printf("VALIDATION\tHeader %d doesn't link to previous", i)
+				return false
+			}
+
+			// Height should increment by 1
+			if header.Height != headers[i-1].Height+1 {
+				log.Printf("VALIDATION\tHeader %d height incorrect", i)
+				return false
+			}
+
+			// Timestamp validation
+			if header.Timestamp <= headers[i-1].Timestamp {
+				log.Printf("VALIDATION\tHeader %d timestamp not greater than previous", i)
+				return false
+			}
+		}
+
+		// Update current total work for next iteration
+		currentTotalWork = header.TotalWork
 	}
 
 	return true
