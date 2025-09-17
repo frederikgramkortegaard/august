@@ -94,12 +94,32 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 			return Bool
 		}
 
-		// Plus operator: if both are strings, return String; otherwise return left operand type
-		if expr.Operator == Plus && lhs == String && rhs == String {
-			return String
+		// Handle return types for arithmetic operations
+		if expr.Operator == Plus {
+			if lhs == String && rhs == String {
+				return String // String concatenation
+			}
+			// Numeric addition: if either is float, result is float
+			if lhs == Float || rhs == Float {
+				return Float
+			}
+			return Int // Both are int
 		}
 
-		// Other arithmetic operators return the left operand type
+		if expr.Operator == Divide {
+			// Division always returns float (even int/int)
+			return Float
+		}
+
+		if expr.Operator == Minus || expr.Operator == Multiply {
+			// If either operand is float, result is float
+			if lhs == Float || rhs == Float {
+				return Float
+			}
+			return Int // Both are int
+		}
+
+		// Comparison operators already handled above, this shouldn't be reached
 		return lhs
 
 	case CallExpr:
@@ -181,9 +201,13 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		lhsType := typecheckExpression(ctx, expr.Lhs)
 		indexType := typecheckExpression(ctx, expr.Rhs)
 
-		// Index must be int
+		// Index must be int (allow float->int conversion)
 		if indexType != Int {
-			ctx.logFatalWithToken(fmt.Sprintf("Index must be int, got '%s'", indexType), expr.Token)
+			if indexType == Float {
+				// Allow float to int conversion for array/string indexing (truncates/floors)
+			} else {
+				ctx.logFatalWithToken(fmt.Sprintf("Index must be int, got '%s'", indexType), expr.Token)
+			}
 		}
 
 		// Handle string indexing
@@ -219,27 +243,34 @@ func isValidUnaryOperatorUse(op TokenType, operandType TokenType) bool {
 }
 
 func isValidBinaryOperatorUse(op, lhs, rhs TokenType) bool {
-	// Types must match for most operations
-	if lhs != rhs {
-		return false
-	}
-
 	switch op {
 	case Plus:
 		// Plus works on numeric types AND strings (concatenation)
-		return lhs == Int || lhs == Float || lhs == String
+		if lhs == String && rhs == String {
+			return true // String concatenation
+		}
+		// Numeric addition: allow int/float mixing
+		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
 	case Minus, Multiply, Divide:
-		// Other arithmetic operators only work on numeric types
-		return lhs == Int || lhs == Float
+		// Arithmetic operators work on numeric types, allow int/float mixing
+		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
 	case LessThan, LessEqual, GreaterThan, GreaterEqual:
 		// Comparison operators work on numeric types and strings
-		return lhs == Int || lhs == Float || lhs == String
+		if lhs == String && rhs == String {
+			return true // String comparison
+		}
+		// Numeric comparison: allow int/float mixing
+		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
 	case Equal, NotEqual:
-		// Equality operators work on all types
-		return true
+		// Equality operators work on all types, allow int/float mixing
+		if lhs == rhs {
+			return true
+		}
+		// Allow int/float comparison
+		return (lhs == Int && rhs == Float) || (lhs == Float && rhs == Int)
 	case LogicalAnd, LogicalOr:
 		// Logical operators only work on Bool
-		return lhs == Bool
+		return lhs == Bool && rhs == Bool
 	default:
 		return false
 	}
@@ -296,9 +327,13 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 					// Regular variable declaration
 					rhsType := typecheckExpression(ctx, stmt.Rhs)
 
-					// Check if RHS type matches declared type
+					// Check if RHS type matches declared type (allow numeric conversions)
 					if rhsType != stmt.VarType {
-						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, stmt.VarType))
+						if (stmt.VarType == Int && rhsType == Float) || (stmt.VarType == Float && rhsType == Int) {
+							// Allow int<->float conversions
+						} else {
+							ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, stmt.VarType))
+						}
 					}
 
 					// Add variable to current scope
@@ -324,16 +359,24 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 				// Type check the RHS expression
 				rhsType := typecheckExpression(ctx, stmt.Rhs)
 
-				// Check if RHS type matches variable's type
+				// Check if RHS type matches variable's type (allow numeric conversions)
 				if rhsType != variable.Type {
-					ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, variable.Type))
+					if (variable.Type == Int && rhsType == Float) || (variable.Type == Float && rhsType == Int) {
+						// Allow int<->float conversions
+					} else {
+						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, variable.Type))
+					}
 				}
 			}
 		case ReturnStmt:
 			actualType := typecheckExpression(ctx, stmt.Rhs)
 			expectedType := ctx.currentFunction.ReturnType
 			if actualType != expectedType {
-				panic(fmt.Sprintf("Type mismatch in return statement: expected %s but got %s in function %s", expectedType, actualType, ctx.currentFunction.Name))
+				if (expectedType == Int && actualType == Float) || (expectedType == Float && actualType == Int) {
+					// Allow int<->float conversions in return
+				} else {
+					panic(fmt.Sprintf("Type mismatch in return statement: expected %s but got %s in function %s", expectedType, actualType, ctx.currentFunction.Name))
+				}
 			}
 
 		case IfStmt:
