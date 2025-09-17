@@ -3,6 +3,7 @@ package marigold
 import (
 	"fmt"
 	"log"
+	"strconv"
 )
 
 type ParserContext struct {
@@ -168,13 +169,24 @@ func parseAssignment(ctx *ParserContext) *Statement {
 	// Variable Declaration
 	if ctx.peek().Type == Colon {
 		_ = ctx.consumeAssert(Colon)
-		varType := ctx.consume()
-		if varType == nil || !varType.Type.IsValidReturnType() {
-			ctx.logError(fmt.Sprintf("Expected variable type after identifier '%s' but got '%s'", ident.Value, varType.Value), varType)
-			return nil
-		}
 
-		statement.VarType = varType.Type
+		// Check if it's an array type [size]type or []type
+		if ctx.peek() != nil && ctx.peek().Type == LSquare {
+			arrayType, err := parseArrayType(ctx)
+			if err != nil {
+				ctx.logError(fmt.Sprintf("Failed to parse array type for variable '%s': %s", ident.Value, err), ctx.current())
+				return nil
+			}
+			statement.VarArrayType = arrayType
+		} else {
+			// Regular type
+			varType := ctx.consume()
+			if varType == nil || !varType.Type.IsValidReturnType() {
+				ctx.logError(fmt.Sprintf("Expected variable type after identifier '%s' but got '%s'", ident.Value, varType.Value), varType)
+				return nil
+			}
+			statement.VarType = varType.Type
+		}
 	}
 
 	// Assignment
@@ -192,13 +204,54 @@ func parseAssignment(ctx *ParserContext) *Statement {
 	return &statement
 }
 
+func parseArrayType(ctx *ParserContext) (*ArrayType, error) {
+	_ = ctx.consumeAssert(LSquare)
+
+	var size int = -1 // -1 means inferred size []int
+
+	// Check if there's a size specified [5]int vs []int
+	if ctx.peek() != nil && ctx.peek().Type == IntLiteral {
+		sizeToken := ctx.consume()
+		var err error
+		size, err = strconv.Atoi(sizeToken.Value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid array size '%s'", sizeToken.Value)
+		}
+	}
+
+	_ = ctx.consumeAssert(RSquare)
+
+	// Get element type
+	elementTypeToken := ctx.consume()
+	if elementTypeToken == nil || !elementTypeToken.Type.IsValidReturnType() {
+		return nil, fmt.Errorf("invalid array element type '%s'", elementTypeToken.Value)
+	}
+
+	return &ArrayType{
+		Size:        size,
+		ElementType: elementTypeToken.Type,
+	}, nil
+}
+
 func parseFunctionCall(ctx *ParserContext) *Expression {
 
 	functionCall := Expression{}
 	functionCall.Type = CallExpr
-	ident := ctx.consumeAssert(Identifier)
-	functionCall.Value = ident.Value
-	functionCall.Token = ident
+
+	// Handle both regular identifiers and special keywords like 'len'
+	token := ctx.current()
+	if token.Type == Identifier {
+		ident := ctx.consumeAssert(Identifier)
+		functionCall.Value = ident.Value
+		functionCall.Token = ident
+	} else if token.Type == Len {
+		lenToken := ctx.consumeAssert(Len)
+		functionCall.Value = "len"
+		functionCall.Token = lenToken
+	} else {
+		ctx.logError("Expected function name", token)
+		return nil
+	}
 	_ = ctx.consumeAssert(LParen)
 	// Parameter Parsing
 	for {
@@ -209,7 +262,7 @@ func parseFunctionCall(ctx *ParserContext) *Expression {
 
 		paramExpr := parseExpression(ctx)
 		if paramExpr == nil {
-			ctx.logError(fmt.Sprintf("Failed to parse parameters for call to function '%s'", ident.Value), ctx.current())
+			ctx.logError(fmt.Sprintf("Failed to parse parameters for call to function '%s'", functionCall.Value), ctx.current())
 			return nil
 		}
 		functionCall.Args = append(functionCall.Args, paramExpr)
@@ -378,6 +431,13 @@ func parseFunctionDefinition(ctx *ParserContext) *Function {
 	_ = ctx.consumeAssert(Define)
 	functionIdent := ctx.consumeAssert(Identifier)
 	functionDefinition.Name = functionIdent.Value
+
+	// Check if function name shadows a keyword
+	if _, isKeyword := TokenTypeMap[functionDefinition.Name]; isKeyword {
+		ctx.logError(fmt.Sprintf("Function name '%s' shadows a keyword", functionDefinition.Name), functionIdent)
+		return nil
+	}
+
 	_ = ctx.consumeAssert(LParen)
 
 	// Parameter Parsing
@@ -608,12 +668,29 @@ func parseAtom(ctx *ParserContext) *Expression {
 		}
 
 		ctx.consume()
-		return &Expression{
+		expr := &Expression{
 			Type:  IdentifierExpr,
 			Value: token.Value,
 			Token: token,
 			// ValueType will be determined during typechecking
 		}
+
+		// Check for array indexing arr[i]
+		if ctx.peek() != nil && ctx.peek().Type == LSquare {
+			return parseArrayIndex(ctx, expr)
+		}
+
+		return expr
+
+	case Len:
+		// len keyword - must be a function call
+		if ctx.cursor+1 < len(ctx.tokens) && ctx.tokens[ctx.cursor+1].Type == LParen {
+			return parseFunctionCall(ctx)
+		} else {
+			ctx.logError("len must be followed by parentheses", token)
+			return nil
+		}
+
 
 	case LParen:
 		ctx.consume()
@@ -621,10 +698,85 @@ func parseAtom(ctx *ParserContext) *Expression {
 		ctx.consumeAssert(RParen)
 		return expr
 
+	case LSquare:
+		// Array literal [1, 2, 3]
+		return parseArrayLiteral(ctx)
+
 	default:
 		return nil
 	}
 }
+
+func parseArrayLiteral(ctx *ParserContext) *Expression {
+	openBracket := ctx.consumeAssert(LSquare)
+
+	var elements []*Expression
+
+	// Handle empty array []
+	if ctx.peek() != nil && ctx.peek().Type == RSquare {
+		ctx.consume()
+		return &Expression{
+			Type:  ArrayLiteral,
+			Args:  elements, // empty
+			Token: openBracket,
+		}
+	}
+
+	// Parse array elements
+	for {
+		element := parseExpression(ctx)
+		if element == nil {
+			ctx.logError("Expected expression in array literal", ctx.current())
+			return nil
+		}
+		elements = append(elements, element)
+
+		// Check for comma or end of array
+		if ctx.peek() == nil {
+			ctx.logError("Unterminated array literal", ctx.current())
+			return nil
+		}
+
+		if ctx.peek().Type == RSquare {
+			break
+		}
+
+		if ctx.peek().Type == Comma {
+			ctx.consume() // consume comma
+		} else {
+			ctx.logError("Expected ',' or ']' in array literal", ctx.current())
+			return nil
+		}
+	}
+
+	ctx.consumeAssert(RSquare)
+
+	return &Expression{
+		Type:  ArrayLiteral,
+		Args:  elements,
+		Token: openBracket,
+	}
+}
+
+func parseArrayIndex(ctx *ParserContext, arrayExpr *Expression) *Expression {
+	openBracket := ctx.consumeAssert(LSquare)
+
+	indexExpr := parseExpression(ctx)
+	if indexExpr == nil {
+		ctx.logError("Expected index expression in array access", ctx.current())
+		return nil
+	}
+
+	ctx.consumeAssert(RSquare)
+
+	return &Expression{
+		Type:  IndexExpr,
+		Lhs:   arrayExpr, // The array being indexed
+		Rhs:   indexExpr, // The index expression
+		Token: openBracket,
+	}
+}
+
 
 func isRelationalOp(t TokenType) bool {
 	return t == Equal || t == NotEqual ||

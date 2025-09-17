@@ -59,6 +59,11 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		// Lookup this identifier in the current scope
 		variable := ctx.currentScope.findVariable(expr.Value.(string))
 		if variable != nil {
+			if variable.ArrayType != nil {
+				// This is an array variable - return special array type marker
+				// The specific element type will be handled in IndexExpr
+				return "ARRAY" // Temporary marker
+			}
 			return variable.Type
 		}
 
@@ -97,9 +102,35 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 			ctx.logFatalWithToken("Function call expression has nil value", expr.Token)
 		}
 
-		fd, ok := ctx.ast.Functions[expr.Value.(string)]
+		funcName := expr.Value.(string)
+
+		// Handle built-in functions
+		if funcName == "len" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("len() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// Check that argument is an array
+			argExpr := expr.Args[0]
+			if argExpr.Type == IdentifierExpr {
+				varName := argExpr.Value.(string)
+				variable := ctx.currentScope.findVariable(varName)
+				if variable == nil {
+					ctx.logFatalWithToken(fmt.Sprintf("Undefined variable '%s'", varName), argExpr.Token)
+				}
+				if variable.ArrayType == nil {
+					ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays, got variable of type '%s'", variable.Type), argExpr.Token)
+				}
+			} else {
+				ctx.logFatalWithToken("len() argument must be an array variable", argExpr.Token)
+			}
+
+			return Int // len() returns int
+		}
+
+		fd, ok := ctx.ast.Functions[funcName]
 		if !ok {
-			ctx.logFatalWithToken(fmt.Sprintf("Function '%s' does not exist", expr.Value.(string)), expr.Token)
+			ctx.logFatalWithToken(fmt.Sprintf("Function '%s' does not exist", funcName), expr.Token)
 		}
 
 		if len(expr.Args) != len(fd.ParameterTypes) {
@@ -114,6 +145,46 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		}
 
 		return fd.ReturnType
+
+	case ArrayLiteral:
+		// Array literal [1, 2, 3] - type will be inferred from context
+		if len(expr.Args) == 0 {
+			// Empty array [] - type must be determined from context
+			return ""
+		}
+
+		// Check all elements have same type
+		firstType := typecheckExpression(ctx, expr.Args[0])
+		for i, element := range expr.Args[1:] {
+			elementType := typecheckExpression(ctx, element)
+			if elementType != firstType {
+				ctx.logFatalWithToken(fmt.Sprintf("Array element %d has type '%s' but expected '%s'", i+2, elementType, firstType), element.Token)
+			}
+		}
+
+		return firstType // Return element type, array type will be handled in assignment
+
+	case IndexExpr:
+		// Array indexing arr[i]
+		_ = typecheckExpression(ctx, expr.Lhs) // Validate the array expression
+		indexType := typecheckExpression(ctx, expr.Rhs)
+
+		// Index must be int
+		if indexType != Int {
+			ctx.logFatalWithToken(fmt.Sprintf("Array index must be int, got '%s'", indexType), expr.Token)
+		}
+
+		// Get the actual array variable to find element type
+		if expr.Lhs.Type == IdentifierExpr {
+			varName := expr.Lhs.Value.(string)
+			variable := ctx.currentScope.findVariable(varName)
+			if variable != nil && variable.ArrayType != nil {
+				return variable.ArrayType.ElementType
+			}
+		}
+
+		ctx.logFatalWithToken(fmt.Sprintf("Cannot index non-array expression"), expr.Token)
+		return ""
 
 	}
 
@@ -159,9 +230,9 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 
 		switch stmt.Type {
 		case AssignmentStmt:
-			// Check if this is a variable declaration (has VarType) or reassignment
-			if stmt.VarType != "" {
-				// Variable declaration: x: int = 5
+			// Check if this is a variable declaration (has VarType/VarArrayType) or reassignment
+			if stmt.VarType != "" || stmt.VarArrayType != nil {
+				// Variable declaration: x: int = 5 or arr: [5]int = [1,2,3,4,5]
 				if stmt.Lhs == nil || stmt.Lhs.Value == nil {
 					ctx.logFatal("Assignment statement has invalid left-hand side")
 				}
@@ -172,19 +243,50 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 					ctx.logFatal(fmt.Sprintf("Variable '%s' is already declared in this scope", varName))
 				}
 
-				// Type check the RHS expression
-				rhsType := typecheckExpression(ctx, stmt.Rhs)
+				if stmt.VarArrayType != nil {
+					// Array variable declaration
+					if stmt.Rhs != nil {
+						// Has initializer: arr: [5]int = [1,2,3,4,5]
+						rhsType := typecheckExpression(ctx, stmt.Rhs)
 
-				// Check if RHS type matches declared type
-				if rhsType != stmt.VarType {
-					ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, stmt.VarType))
-				}
+						// Check element type matches
+						if rhsType != stmt.VarArrayType.ElementType {
+							ctx.logFatal(fmt.Sprintf("Cannot assign array of '%s' to variable '%s' of type '[%d]%s'", rhsType, varName, stmt.VarArrayType.Size, stmt.VarArrayType.ElementType))
+						}
 
-				// Add variable to current scope
-				ctx.currentScope.Variables[varName] = &Variable{
-					Name:  varName,
-					Value: "",
-					Type:  stmt.VarType,
+						// If size is inferred ([]int), set it from array literal
+						if stmt.VarArrayType.Size == -1 && stmt.Rhs.Type == ArrayLiteral {
+							stmt.VarArrayType.Size = len(stmt.Rhs.Args)
+						}
+
+						// Check array literal size matches declared size
+						if stmt.Rhs.Type == ArrayLiteral && len(stmt.Rhs.Args) != stmt.VarArrayType.Size {
+							ctx.logFatal(fmt.Sprintf("Array literal has %d elements but variable '%s' declared as [%d]%s", len(stmt.Rhs.Args), varName, stmt.VarArrayType.Size, stmt.VarArrayType.ElementType))
+						}
+					}
+
+					// Add array variable to current scope
+					ctx.currentScope.Variables[varName] = &Variable{
+						Name:      varName,
+						Value:     "",
+						Type:      "", // Empty for arrays
+						ArrayType: stmt.VarArrayType,
+					}
+				} else {
+					// Regular variable declaration
+					rhsType := typecheckExpression(ctx, stmt.Rhs)
+
+					// Check if RHS type matches declared type
+					if rhsType != stmt.VarType {
+						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, stmt.VarType))
+					}
+
+					// Add variable to current scope
+					ctx.currentScope.Variables[varName] = &Variable{
+						Name:  varName,
+						Value: "",
+						Type:  stmt.VarType,
+					}
 				}
 			} else {
 				// Variable reassignment: x = 10

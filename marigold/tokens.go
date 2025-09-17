@@ -44,6 +44,7 @@ const (
 	Emit                    = "Emit"
 	If                      = "If"
 	Else                    = "Else"
+	Len                     = "Len"
 	TFunction               = "TFunction"
 	Eof                     = "Eof"
 )
@@ -84,6 +85,7 @@ var TokenTypeMap = map[string]TokenType{
 	"emit":   Emit,
 	"if":     If,
 	"else":   Else,
+	"len":    Len,
 	"true":   BoolLiteral,
 	"false":  BoolLiteral,
 }
