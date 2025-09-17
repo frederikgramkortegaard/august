@@ -167,10 +167,10 @@ func Lex(text string) ([]*Token, error) {
 		}
 
 		// Keyword & Identifier (ASCII only)
-		if (text[cursor] >= 'a' && text[cursor] <= 'z') || (text[cursor] >= 'A' && text[cursor] <= 'Z') || text[cursor] == '_' {
+		if (text[cursor] >= 'a' && text[cursor] <= 'z') || (text[cursor] >= 'A' && text[cursor] <= 'Z') || text[cursor] == '_' || text[cursor] == '@' {
 			startCol, startRow := col, row
 			start = cursor
-			for cursor < len(text) && ((text[cursor] >= 'a' && text[cursor] <= 'z') || (text[cursor] >= 'A' && text[cursor] <= 'Z') || (text[cursor] >= '0' && text[cursor] <= '9') || text[cursor] == '_') {
+			for cursor < len(text) && ((text[cursor] >= 'a' && text[cursor] <= 'z') || (text[cursor] >= 'A' && text[cursor] <= 'Z') || (text[cursor] >= '0' && text[cursor] <= '9') || text[cursor] == '_' || text[cursor] == '@') {
 				increment()
 			}
 

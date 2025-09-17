@@ -92,6 +92,9 @@ func NewAst(tokens []*Token) *Ast {
 		Type:  NewMapType(StringType, StringType), // map[string]string
 	}
 
+	// Add blockchain context variables
+	PrePopulateBlockchainContext(globalScope)
+
 	return &Ast{
 		Tokens:    tokens,
 		Functions: make(map[string]*Function),
