@@ -203,6 +203,102 @@ func TestArrayErrors(t *testing.T) {
 	}
 }
 
+func TestArrayAssignmentRestrictions(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		shouldError bool
+		description string
+	}{
+		{
+			name: "array index assignment allowed",
+			input: `define test() : int {
+				numbers: [3]int = [1, 2, 3]
+				numbers[0] = 10
+				return numbers[0]
+			}`,
+			shouldError: false,
+			description: "Should allow assignment to array elements after declaration",
+		},
+		{
+			name: "array whole reassignment forbidden - same size",
+			input: `define test() : int {
+				numbers: [3]int = [1, 2, 3]
+				numbers = [4, 5, 6]
+				return numbers[0]
+			}`,
+			shouldError: true,
+			description: "Should NOT allow whole array reassignment even with same size",
+		},
+		{
+			name: "array whole reassignment forbidden - different size",
+			input: `define test() : int {
+				numbers: [3]int = [1, 2, 3]
+				numbers = [4, 5]
+				return numbers[0]
+			}`,
+			shouldError: true,
+			description: "Should NOT allow whole array reassignment with different size",
+		},
+		{
+			name: "inferred array index assignment allowed",
+			input: `define test() : string {
+				names: []string = ["alice", "bob"]
+				names[1] = "charlie"
+				return names[1]
+			}`,
+			shouldError: false,
+			description: "Should allow assignment to inferred array elements",
+		},
+		{
+			name: "map assignment for comparison",
+			input: `define test() : int {
+				data: map[string]int = {}
+				data["key"] = 42
+				return data["key"]
+			}`,
+			shouldError: false,
+			description: "Maps should still allow indexed assignment",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, err := marigold.Lex(tt.input)
+			if err != nil {
+				if !tt.shouldError {
+					t.Fatalf("Unexpected lex error: %v", err)
+				}
+				return
+			}
+
+			ast, err := marigold.Parse(tokens)
+			if err != nil {
+				if !tt.shouldError {
+					t.Fatalf("Unexpected parse error: %v", err)
+				}
+				return
+			}
+
+			// Try typechecking
+			defer func() {
+				if r := recover(); r != nil {
+					if !tt.shouldError {
+						t.Errorf("Unexpected typecheck panic for %s: %v", tt.description, r)
+					}
+					// Expected error, test passes
+				} else {
+					if tt.shouldError {
+						t.Errorf("Expected typecheck to fail for %s but it succeeded", tt.description)
+					}
+				}
+			}()
+
+			marigold.Typecheck(ast)
+		})
+	}
+}
+
 func TestLenKeywordShadowing(t *testing.T) {
 	// Test that 'len' cannot be used as a function name
 	input := `define len() : int {

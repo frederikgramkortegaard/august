@@ -31,25 +31,23 @@ func (ctx *TypeCheckContext) logFatalWithToken(message string, token *Token) {
 	}
 }
 
-func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
-
+func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 	if expr == nil {
 		panic("expr is nil")
 	}
 
 	switch expr.Type {
 	case UnaryExpr:
-
 		rhsType := typecheckExpression(ctx, expr.Rhs)
 
 		if !isValidUnaryOperatorUse(expr.Operator, rhsType) {
-			ctx.logFatal(fmt.Sprintf("Invalid operator '%s' for type '%s'", expr.Operator, rhsType))
+			ctx.logFatal(fmt.Sprintf("Invalid operator '%s' for type '%s'", expr.Operator, rhsType.String()))
 		}
 
 		return rhsType
 
 	case LiteralExpr:
-		return expr.ValueType
+		return TypeFromTokenType(expr.ValueType)
 
 	case IdentifierExpr:
 		if expr.Value == nil {
@@ -57,20 +55,15 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		}
 
 		// Lookup this identifier in the current scope
-		variable := ctx.currentScope.findVariable(expr.Value.(string))
+		varName := expr.Value.(string)
+		variable := ctx.currentScope.findVariable(varName)
 		if variable != nil {
-			if variable.ArrayType != nil {
-				// This is an array variable - return special array type marker
-				// The specific element type will be handled in IndexExpr
-				return "ARRAY" // Temporary marker
-			}
 			return variable.Type
 		}
 
 		// If not found as variable, check if it's a function
-		funcName := expr.Value.(string)
-		if _, exists := ctx.ast.Functions[funcName]; exists {
-			return TFunction
+		if _, exists := ctx.ast.Functions[varName]; exists {
+			return TypeFromTokenType(TFunction)
 		}
 
 		ctx.logFatalWithToken(fmt.Sprintf("Undefined variable or function '%s'", expr.Value), expr.Token)
@@ -79,47 +72,47 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		lhs := typecheckExpression(ctx, expr.Lhs)
 		rhs := typecheckExpression(ctx, expr.Rhs)
 		if !isValidBinaryOperatorUse(expr.Operator, lhs, rhs) {
-			ctx.logFatalWithToken(fmt.Sprintf("Invalid binary operation: cannot use operator '%s' with types '%s' and '%s'", expr.Operator, lhs, rhs), expr.Token)
+			ctx.logFatalWithToken(fmt.Sprintf("Invalid binary operation: cannot use operator '%s' with types '%s' and '%s'", expr.Operator, lhs.String(), rhs.String()), expr.Token)
 		}
 
 		// Comparison operators return Bool
 		if expr.Operator == LessThan || expr.Operator == LessEqual ||
-		   expr.Operator == GreaterThan || expr.Operator == GreaterEqual ||
-		   expr.Operator == Equal || expr.Operator == NotEqual {
-			return Bool
+			expr.Operator == GreaterThan || expr.Operator == GreaterEqual ||
+			expr.Operator == Equal || expr.Operator == NotEqual {
+			return BoolType
 		}
 
 		// Logical operators return Bool
 		if expr.Operator == LogicalAnd || expr.Operator == LogicalOr {
-			return Bool
+			return BoolType
 		}
 
 		// Handle return types for arithmetic operations
 		if expr.Operator == Plus {
-			if lhs == String && rhs == String {
-				return String // String concatenation
+			if lhs.Equals(StringType) && rhs.Equals(StringType) {
+				return StringType // String concatenation
 			}
 			// Numeric addition: if either is float, result is float
-			if lhs == Float || rhs == Float {
-				return Float
+			if lhs.Equals(FloatType) || rhs.Equals(FloatType) {
+				return FloatType
 			}
-			return Int // Both are int
+			return IntType // Both are int
 		}
 
 		if expr.Operator == Divide {
 			// Division always returns float (even int/int)
-			return Float
+			return FloatType
 		}
 
 		if expr.Operator == Minus || expr.Operator == Multiply {
 			// If either operand is float, result is float
-			if lhs == Float || rhs == Float {
-				return Float
+			if lhs.Equals(FloatType) || rhs.Equals(FloatType) {
+				return FloatType
 			}
-			return Int // Both are int
+			return IntType // Both are int
 		}
 
-		// Comparison operators already handled above, this shouldn't be reached
+		// Shouldn't reach here
 		return lhs
 
 	case CallExpr:
@@ -136,28 +129,22 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 			}
 
 			// Check that argument is an array or string
-			argExpr := expr.Args[0]
-			argType := typecheckExpression(ctx, argExpr)
+			argType := typecheckExpression(ctx, expr.Args[0])
 
-			if argType == String {
-				// len(str) is valid
-				return Int
+			if argType.Equals(StringType) {
+				return IntType
 			}
 
-			if argExpr.Type == IdentifierExpr {
-				varName := argExpr.Value.(string)
-				variable := ctx.currentScope.findVariable(varName)
-				if variable == nil {
-					ctx.logFatalWithToken(fmt.Sprintf("Undefined variable '%s'", varName), argExpr.Token)
-				}
-				if variable.ArrayType != nil {
-					// len(array) is valid
-					return Int
-				}
+			if _, ok := argType.(*ArrayType); ok {
+				return IntType
 			}
 
-			ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays or strings, got '%s'", argType), argExpr.Token)
-			return Int // len() returns int
+			if _, ok := argType.(*MapType); ok {
+				return IntType
+			}
+
+			ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays, maps, or strings, got '%s'", argType.String()), expr.Token)
+			return IntType
 		}
 
 		fd, ok := ctx.ast.Functions[funcName]
@@ -171,119 +158,121 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) TokenType {
 		for idx, arg := range expr.Args {
 			argType := typecheckExpression(ctx, arg)
 			paramType := fd.ParameterTypes[idx]
-			if argType != paramType {
-				ctx.logFatal(fmt.Sprintf("Function '%s' parameter %d expects type '%s' but got '%s'", expr.Value.(string), idx+1, paramType, argType))
+			if !argType.IsAssignableTo(paramType) {
+				ctx.logFatal(fmt.Sprintf("Function '%s' parameter %d expects type '%s' but got '%s'", expr.Value.(string), idx+1, paramType.String(), argType.String()))
 			}
 		}
 
 		return fd.ReturnType
 
 	case ArrayLiteral:
-		// Array literal [1, 2, 3] - type will be inferred from context
+		// Array literal [1, 2, 3]
 		if len(expr.Args) == 0 {
 			// Empty array [] - type must be determined from context
-			return ""
+			return nil
 		}
 
 		// Check all elements have same type
 		firstType := typecheckExpression(ctx, expr.Args[0])
 		for i, element := range expr.Args[1:] {
 			elementType := typecheckExpression(ctx, element)
-			if elementType != firstType {
-				ctx.logFatalWithToken(fmt.Sprintf("Array element %d has type '%s' but expected '%s'", i+2, elementType, firstType), element.Token)
+			if !elementType.Equals(firstType) {
+				ctx.logFatalWithToken(fmt.Sprintf("Array element %d has type '%s' but expected '%s'", i+2, elementType.String(), firstType.String()), element.Token)
 			}
 		}
 
-		return firstType // Return element type, array type will be handled in assignment
+		return NewArrayType(-1, firstType) // Inferred size array
+
+	case MapLiteral:
+		// Map literal {} - currently only empty maps supported
+		return nil // Type must be determined from context
 
 	case IndexExpr:
-		// Array or string indexing: arr[i] or str[i]
+		// Array, map, or string indexing
 		lhsType := typecheckExpression(ctx, expr.Lhs)
 		indexType := typecheckExpression(ctx, expr.Rhs)
 
-		// Index must be int (allow float->int conversion)
-		if indexType != Int {
-			if indexType == Float {
-				// Allow float to int conversion for array/string indexing (truncates/floors)
-			} else {
-				ctx.logFatalWithToken(fmt.Sprintf("Index must be int, got '%s'", indexType), expr.Token)
-			}
-		}
-
 		// Handle string indexing
-		if lhsType == String {
-			return String // str[i] returns a single-character string
+		if lhsType.Equals(StringType) {
+			// String indexing requires int
+			if !indexType.IsAssignableTo(IntType) {
+				ctx.logFatalWithToken(fmt.Sprintf("String index must be int, got '%s'", indexType.String()), expr.Token)
+			}
+			return StringType // str[i] returns a single-character string
 		}
 
 		// Handle array indexing
-		if expr.Lhs.Type == IdentifierExpr {
-			varName := expr.Lhs.Value.(string)
-			variable := ctx.currentScope.findVariable(varName)
-			if variable != nil && variable.ArrayType != nil {
-				return variable.ArrayType.ElementType
+		if arrType, ok := lhsType.(*ArrayType); ok {
+			// Array indexing requires int
+			if !indexType.IsAssignableTo(IntType) {
+				ctx.logFatalWithToken(fmt.Sprintf("Array index must be int, got '%s'", indexType.String()), expr.Token)
 			}
+			return arrType.ElementType
 		}
 
-		ctx.logFatalWithToken(fmt.Sprintf("Cannot index expression of type '%s'", lhsType), expr.Token)
-		return ""
+		// Handle map indexing
+		if mapType, ok := lhsType.(*MapType); ok {
+			// Map indexing requires string key (for now)
+			if !indexType.Equals(StringType) {
+				ctx.logFatalWithToken(fmt.Sprintf("Map index must be string, got '%s'", indexType.String()), expr.Token)
+			}
+			return mapType.ValueType
+		}
 
+		ctx.logFatalWithToken(fmt.Sprintf("Cannot index expression of type '%s'", lhsType.String()), expr.Token)
+		return nil
 	}
 
-	return ""
+	return nil
 }
 
-func isValidUnaryOperatorUse(op TokenType, operandType TokenType) bool {
+func isValidUnaryOperatorUse(op TokenType, operandType Type) bool {
 	switch op {
 	case Minus:
 		// Unary minus only valid for numeric types
-		return operandType == Int || operandType == Float
+		return operandType.IsNumeric()
 	default:
 		return false
 	}
 }
 
-func isValidBinaryOperatorUse(op, lhs, rhs TokenType) bool {
+func isValidBinaryOperatorUse(op TokenType, lhs, rhs Type) bool {
 	switch op {
 	case Plus:
 		// Plus works on numeric types AND strings (concatenation)
-		if lhs == String && rhs == String {
+		if lhs.Equals(StringType) && rhs.Equals(StringType) {
 			return true // String concatenation
 		}
 		// Numeric addition: allow int/float mixing
-		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
+		return lhs.IsNumeric() && rhs.IsNumeric()
 	case Minus, Multiply, Divide:
 		// Arithmetic operators work on numeric types, allow int/float mixing
-		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
+		return lhs.IsNumeric() && rhs.IsNumeric()
 	case LessThan, LessEqual, GreaterThan, GreaterEqual:
 		// Comparison operators work on numeric types and strings
-		if lhs == String && rhs == String {
+		if lhs.Equals(StringType) && rhs.Equals(StringType) {
 			return true // String comparison
 		}
 		// Numeric comparison: allow int/float mixing
-		return (lhs == Int || lhs == Float) && (rhs == Int || rhs == Float)
+		return lhs.IsNumeric() && rhs.IsNumeric()
 	case Equal, NotEqual:
-		// Equality operators work on all types, allow int/float mixing
-		if lhs == rhs {
-			return true
-		}
-		// Allow int/float comparison
-		return (lhs == Int && rhs == Float) || (lhs == Float && rhs == Int)
+		// Equality operators work on compatible types
+		return lhs.IsAssignableTo(rhs) || rhs.IsAssignableTo(lhs)
 	case LogicalAnd, LogicalOr:
 		// Logical operators only work on Bool
-		return lhs == Bool && rhs == Bool
+		return lhs.Equals(BoolType) && rhs.Equals(BoolType)
 	default:
 		return false
 	}
 }
+
 func typecheckBlock(ctx *TypeCheckContext, block *Block) {
-
 	for _, stmt := range block.Statements {
-
 		switch stmt.Type {
 		case AssignmentStmt:
-			// Check if this is a variable declaration (has VarType/VarArrayType) or reassignment
-			if stmt.VarType != "" || stmt.VarArrayType != nil {
-				// Variable declaration: x: int = 5 or arr: [5]int = [1,2,3,4,5]
+			// Check if this is a variable declaration (has VarType) or reassignment
+			if stmt.VarType != nil {
+				// Variable declaration
 				if stmt.Lhs == nil || stmt.Lhs.Value == nil {
 					ctx.logFatal("Assignment statement has invalid left-hand side")
 				}
@@ -294,96 +283,113 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 					ctx.logFatal(fmt.Sprintf("Variable '%s' is already declared in this scope", varName))
 				}
 
-				if stmt.VarArrayType != nil {
-					// Array variable declaration
-					if stmt.Rhs != nil {
-						// Has initializer: arr: [5]int = [1,2,3,4,5]
-						rhsType := typecheckExpression(ctx, stmt.Rhs)
-
-						// Check element type matches
-						if rhsType != stmt.VarArrayType.ElementType {
-							ctx.logFatal(fmt.Sprintf("Cannot assign array of '%s' to variable '%s' of type '[%d]%s'", rhsType, varName, stmt.VarArrayType.Size, stmt.VarArrayType.ElementType))
-						}
-
-						// If size is inferred ([]int), set it from array literal
-						if stmt.VarArrayType.Size == -1 && stmt.Rhs.Type == ArrayLiteral {
-							stmt.VarArrayType.Size = len(stmt.Rhs.Args)
-						}
-
-						// Check array literal size matches declared size
-						if stmt.Rhs.Type == ArrayLiteral && len(stmt.Rhs.Args) != stmt.VarArrayType.Size {
-							ctx.logFatal(fmt.Sprintf("Array literal has %d elements but variable '%s' declared as [%d]%s", len(stmt.Rhs.Args), varName, stmt.VarArrayType.Size, stmt.VarArrayType.ElementType))
-						}
-					}
-
-					// Add array variable to current scope
-					ctx.currentScope.Variables[varName] = &Variable{
-						Name:      varName,
-						Value:     "",
-						Type:      "", // Empty for arrays
-						ArrayType: stmt.VarArrayType,
-					}
-				} else {
-					// Regular variable declaration
+				// Type check RHS if present
+				if stmt.Rhs != nil {
 					rhsType := typecheckExpression(ctx, stmt.Rhs)
 
-					// Check if RHS type matches declared type (allow numeric conversions)
-					if rhsType != stmt.VarType {
-						if (stmt.VarType == Int && rhsType == Float) || (stmt.VarType == Float && rhsType == Int) {
-							// Allow int<->float conversions
-						} else {
-							ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, stmt.VarType))
+					// For array/map literals, we need special handling
+					if rhsType == nil {
+						// Empty array or map literal, type is from declaration
+						rhsType = stmt.VarType
+					}
+
+					// Special case: array declaration
+					if declArray, ok := stmt.VarType.(*ArrayType); ok {
+						if rhsArray, ok := rhsType.(*ArrayType); ok {
+							// Check array literal size matches declaration
+							if stmt.Rhs.Type == ArrayLiteral {
+								literalSize := len(stmt.Rhs.Args)
+								if declArray.Size == -1 {
+									// Inferred size: update from literal
+									declArray.Size = literalSize
+									rhsArray.Size = literalSize
+								} else if rhsArray.Size == -1 {
+									// Literal has inferred size, check against declared size
+									if declArray.Size != literalSize {
+										ctx.logFatal(fmt.Sprintf("Array literal has %d elements but variable '%s' declared as [%d]%s",
+											literalSize, varName, declArray.Size, declArray.ElementType.String()))
+									}
+									rhsArray.Size = literalSize
+								}
+							}
 						}
 					}
 
-					// Add variable to current scope
-					ctx.currentScope.Variables[varName] = &Variable{
-						Name:  varName,
-						Value: "",
-						Type:  stmt.VarType,
+					if !rhsType.IsAssignableTo(stmt.VarType) {
+						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType.String(), varName, stmt.VarType.String()))
 					}
+				}
+
+				// Add variable to current scope
+				ctx.currentScope.Variables[varName] = &Variable{
+					Name:  varName,
+					Value: "",
+					Type:  stmt.VarType,
 				}
 			} else {
-				// Variable reassignment: x = 10
-				if stmt.Lhs == nil || stmt.Lhs.Value == nil {
+				// Variable reassignment or indexed assignment
+				if stmt.Lhs == nil {
 					ctx.logFatal("Assignment statement has invalid left-hand side")
 				}
-				varName := stmt.Lhs.Value.(string)
 
-				// Look up existing variable
-				variable := ctx.currentScope.findVariable(varName)
-				if variable == nil {
-					ctx.logFatal(fmt.Sprintf("Undefined variable '%s'", varName))
-				}
-
-				// Type check the RHS expression
-				rhsType := typecheckExpression(ctx, stmt.Rhs)
-
-				// Check if RHS type matches variable's type (allow numeric conversions)
-				if rhsType != variable.Type {
-					if (variable.Type == Int && rhsType == Float) || (variable.Type == Float && rhsType == Int) {
-						// Allow int<->float conversions
-					} else {
-						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType, varName, variable.Type))
+				if stmt.Lhs.Type == IdentifierExpr {
+					// Simple variable reassignment
+					if stmt.Lhs.Value == nil {
+						ctx.logFatal("Assignment statement has invalid left-hand side")
 					}
+					varName := stmt.Lhs.Value.(string)
+
+					// Look up existing variable
+					variable := ctx.currentScope.findVariable(varName)
+					if variable == nil {
+						ctx.logFatal(fmt.Sprintf("Undefined variable '%s'", varName))
+					}
+
+					// Type check the RHS expression
+					rhsType := typecheckExpression(ctx, stmt.Rhs)
+
+					// Check if RHS type matches variable's type
+					if !rhsType.IsAssignableTo(variable.Type) {
+						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to variable '%s' of type '%s'", rhsType.String(), varName, variable.Type.String()))
+					}
+				} else if stmt.Lhs.Type == IndexExpr {
+					// Indexed assignment: map["key"] = value or arr[index] = value
+					// Type check the LHS (this validates the indexing)
+					lhsType := typecheckExpression(ctx, stmt.Lhs)
+
+					// Type check the RHS expression
+					rhsType := typecheckExpression(ctx, stmt.Rhs)
+
+					// Check if RHS type matches the expected element/value type
+					if !rhsType.IsAssignableTo(lhsType) {
+						ctx.logFatal(fmt.Sprintf("Cannot assign '%s' to indexed location of type '%s'", rhsType.String(), lhsType.String()))
+					}
+				} else {
+					ctx.logFatal("Invalid assignment target")
 				}
 			}
 		case ReturnStmt:
 			actualType := typecheckExpression(ctx, stmt.Rhs)
 			expectedType := ctx.currentFunction.ReturnType
-			if actualType != expectedType {
-				if (expectedType == Int && actualType == Float) || (expectedType == Float && actualType == Int) {
-					// Allow int<->float conversions in return
-				} else {
-					panic(fmt.Sprintf("Type mismatch in return statement: expected %s but got %s in function %s", expectedType, actualType, ctx.currentFunction.Name))
+
+			if actualType == nil {
+				// Empty literal, check if return type allows it
+				if _, ok := expectedType.(*ArrayType); ok {
+					actualType = expectedType // Allow empty array literal
+				} else if _, ok := expectedType.(*MapType); ok {
+					actualType = expectedType // Allow empty map literal
 				}
+			}
+
+			if !actualType.IsAssignableTo(expectedType) {
+				panic(fmt.Sprintf("Type mismatch in return statement: expected %s but got %s in function %s", expectedType.String(), actualType.String(), ctx.currentFunction.Name))
 			}
 
 		case IfStmt:
 			// Type check the condition - should be Bool
 			conditionType := typecheckExpression(ctx, stmt.Conditional)
-			if conditionType != Bool {
-				ctx.logFatalWithToken(fmt.Sprintf("If condition must be Bool, got %s", conditionType), stmt.Token)
+			if !conditionType.Equals(BoolType) {
+				ctx.logFatalWithToken(fmt.Sprintf("If condition must be Bool, got %s", conditionType.String()), stmt.Token)
 			}
 			// Type check the if block with its scope
 			if stmt.Block != nil {
@@ -403,8 +409,8 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 		case WhileStmt:
 			// Type check the condition - should be Bool
 			conditionType := typecheckExpression(ctx, stmt.Conditional)
-			if conditionType != Bool {
-				ctx.logFatalWithToken(fmt.Sprintf("While condition must be Bool, got %s", conditionType), stmt.Token)
+			if !conditionType.Equals(BoolType) {
+				ctx.logFatalWithToken(fmt.Sprintf("While condition must be Bool, got %s", conditionType.String()), stmt.Token)
 			}
 			// Type check the while block with its scope
 			if stmt.Block != nil {
@@ -417,9 +423,11 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 		case ExpressionStmt:
 			// Type check the expression (could be function call, etc.)
 			typecheckExpression(ctx, stmt.Rhs)
+
 		case EmitStmt:
 			// Type check the emitted expression
 			typecheckExpression(ctx, stmt.Rhs)
+
 		default:
 			ctx.logFatal(fmt.Sprintf("Unknown statement type '%s'", stmt.Type))
 		}
@@ -427,24 +435,17 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 }
 
 func typecheckFunctionDefinition(ctx *TypeCheckContext, fd *Function) {
-
 	ctx.currentFunction = fd
 	ctx.currentScope = fd.Block.Scope
 	scope := fd.Block.Scope
 
 	// Inject Parameters into Symbol Table in Scope
-	if len(fd.Parameters) != len(fd.ParameterTypes) {
-		ctx.logFatal(fmt.Sprintf("Function '%s' has mismatched parameter count: %d names vs %d types", fd.Name, len(fd.Parameters), len(fd.ParameterTypes)))
-	}
-
 	for idx, paramName := range fd.Parameters {
-
 		if _, ok := scope.Variables[paramName]; ok {
 			ctx.logFatal(fmt.Sprintf("Parameter '%s' is already defined in function '%s'", paramName, fd.Name))
 		}
 
 		paramType := fd.ParameterTypes[idx]
-
 		scope.Variables[paramName] = &Variable{
 			Name:  paramName,
 			Value: "",
@@ -454,11 +455,9 @@ func typecheckFunctionDefinition(ctx *TypeCheckContext, fd *Function) {
 
 	// Rest of the function
 	typecheckBlock(ctx, fd.Block)
-
 }
 
 func Typecheck(ast *Ast) {
-
 	fmt.Println("Typechecking")
 	if ast == nil {
 		return
@@ -471,9 +470,6 @@ func Typecheck(ast *Ast) {
 	for _, funcdef := range ast.Functions {
 		typecheckFunctionDefinition(ctx, funcdef)
 	}
-
-	_ = ctx
-
 }
 
 func (s *Scope) findVariable(name string) *Variable {

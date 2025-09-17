@@ -45,6 +45,7 @@ const (
 	If                      = "If"
 	Else                    = "Else"
 	Len                     = "Len"
+	Map                     = "Map"
 	TFunction               = "TFunction"
 	Eof                     = "Eof"
 )
@@ -86,6 +87,7 @@ var TokenTypeMap = map[string]TokenType{
 	"if":     If,
 	"else":   Else,
 	"len":    Len,
+	"map":    Map,
 	"true":   BoolLiteral,
 	"false":  BoolLiteral,
 }

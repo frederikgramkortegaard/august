@@ -22,17 +22,16 @@ const (
 	IdentifierExpr                = "IdentifierExpr"
 	LiteralExpr                   = "LiteralExpr"
 	ArrayLiteral                  = "ArrayLiteral"
+	MapLiteral                    = "MapLiteral"
 	IndexExpr                     = "IndexExpr"
 )
 
 type Function struct {
-	Name              string       `json:"name"`
-	Parameters        []string     `json:"parameters"`
-	ParameterTypes    []TokenType  `json:"parameter_types"`
-	ParameterArrayTypes []*ArrayType `json:"parameter_array_types,omitempty"`
-	ReturnType        TokenType    `json:"return_type"`
-	ReturnArrayType   *ArrayType   `json:"return_array_type,omitempty"`
-	Block             *Block       `json:"block"`
+	Name           string   `json:"name"`
+	Parameters     []string `json:"parameters"`
+	ParameterTypes []Type   `json:"parameter_types"`
+	ReturnType     Type     `json:"return_type"`
+	Block          *Block   `json:"block"`
 }
 
 type Expression struct {
@@ -42,7 +41,6 @@ type Expression struct {
 	Rhs          *Expression    `json:"rhs,omitempty"`        // For binary/unary ops, index for array indexing
 	Value        interface{}    `json:"value,omitempty"`      // For literals/identifiers
 	ValueType    TokenType      `json:"value_type,omitempty"` // IntLiteral, FloatLiteral, StringLiteral, etc
-	ArrayType    *ArrayType     `json:"array_type,omitempty"` // For array expressions
 	Args         []*Expression  `json:"args,omitempty"`       // For function calls, array literal elements
 	Token        *Token         `json:"token,omitempty"`      // Position information
 }
@@ -54,8 +52,7 @@ type Block struct {
 
 type Statement struct {
 	Type         StatementType `json:"type"`
-	VarType      TokenType     `json:"var_type,omitempty"` // For assignments: Int, Float, String (from x: int = 5)
-	VarArrayType *ArrayType    `json:"var_array_type,omitempty"` // For array assignments: [5]int
+	VarType      Type          `json:"var_type,omitempty"` // For assignments: the complete type
 	Lhs          *Expression   `json:"lhs,omitempty"`
 	Rhs          *Expression   `json:"rhs,omitempty"`
 	Conditional  *Expression   `json:"conditional,omitempty"`
@@ -82,14 +79,8 @@ func NewAst(tokens []*Token) *Ast {
 	}
 }
 
-type ArrayType struct {
-	Size        int       `json:"size"`
-	ElementType TokenType `json:"element_type"`
-}
-
 type Variable struct {
-	Name      string     `json:"name"`
-	Value     string     `json:"value"`
-	Type      TokenType  `json:"type"`       // IntLiteral, StringLiteral, FloatLiteral
-	ArrayType *ArrayType `json:"array_type,omitempty"` // For array types like [5]int
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Type  Type   `json:"type"` // The complete type
 }

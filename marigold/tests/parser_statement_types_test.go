@@ -2,6 +2,7 @@ package tests
 
 import (
 	"august/marigold"
+	"strings"
 	"testing"
 )
 
@@ -202,8 +203,15 @@ func TestVariableDeclarationTypes(t *testing.T) {
 				t.Errorf("Expected marigold.AssignmentStmt, got %s", stmt.Type)
 			}
 
-			if stmt.VarType != tt.expected {
-				t.Errorf("Expected variable type %s, got %s", tt.expected, stmt.VarType)
+			simpleType, ok := stmt.VarType.(*marigold.SimpleType)
+			if !ok {
+				t.Errorf("Expected simple type, got %T", stmt.VarType)
+			} else {
+				// Convert TokenType to lowercase for comparison with SimpleType.Kind
+				expectedKind := strings.ToLower(string(tt.expected))
+				if simpleType.Kind != expectedKind {
+					t.Errorf("Expected variable type %s, got %s", expectedKind, simpleType.Kind)
+				}
 			}
 		})
 	}

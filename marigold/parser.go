@@ -170,23 +170,13 @@ func parseAssignment(ctx *ParserContext) *Statement {
 	if ctx.peek().Type == Colon {
 		_ = ctx.consumeAssert(Colon)
 
-		// Check if it's an array type [size]type or []type
-		if ctx.peek() != nil && ctx.peek().Type == LSquare {
-			arrayType, err := parseArrayType(ctx)
-			if err != nil {
-				ctx.logError(fmt.Sprintf("Failed to parse array type for variable '%s': %s", ident.Value, err), ctx.current())
-				return nil
-			}
-			statement.VarArrayType = arrayType
-		} else {
-			// Regular type
-			varType := ctx.consume()
-			if varType == nil || !varType.Type.IsValidReturnType() {
-				ctx.logError(fmt.Sprintf("Expected variable type after identifier '%s' but got '%s'", ident.Value, varType.Value), varType)
-				return nil
-			}
-			statement.VarType = varType.Type
+		// Parse the type (simple, array, or map)
+		varType, err := parseType(ctx)
+		if err != nil {
+			ctx.logError(fmt.Sprintf("Failed to parse type for variable '%s': %s", ident.Value, err), ctx.current())
+			return nil
 		}
+		statement.VarType = varType
 	}
 
 	// Assignment
@@ -204,7 +194,42 @@ func parseAssignment(ctx *ParserContext) *Statement {
 	return &statement
 }
 
-func parseArrayType(ctx *ParserContext) (*ArrayType, error) {
+func parseIndexedAssignment(ctx *ParserContext) *Statement {
+	statement := Statement{}
+	statement.Type = AssignmentStmt
+
+	// Parse the indexed expression: identifier[index]
+	ident := ctx.consumeAssert(Identifier)
+	identExpr := &Expression{
+		Type:  IdentifierExpr,
+		Value: ident.Value,
+		Token: ident,
+	}
+
+	// Parse the index: [key] or [index]
+	indexExpr := parseArrayIndex(ctx, identExpr)
+	if indexExpr == nil {
+		ctx.logError("Failed to parse index expression", ident)
+		return nil
+	}
+
+	statement.Lhs = indexExpr
+	statement.Token = ident
+
+	// Expect assignment operator
+	_ = ctx.consumeAssert(Assign)
+
+	// Parse RHS expression
+	statement.Rhs = parseExpression(ctx)
+	if statement.Rhs == nil {
+		ctx.logError("Expected expression on right-hand side of assignment", ctx.current())
+		return nil
+	}
+
+	return &statement
+}
+
+func parseArrayType(ctx *ParserContext) (Type, error) {
 	_ = ctx.consumeAssert(LSquare)
 
 	var size int = -1 // -1 means inferred size []int
@@ -222,15 +247,62 @@ func parseArrayType(ctx *ParserContext) (*ArrayType, error) {
 	_ = ctx.consumeAssert(RSquare)
 
 	// Get element type
-	elementTypeToken := ctx.consume()
-	if elementTypeToken == nil || !elementTypeToken.Type.IsValidReturnType() {
-		return nil, fmt.Errorf("invalid array element type '%s'", elementTypeToken.Value)
+	elementType, err := parseType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("invalid array element type: %v", err)
 	}
 
-	return &ArrayType{
-		Size:        size,
-		ElementType: elementTypeToken.Type,
-	}, nil
+	return NewArrayType(size, elementType), nil
+}
+
+func parseMapType(ctx *ParserContext) (Type, error) {
+	_ = ctx.consumeAssert(Map) // consume "map"
+	_ = ctx.consumeAssert(LSquare) // consume "["
+
+	// Get key type (must be string for now)
+	keyTypeToken := ctx.consume()
+	if keyTypeToken == nil || keyTypeToken.Type != String {
+		return nil, fmt.Errorf("map key type must be string, got '%s'", keyTypeToken.Value)
+	}
+
+	_ = ctx.consumeAssert(RSquare) // consume "]"
+
+	// Get value type
+	valueType, err := parseType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("invalid map value type: %v", err)
+	}
+
+	return NewMapType(StringType, valueType), nil
+}
+
+// parseType parses any type: simple (int, float, string, bool), array, or map
+func parseType(ctx *ParserContext) (Type, error) {
+	if ctx.peek() == nil {
+		return nil, fmt.Errorf("expected type")
+	}
+
+	token := ctx.peek()
+	switch token.Type {
+	case Int:
+		ctx.consume()
+		return IntType, nil
+	case Float:
+		ctx.consume()
+		return FloatType, nil
+	case String:
+		ctx.consume()
+		return StringType, nil
+	case Bool:
+		ctx.consume()
+		return BoolType, nil
+	case LSquare:
+		return parseArrayType(ctx)
+	case Map:
+		return parseMapType(ctx)
+	default:
+		return nil, fmt.Errorf("invalid type '%s'", token.Value)
+	}
 }
 
 func parseFunctionCall(ctx *ParserContext) *Expression {
@@ -383,6 +455,16 @@ func parseStatement(ctx *ParserContext) *Statement {
 
 			return assignStmt
 
+		case LSquare:
+			// Indexed Assignment: map["key"] = value or arr[index] = value
+			indexedAssignStmt := parseIndexedAssignment(ctx)
+			if indexedAssignStmt == nil {
+				ctx.logError(fmt.Sprintf("Expected indexed assignment after identifier '%s'", ident.Value), ident)
+				return nil
+			}
+
+			return indexedAssignStmt
+
 		case LParen:
 
 			statement.Type = ExpressionStmt
@@ -452,12 +534,13 @@ func parseFunctionDefinition(ctx *ParserContext) *Function {
 
 		_ = ctx.consumeAssert(Colon)
 
-		paramType := ctx.consume()
-		if paramType == nil || !paramType.Type.IsValidReturnType() {
-			ctx.logError(fmt.Sprintf("Expected parameter type after parameter '%s' but got '%s'", paramIdent.Value, paramType.Value), paramType)
+		// Parse parameter type
+		paramType, err := parseType(ctx)
+		if err != nil {
+			ctx.logError(fmt.Sprintf("Failed to parse parameter type for parameter '%s': %s", paramIdent.Value, err), ctx.current())
 			return nil
 		}
-		functionDefinition.ParameterTypes = append(functionDefinition.ParameterTypes, paramType.Type)
+		functionDefinition.ParameterTypes = append(functionDefinition.ParameterTypes, paramType)
 
 		_ = ctx.consumeIf(Comma)
 
@@ -466,12 +549,13 @@ func parseFunctionDefinition(ctx *ParserContext) *Function {
 
 	// Parse return type
 	_ = ctx.consumeAssert(Colon)
-	returnType := ctx.consume()
-	if returnType == nil || !returnType.Type.IsValidReturnType() {
-		ctx.logError(fmt.Sprintf("Expected return type after function '%s' but got '%s'", functionIdent.Value, returnType.Value), returnType)
+
+	returnType, err := parseType(ctx)
+	if err != nil {
+		ctx.logError(fmt.Sprintf("Failed to parse return type for function '%s': %s", functionIdent.Value, err), ctx.current())
 		return nil
 	}
-	functionDefinition.ReturnType = returnType.Type
+	functionDefinition.ReturnType = returnType
 
 	// Parse Body
 	_ = ctx.consumeAssert(LBrace)
@@ -702,6 +786,10 @@ func parseAtom(ctx *ParserContext) *Expression {
 		// Array literal [1, 2, 3]
 		return parseArrayLiteral(ctx)
 
+	case LBrace:
+		// Map literal {}
+		return parseMapLiteral(ctx)
+
 	default:
 		return nil
 	}
@@ -755,6 +843,24 @@ func parseArrayLiteral(ctx *ParserContext) *Expression {
 		Type:  ArrayLiteral,
 		Args:  elements,
 		Token: openBracket,
+	}
+}
+
+func parseMapLiteral(ctx *ParserContext) *Expression {
+	openBrace := ctx.consumeAssert(LBrace)
+
+	// For now, only support empty map literals {}
+	// TODO: Add support for {"key": value} syntax
+	if ctx.peek().Type != RBrace {
+		ctx.logError("Map literals with elements not yet supported, use empty {} for now", ctx.current())
+		return nil
+	}
+
+	ctx.consumeAssert(RBrace)
+
+	return &Expression{
+		Type:  MapLiteral,
+		Token: openBrace,
 	}
 }
 
