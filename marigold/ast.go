@@ -72,10 +72,29 @@ type Ast struct {
 }
 
 func NewAst(tokens []*Token) *Ast {
+	// Create global scope with built-in variables
+	globalScope := &Scope{
+		Variables: make(map[string]*Variable),
+		Parent:    nil,
+	}
+
+	// Add built-in global storage variables
+	globalScope.Variables["memory"] = &Variable{
+		Name:  "memory",
+		Value: "",
+		Type:  NewArrayType(-1, StringType), // Dynamic array of strings
+	}
+
+	globalScope.Variables["persistent"] = &Variable{
+		Name:  "persistent",
+		Value: "",
+		Type:  NewMapType(StringType, StringType), // map[string]string
+	}
+
 	return &Ast{
 		Tokens:    tokens,
 		Functions: make(map[string]*Function),
-		Scope:     nil,
+		Scope:     globalScope,
 	}
 }
 

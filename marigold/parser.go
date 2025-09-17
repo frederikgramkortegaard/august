@@ -574,12 +574,7 @@ func Parse(tokens []*Token) (*Ast, error) {
 
 	fmt.Println("Parsing")
 	ast := NewAst(tokens)
-
-	// Initialize global scope
-	ast.Scope = &Scope{
-		Variables: make(map[string]*Variable),
-		Parent:    nil,
-	}
+	// Global scope with built-ins is already initialized in NewAst
 
 	if len(tokens) == 0 {
 		return ast, nil
