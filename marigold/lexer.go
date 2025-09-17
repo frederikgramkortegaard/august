@@ -51,7 +51,7 @@ func Lex(text string) ([]*Token, error) {
 
 		// Operators & Syntax
 		switch currentChar {
-		case '(', ')', '[', ']', '{', '}', ',', '.', ':', ';', '+', '-', '*':
+		case '(', ')', '[', ']', '{', '}', ',', '.', ':', ';', '+', '-', '*', '%', '^':
 			makeToken(string(currentChar))
 			continue
 

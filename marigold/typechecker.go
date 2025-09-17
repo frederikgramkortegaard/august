@@ -112,6 +112,19 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			return IntType // Both are int
 		}
 
+		if expr.Operator == Modulo {
+			// Modulo: if either operand is float, result is float
+			if lhs.Equals(FloatType) || rhs.Equals(FloatType) {
+				return FloatType
+			}
+			return IntType // Both are int
+		}
+
+		if expr.Operator == Exponent {
+			// Exponentiation: always returns float for safety (2^-1 = 0.5)
+			return FloatType
+		}
+
 		// Shouldn't reach here
 		return lhs
 
@@ -271,7 +284,7 @@ func isValidBinaryOperatorUse(op TokenType, lhs, rhs Type) bool {
 		}
 		// Numeric addition: allow int/float mixing
 		return lhs.IsNumeric() && rhs.IsNumeric()
-	case Minus, Multiply, Divide:
+	case Minus, Multiply, Divide, Modulo, Exponent:
 		// Arithmetic operators work on numeric types, allow int/float mixing
 		return lhs.IsNumeric() && rhs.IsNumeric()
 	case LessThan, LessEqual, GreaterThan, GreaterEqual:

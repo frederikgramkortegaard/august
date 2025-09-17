@@ -678,14 +678,36 @@ func parseAdditive(ctx *ParserContext) *Expression {
 }
 
 func parseTerm(ctx *ParserContext) *Expression {
+	left := parsePower(ctx)
+	if left == nil {
+		return nil
+	}
+
+	for ctx.peek() != nil && (ctx.peek().Type == Multiply || ctx.peek().Type == Divide || ctx.peek().Type == Modulo) {
+		op := ctx.consume()
+		right := parsePower(ctx)
+		left = &Expression{
+			Type:     BinaryExpr,
+			Operator: op.Type,
+			Lhs:      left,
+			Rhs:      right,
+			Token:    op,
+		}
+	}
+
+	return left
+}
+
+func parsePower(ctx *ParserContext) *Expression {
 	left := parseFactor(ctx)
 	if left == nil {
 		return nil
 	}
 
-	for ctx.peek() != nil && (ctx.peek().Type == Multiply || ctx.peek().Type == Divide) {
+	// Exponentiation is right-associative: 2^3^2 = 2^(3^2) = 2^9 = 512
+	if ctx.peek() != nil && ctx.peek().Type == Exponent {
 		op := ctx.consume()
-		right := parseFactor(ctx)
+		right := parsePower(ctx) // Right-associative recursion
 		left = &Expression{
 			Type:     BinaryExpr,
 			Operator: op.Type,

@@ -24,9 +24,11 @@ const (
 	GreaterThan             = "GreaterThan"
 	GreaterEqual            = "GreaterEqual"
 	Divide                  = "Divide"
+	Modulo                  = "Modulo"
 	Plus                    = "Plus"
 	Minus                   = "Minus"
 	Multiply                = "Multiply"
+	Exponent                = "Exponent"
 	LogicalAnd              = "LogicalAnd"
 	LogicalOr               = "LogicalOr"
 	Identifier              = "Identifier"
@@ -72,9 +74,11 @@ var TokenTypeMap = map[string]TokenType{
 	">":      GreaterThan,
 	">=":     GreaterEqual,
 	"/":      Divide,
+	"%":      Modulo,
 	"+":      Plus,
 	"-":      Minus,
 	"*":      Multiply,
+	"^":      Exponent,
 	"&&":     LogicalAnd,
 	"||":     LogicalOr,
 	"string": String,
