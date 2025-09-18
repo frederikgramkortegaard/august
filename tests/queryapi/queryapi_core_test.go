@@ -95,10 +95,6 @@ func TestQueryAPIBasicEndpoints(t *testing.T) {
 
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	// Give the HTTP server time to start
 	time.Sleep(200 * time.Millisecond)
@@ -194,10 +190,6 @@ func TestQueryAPIWithData(t *testing.T) {
 
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	// Give the HTTP server time to start
 	time.Sleep(200 * time.Millisecond)
@@ -261,7 +253,7 @@ func TestQueryAPIWithData(t *testing.T) {
 	tx.Signature = tx.GetSignature(privA)
 
 	// Add to mempool
-	err = nodeA.SubmitTransaction(&tx)
+	err = nodeA.ProcessTransaction(&tx)
 	if err != nil {
 		t.Fatalf("Failed to submit transaction: %v", err)
 	}
@@ -438,10 +430,6 @@ func TestQueryAPIErrorHandling(t *testing.T) {
 
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	// Give the HTTP server time to start
 	time.Sleep(200 * time.Millisecond)

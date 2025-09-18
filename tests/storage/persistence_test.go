@@ -55,7 +55,6 @@ func TestBlockchainSaveLoad(t *testing.T) {
 
 	ready := nodeA.Start()
 	<-ready
-	nodeA.InitializeChain()
 	log.Printf("Seed node is ready and accepting connections")
 
 	// Validate chain has only genesis block
@@ -143,10 +142,6 @@ func TestBlockchainSaveLoad(t *testing.T) {
 	// Start NodeB
 	readyB := nodeB.Start()
 	<-readyB
-	err = nodeB.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize NodeB chain: %v", err)
-	}
 	log.Printf("NodeB started and initialized")
 
 	// Verify NodeB loaded the mined block from persistence

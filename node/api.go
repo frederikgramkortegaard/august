@@ -81,9 +81,9 @@ type ChainStateResponse struct {
 type NodeAPI interface {
 	GetChainHead() blockchain.ChainHead
 	ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{}
-	SubmitTransaction(tx *blockchain.Transaction) error
+	ProcessTransaction(tx *blockchain.Transaction) error
 	GetChain() (*blockchain.Chain, error)
-	GetMempool() interface{ GetTransactions(limit int) []blockchain.Transaction }
+	GetMempool() *Mempool
 }
 
 // StartQueryAPI starts the HTTP API server for miners and blockchain queries (completely separate from P2P)
@@ -460,7 +460,7 @@ func handleSubmitTransaction(node NodeAPI) http.HandlerFunc {
 		}
 
 		// Submit the transaction (this validates and adds to mempool + relays to peers)
-		if err := node.SubmitTransaction(&tx); err != nil {
+		if err := node.ProcessTransaction(&tx); err != nil {
 			http.Error(w, fmt.Sprintf("Transaction rejected: %v", err), http.StatusBadRequest)
 			return
 		}

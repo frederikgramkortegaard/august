@@ -81,10 +81,6 @@ func TestMempoolBasicOperations(t *testing.T) {
 	// Start and initialize
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	log.Printf("Node started and chain initialized")
 
@@ -130,7 +126,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 	tx1 := createTestTransaction(keyA, keyB, 100, 10, 1, privA)
 
 	// Submit transaction through node
-	err = nodeA.SubmitTransaction(&tx1)
+	err = nodeA.ProcessTransaction(&tx1)
 	if err != nil {
 		t.Fatalf("Failed to submit valid transaction: %v", err)
 	}
@@ -143,7 +139,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 	log.Printf("Successfully added transaction to mempool")
 
 	// Test 2: Try to add duplicate transaction (should fail)
-	err = nodeA.SubmitTransaction(&tx1)
+	err = nodeA.ProcessTransaction(&tx1)
 	if err == nil {
 		t.Fatalf("Expected duplicate transaction to be rejected")
 	}
@@ -172,7 +168,7 @@ func TestMempoolBasicOperations(t *testing.T) {
 
 	// Add transaction with higher fee from different user
 	tx2 := createTestTransaction(keyC, keyB, 50, 20, 1, privC)
-	err = nodeA.SubmitTransaction(&tx2)
+	err = nodeA.ProcessTransaction(&tx2)
 	if err != nil {
 		t.Fatalf("Failed to submit second transaction: %v", err)
 	}
@@ -215,10 +211,6 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	// Start and initialize
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	// Generate test keypairs
 	pubA, privA := generateKeyPair()
@@ -264,11 +256,11 @@ func TestMempoolWithBlockProcessing(t *testing.T) {
 	tx1 := createTestTransaction(keyA, keyB, 100, 10, 1, privA)
 	tx2 := createTestTransaction(keyC, keyB, 200, 15, 1, privC)
 
-	err = nodeA.SubmitTransaction(&tx1)
+	err = nodeA.ProcessTransaction(&tx1)
 	if err != nil {
 		t.Fatalf("Failed to submit tx1: %v", err)
 	}
-	err = nodeA.SubmitTransaction(&tx2)
+	err = nodeA.ProcessTransaction(&tx2)
 	if err != nil {
 		t.Fatalf("Failed to submit tx2: %v", err)
 	}
@@ -379,10 +371,6 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 	// Start and initialize
 	ready := nodeA.Start()
 	<-ready
-	err := nodeA.InitializeChain()
-	if err != nil {
-		t.Fatalf("Failed to initialize chain: %v", err)
-	}
 
 	// Give the HTTP server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -431,11 +419,11 @@ func TestMempoolPersistenceAndAPI(t *testing.T) {
 	tx1 := createTestTransaction(keyA, keyB, 100, 25, 1, privA) // High fee
 	tx2 := createTestTransaction(keyC, keyB, 50, 5, 1, privC)   // Low fee
 
-	err = nodeA.SubmitTransaction(&tx1)
+	err = nodeA.ProcessTransaction(&tx1)
 	if err != nil {
 		t.Fatalf("Failed to submit tx1: %v", err)
 	}
-	err = nodeA.SubmitTransaction(&tx2)
+	err = nodeA.ProcessTransaction(&tx2)
 	if err != nil {
 		t.Fatalf("Failed to submit tx2: %v", err)
 	}

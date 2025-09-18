@@ -26,54 +26,56 @@ const (
 
 // Currency multipliers (like time package)
 const (
-	Leaf = uint64(1)                        // Base unit
-	AUG  = uint64(1_000_000) * Leaf        // 1 AUG = 1M leaf units
+	Leaf = uint64(1)                // Base unit
+	AUG  = uint64(1_000_000) * Leaf // 1 AUG = 1M leaf units
 )
 
 // Mining and blockchain constants
 const (
-	BlockReward           = 50 * AUG              // 50 AUG block reward
-	HalvingInterval       = 210000                // Blocks between reward halvings
-	MaxAmount             = ^uint64(0)            // Maximum uint64 value for overflow checks
-	MainnetChainID        = uint64(1)             // Main network chain ID
-	TestnetChainID        = uint64(2)             // Test network chain ID
-	ContractDeploymentFee = 1 * AUG               // 1 AUG deployment fee
+	BlockReward           = 50 * AUG   // 50 AUG block reward
+	HalvingInterval       = 210000     // Blocks between reward halvings
+	MaxAmount             = ^uint64(0) // Maximum uint64 value for overflow checks
+	MainnetChainID        = uint64(1)  // Main network chain ID
+	TestnetChainID        = uint64(2)  // Test network chain ID
+	ContractDeploymentFee = 1 * AUG    // 1 AUG deployment fee
 
 	// Gas constants
-	GasTransfer          = uint64(21000)          // Base gas for regular transfer
-	GasContractDeploy    = uint64(21000)          // Base gas for contract deployment (before init execution)
-	GasContractInitLimit = uint64(1000000)        // Max gas for contract init execution
+	GasTransfer          = uint64(21000)   // Base gas for regular transfer
+	GasContractDeploy    = uint64(21000)   // Base gas for contract deployment (before init execution)
+	GasContractInitLimit = uint64(1000000) // Max gas for contract init execution
 
 	// AVM runtime limits
-	AVMMaxStackSize      = 1024                   // Maximum stack depth (0 = unlimited)
-	AVMMaxMemorySize     = 1024                   // Maximum memory slots (0 = unlimited)
+	AVMMaxStackSize  = 1024 // Maximum stack depth (0 = unlimited)
+	AVMMaxMemorySize = 1024 // Maximum memory slots (0 = unlimited)
 
 	// Network request-response constants
-	RequestTimeout     = 5 * time.Second         // How long to wait for responses
-	MaxPendingRequests = 100                     // Maximum number of pending requests
+	RequestTimeout     = 10 * time.Second // How long to wait for responses
+	MaxPendingRequests = 100              // Maximum number of pending requests
 
 	// Network peer constants
-	MaxPeers = 128                               // Maximum number of peers
+	MaxPeers = 128 // Maximum number of peers
 
 	// Network TTL constants
-	RecentBlocksTTL       = 5 * time.Minute      // How long to keep blocks in recent cache
-	RecentTransactionsTTL = 5 * time.Minute      // How long to keep transactions in recent cache
-	CleanupInterval       = 30 * time.Second     // How often to cleanup dead peers
+	RecentHeadersTTL      = 5 * time.Minute  // How long to keep headers in recent cache
+	RecentBlocksTTL       = 5 * time.Minute  // How long to keep blocks in recent cache
+	RecentTransactionsTTL = 5 * time.Minute  // How long to keep transactions in recent cache
+	CleanupInterval       = 30 * time.Second // How often to cleanup dead peers
+	ChainSyncFrequency    = 60 * time.Second // How often to ask peers about their chain information
 
 	// Mempool constants
-	MempoolMaxSize   = 1000                      // Maximum number of transactions in mempool
-	MempoolMaxExpiry = 7 * 24 * time.Hour        // Maximum age before transaction expires (7 days)
+	MempoolMaxSize   = 1000               // Maximum number of transactions in mempool
+	MempoolMaxExpiry = 7 * 24 * time.Hour // Maximum age before transaction expires (7 days)
 
 	// Blockchain constants
-	Difficulty = 1                               // Default difficulty
+	Difficulty = 1 // Default difficulty
 
 	// Peer request configuration constants (Bitcoin-style defaults)
-	MaxRequestsPerPeer    = 16                   // Conservative like Bitcoin Core
-	MaxPeersForRequest    = 20                   // Try up to 20 peers in parallel/sequence
-	MinPeersForRequest    = 1                    // Can sync from 1 peer (like Bitcoin)
-	RequestTimeoutSec     = 30                   // 30 second timeout per peer
-	RandomizePeerOrder    = true                 // Whether to randomize peer selection order
-	PreferResponsivePeers = true                 // Prefer peers that have been historically responsive
+	MaxRequestsPerPeer    = 16   // Conservative like Bitcoin Core
+	MaxPeersForRequest    = 20   // Try up to 20 peers in parallel/sequence
+	MinPeersForRequest    = 1    // Can sync from 1 peer (like Bitcoin)
+	RequestTimeoutSec     = 30   // 30 second timeout per peer
+	RandomizePeerOrder    = true // Whether to randomize peer selection order
+	PreferResponsivePeers = true // Prefer peers that have been historically responsive
 )
 
 // PublicKey type for blockchain addresses

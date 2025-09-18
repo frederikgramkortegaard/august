@@ -77,18 +77,18 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	// Create a simple contract with a counter
 	// Init: Push 0 onto stack and exit (sets initial state)
 	initInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(0)}, // Push initial counter value (0)
-		{Opcode: avm.EMIT},                       // Emit the result
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(0)), // Push initial counter value (0)
+		avm.MakeInstruction(avm.EMIT),                         // Emit the result
 		// No STOP - let it complete naturally
 	}
 
 	// Runtime: Push two numbers, add them, emit result
 	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(5)}, // Push 5
-		{Opcode: avm.PUSH, Value: big.NewInt(3)}, // Push 3
-		{Opcode: avm.ADD},                        // Add them (5+3=8)
-		{Opcode: avm.EMIT},                       // Emit the result
-		{Opcode: avm.STOP},                       // Stop execution
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(5)), // Push 5
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)), // Push 3
+		avm.MakeInstruction(avm.ADD),                          // Add them (5+3=8)
+		avm.MakeInstruction(avm.EMIT),            // Emit the result
+		avm.MakeInstruction(avm.STOP),            // Stop execution
 	}
 
 	// Deploy the contract

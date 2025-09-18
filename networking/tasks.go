@@ -15,9 +15,9 @@ type TaskScheduler struct {
 	tasks  map[string]Task
 
 	// Tickers for different intervals
-	cleanupTicker    *time.Ticker
-	chainSyncTicker  *time.Ticker
-	discoveryTicker  *time.Ticker
+	cleanupTicker   *time.Ticker
+	chainSyncTicker *time.Ticker
+	discoveryTicker *time.Ticker
 }
 
 // NewTaskScheduler creates a new task scheduler for the server
@@ -85,13 +85,16 @@ func (ts *TaskScheduler) unifiedPeriodicCleanup() {
 func (ts *TaskScheduler) runCleanupTasks() {
 	now := time.Now()
 
-	// 1. Clean up recent blocks
+	// 1. Clean up recent headers
+	ts.server.cleanRecentHeaders(now)
+
+	// 2. Clean up recent blocks
 	ts.server.cleanRecentBlocks(now)
 
-	// 2. Clean up recent transactions
+	// 3. Clean up recent transactions
 	ts.server.cleanRecentTransactions(now)
 
-	// 3. Clean up dead peers
+	// 4. Clean up dead peers
 	removed := ts.server.CleanupDeadPeers()
 	if removed > 0 {
 		log.Printf(ts.server.config.NodeID+"\t"+"Cleaned up %d dead peers", removed)
@@ -100,12 +103,12 @@ func (ts *TaskScheduler) runCleanupTasks() {
 	// 4. Log current chain status
 	ts.server.logChainStatus()
 
-	log.Printf(ts.server.config.NodeID+"\t"+"Periodic cleanup completed")
+	log.Printf(ts.server.config.NodeID + "\t" + "Periodic cleanup completed")
 }
 
 // periodicChainSync runs chain synchronization checks
 func (ts *TaskScheduler) periodicChainSync() {
-	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+	ticker := time.NewTicker(config.ChainSyncFrequency)
 	defer ticker.Stop()
 
 	for {
@@ -168,7 +171,7 @@ func (s *Server) logChainStatus() {
 	}
 
 	if len(chain.Blocks) == 0 {
-		log.Printf(s.config.NodeID+"\t"+"CHAIN STATUS: No blocks")
+		log.Printf(s.config.NodeID + "\t" + "CHAIN STATUS: No blocks")
 		return
 	}
 
@@ -178,6 +181,24 @@ func (s *Server) logChainStatus() {
 		latestBlock.Header.Height,
 		blockHash[:8],
 		len(latestBlock.Transactions))
+}
+
+// cleanRecentHeaders removes old entries from the recent headers cache
+func (s *Server) cleanRecentHeaders(now time.Time) {
+	s.recentHeadersMu.Lock()
+	defer s.recentHeadersMu.Unlock()
+
+	cleaned := 0
+	for hash, addedTime := range s.recentHeaders {
+		if now.Sub(addedTime) > config.RecentHeadersTTL {
+			delete(s.recentHeaders, hash)
+			cleaned++
+		}
+	}
+
+	if cleaned > 0 {
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent headers", cleaned)
+	}
 }
 
 // cleanRecentBlocks removes old entries from the recent blocks cache

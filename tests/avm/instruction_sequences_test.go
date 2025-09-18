@@ -12,11 +12,6 @@ func hex(s string) *big.Int {
 	return n
 }
 
-// Helper function for creating default runtime config
-func defaultConfig() avm.RuntimeConfig {
-	return avm.RuntimeConfig{}
-}
-
 func TestSwapOperation(t *testing.T) {
 	// Test SWAP operation: [A, B, C, D] -> SWAP 2 -> [A, D, C, B]
 	instructions := []avm.Instruction{
@@ -24,10 +19,11 @@ func TestSwapOperation(t *testing.T) {
 		avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // Stack: [A, B]
 		avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // Stack: [A, B, C]
 		avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // Stack: [A, B, C, D]
-		avm.MakeInstructionWithParam(avm.SWAP, 2),        // Stack: [A, D, C, B] (swap top with 2nd from top)
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(2)), // Stack: [A, B, C, D, 2]
+		avm.MakeInstruction(avm.SWAP),                    // Stack: [A, D, C, B] (swap top with 2nd from top)
 	}
 
-	r := avm.NewRuntime(1000, instructions))
+	r := avm.NewRuntime(1000, instructions)
 	gasUsed, err := r.StartExecution()
 
 	if err != nil {
@@ -64,7 +60,7 @@ func TestBasicStackOperations(t *testing.T) {
 		avm.MakeInstruction(avm.POP),                      // Stack: [42, 42]
 	}
 
-	r := avm.NewRuntime(100, instructions))
+	r := avm.NewRuntime(100, instructions)
 	gasUsed, err := r.StartExecution()
 
 	if err != nil {
@@ -107,7 +103,8 @@ func TestSwapEdgeCases(t *testing.T) {
 			setup: []avm.Instruction{
 				avm.MakeInstructionWithValue(avm.PUSH, hex("1")),
 				avm.MakeInstructionWithValue(avm.PUSH, hex("2")),
-				avm.MakeInstructionWithParam(avm.SWAP, 3), // trying to swap 3 down with only 2 elements
+				avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)), // push swap index
+				avm.MakeInstruction(avm.SWAP), // trying to swap 3 down with only 2 elements
 			},
 			shouldError: true,
 		},
@@ -116,7 +113,8 @@ func TestSwapEdgeCases(t *testing.T) {
 			setup: []avm.Instruction{
 				avm.MakeInstructionWithValue(avm.PUSH, hex("1")),
 				avm.MakeInstructionWithValue(avm.PUSH, hex("2")),
-				avm.MakeInstructionWithParam(avm.SWAP, 0), // swap with self (no-op)
+				avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(0)), // push swap index
+				avm.MakeInstruction(avm.SWAP), // swap with self (no-op)
 			},
 			shouldError: false,
 		},
@@ -125,7 +123,8 @@ func TestSwapEdgeCases(t *testing.T) {
 			setup: []avm.Instruction{
 				avm.MakeInstructionWithValue(avm.PUSH, hex("1")),
 				avm.MakeInstructionWithValue(avm.PUSH, hex("2")),
-				avm.MakeInstructionWithParam(avm.SWAP, 1), // swap top two elements
+				avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // push swap index
+				avm.MakeInstruction(avm.SWAP), // swap top two elements
 			},
 			shouldError: false,
 		},
@@ -133,7 +132,7 @@ func TestSwapEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := avm.NewRuntime(1000, tt.setup))
+			r := avm.NewRuntime(1000, tt.setup)
 
 			// Execute all instructions including the swap
 			_, err := r.StartExecution()
@@ -154,12 +153,13 @@ func TestGasAccounting(t *testing.T) {
 		avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // 3 gas
 		avm.MakeInstructionWithValue(avm.PUSH, hex("2")), // 3 gas
 		avm.MakeInstruction(avm.DUP),                     // 3 gas
-		avm.MakeInstructionWithParam(avm.SWAP, 1),        // 3 gas
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // push swap index
+		avm.MakeInstruction(avm.SWAP),        // 3 gas
 		avm.MakeInstruction(avm.POP),                     // 2 gas
 		// Total: 14 gas
 	}
 
-	r := avm.NewRuntime(20, instructions)) // Enough gas
+	r := avm.NewRuntime(20, instructions) // Enough gas
 	gasUsed, err := r.StartExecution()
 
 	if err != nil {
@@ -184,7 +184,7 @@ func TestOutOfGas(t *testing.T) {
 		avm.MakeInstructionWithValue(avm.PUSH, hex("3")), // 3 gas - this should fail
 	}
 
-	r := avm.NewRuntime(5, instructions)) // Not enough gas (need 9)
+	r := avm.NewRuntime(5, instructions) // Not enough gas (need 9)
 	_, err := r.StartExecution()
 
 	if err == nil {
@@ -229,12 +229,12 @@ func TestInstructionValidation(t *testing.T) {
 		},
 		{
 			name:        "valid SWAP",
-			instruction: avm.MakeInstructionWithParam(avm.SWAP, 2),
+			instruction: avm.MakeInstruction(avm.SWAP), // Note: this needs 2 pushed to stack first
 			shouldError: false,
 		},
 		{
 			name:        "valid SWAP with large param",
-			instruction: avm.MakeInstructionWithParam(avm.SWAP, 2000),
+			instruction: avm.MakeInstruction(avm.SWAP), // Note: this needs 2000 pushed to stack first
 			shouldError: false,
 		},
 		{
@@ -245,7 +245,7 @@ func TestInstructionValidation(t *testing.T) {
 		},
 		{
 			name:        "POP with unexpected param",
-			instruction: avm.MakeInstructionWithParam(avm.POP, 1),
+			instruction: avm.MakeInstruction(avm.POP), // POP doesn't take parameters
 			shouldError: true,
 			expectedErr: avm.ErrUnexpectedInstructionParameter,
 		},
@@ -294,21 +294,23 @@ func TestValidationPreventsExecution(t *testing.T) {
 			name: "invalid swap parameter caught during execution",
 			instructions: []avm.Instruction{
 				avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // Valid - consumes gas
-				avm.MakeInstructionWithParam(avm.SWAP, 2000),     // Invalid - fails during execution
+				avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(2000)), // push swap index
+				avm.MakeInstruction(avm.SWAP),     // Invalid - fails during execution
 			},
 			expectedErr: avm.ErrInvalidSwapParameter,
 		},
 		{
 			name: "first instruction invalid - no gas consumed",
 			instructions: []avm.Instruction{
-				avm.MakeInstructionWithParam(avm.SWAP, 2000), // First instruction fails
+				avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(2000)), // push swap index
+				avm.MakeInstruction(avm.SWAP), // First instruction fails
 			},
 			expectedErr: avm.ErrInvalidSwapParameter,
 		},
 		{
 			name: "unexpected parameter caught",
 			instructions: []avm.Instruction{
-				avm.MakeInstructionWithParam(avm.POP, 1), // POP shouldn't have param
+				avm.MakeInstruction(avm.POP), // POP shouldn't have param
 			},
 			expectedErr: avm.ErrUnexpectedInstructionParameter,
 		},
@@ -316,7 +318,7 @@ func TestValidationPreventsExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := avm.NewRuntime(1000, tt.instructions))
+			r := avm.NewRuntime(1000, tt.instructions)
 			gasUsed, err := r.StartExecution()
 
 			// Should fail with validation error
@@ -370,7 +372,7 @@ func TestArithmeticOperations(t *testing.T) {
 				avm.MakeInstruction(tt.opcode),
 			}
 
-			r := avm.NewRuntime(100, instructions))
+			r := avm.NewRuntime(100, instructions)
 			_, err := r.StartExecution()
 			if err != nil {
 				t.Fatalf("Execution error: %v", err)
@@ -412,7 +414,7 @@ func TestComparisonOperations(t *testing.T) {
 				avm.MakeInstruction(tt.opcode),
 			}
 
-			r := avm.NewRuntime(100, instructions))
+			r := avm.NewRuntime(100, instructions)
 			_, err := r.StartExecution()
 			if err != nil {
 				t.Fatalf("Execution error: %v", err)
@@ -449,7 +451,7 @@ func TestIsZeroOperation(t *testing.T) {
 				avm.MakeInstruction(avm.ISZERO),
 			}
 
-			r := avm.NewRuntime(50, instructions))
+			r := avm.NewRuntime(50, instructions)
 			_, err := r.StartExecution()
 			if err != nil {
 				t.Fatalf("Execution error: %v", err)
@@ -472,12 +474,13 @@ func TestJumpOperations(t *testing.T) {
 	t.Run("JUMP: unconditional jump", func(t *testing.T) {
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
-			avm.MakeInstructionWithParam(avm.JUMP, 3),        // 1: Jump to instruction 3
+			avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)), // push jump target
+			avm.MakeInstruction(avm.JUMP),        // 1: Jump to instruction 3
 			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 2: This should be skipped
 			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 3: Push C
 		}
 
-		r := avm.NewRuntime(50, instructions))
+		r := avm.NewRuntime(50, instructions)
 		_, err := r.StartExecution()
 		if err != nil {
 			t.Fatalf("Execution error: %v", err)
@@ -511,13 +514,14 @@ func TestJumpOperations(t *testing.T) {
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
 			avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // 1: Push 1 (true condition)
-			avm.MakeInstructionWithParam(avm.JUMPC, 5),       // 2: Jump to instruction 5 if top is 1
+			avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(5)), // push jump target
+			avm.MakeInstruction(avm.JUMPC),       // 2: Jump to instruction 5 if top is 1
 			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 3: This should be skipped
 			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 4: This should be skipped
 			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 5: Push D
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 		if err != nil {
 			t.Fatalf("Execution error: %v", err)
@@ -545,13 +549,14 @@ func TestJumpOperations(t *testing.T) {
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
 			avm.MakeInstructionWithValue(avm.PUSH, hex("0")), // 1: Push 0 (false condition)
-			avm.MakeInstructionWithParam(avm.JUMPC, 5),       // 2: Should not jump
+			avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(5)), // push jump target
+			avm.MakeInstruction(avm.JUMPC),       // 2: Should not jump
 			avm.MakeInstructionWithValue(avm.PUSH, hex("B")), // 3: Push B
 			avm.MakeInstructionWithValue(avm.PUSH, hex("C")), // 4: Push C
 			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 5: Push D
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 		if err != nil {
 			t.Fatalf("Execution error: %v", err)
@@ -573,10 +578,11 @@ func TestJumpOperations(t *testing.T) {
 	t.Run("JUMP: invalid destination", func(t *testing.T) {
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A
-			avm.MakeInstructionWithParam(avm.JUMP, 10),       // 1: Jump to invalid instruction 10
+			avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(10)), // push jump target
+			avm.MakeInstruction(avm.JUMP),       // 1: Jump to invalid instruction 10
 		}
 
-		r := avm.NewRuntime(50, instructions))
+		r := avm.NewRuntime(50, instructions)
 		_, err := r.StartExecution()
 		if err == nil {
 			t.Fatal("Expected error for invalid jump destination")
@@ -591,10 +597,11 @@ func TestJumpOperations(t *testing.T) {
 	t.Run("JUMPC: invalid destination", func(t *testing.T) {
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("1")), // 0: Push 1 (true condition)
-			avm.MakeInstructionWithParam(avm.JUMPC, 10),      // 1: Jump to invalid instruction 10
+			avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(10)), // push jump target
+			avm.MakeInstruction(avm.JUMPC),      // 1: Jump to invalid instruction 10
 		}
 
-		r := avm.NewRuntime(50, instructions))
+		r := avm.NewRuntime(50, instructions)
 		_, err := r.StartExecution()
 		if err == nil {
 			t.Fatal("Expected error for invalid jump destination")
@@ -613,7 +620,7 @@ func TestJumpOperations(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.JUMP, 0),        // 2: Jump back to instruction 0
 		}
 
-		r := avm.NewRuntime(50, instructions))
+		r := avm.NewRuntime(50, instructions)
 		_, err := r.StartExecution()
 
 		// This should fail due to out of gas (infinite loop)
@@ -637,7 +644,7 @@ func TestStopOperation(t *testing.T) {
 			avm.MakeInstructionWithValue(avm.PUSH, hex("D")), // 4: This should not execute
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		// Should get program stopped error
@@ -678,7 +685,7 @@ func TestStopOperation(t *testing.T) {
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 1: This should not execute
 		}
 
-		r := avm.NewRuntime(50, instructions))
+		r := avm.NewRuntime(50, instructions)
 		gasUsed, err := r.StartExecution()
 
 		// Should get program stopped error
@@ -711,7 +718,7 @@ func TestStopOperation(t *testing.T) {
 			avm.MakeInstructionWithValue(avm.PUSH, hex("9")), // 4: Should not execute
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		gasUsed, err := r.StartExecution()
 
 		// Should get program stopped error
@@ -746,11 +753,8 @@ func TestStopOperation(t *testing.T) {
 
 func TestStackOverflow(t *testing.T) {
 	t.Run("Stack overflow with small stack size", func(t *testing.T) {
-		// Create a config with very small stack size
-		smallConfig := avm.RuntimeConfig{
-			 // Only allow 2 elements
-			
-		}
+		// Test with small stack - runtime config not implemented yet
+		// TODO: Implement stack size limits in RuntimeConfig
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A (stack: [A])
@@ -777,11 +781,8 @@ func TestStackOverflow(t *testing.T) {
 	})
 
 	t.Run("No overflow with unlimited stack", func(t *testing.T) {
-		// Create a config with unlimited stack size (0 means unlimited)
-		unlimitedConfig := avm.RuntimeConfig{
-			 // Unlimited
-			
-		}
+		// Config with unlimited stack size not implemented yet
+		// TODO: Implement unlimited stack configuration
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),
@@ -807,10 +808,7 @@ func TestStackOverflow(t *testing.T) {
 
 	t.Run("DUP causes overflow", func(t *testing.T) {
 		// Test that DUP can also cause overflow
-		smallConfig := avm.RuntimeConfig{
-			 // Only allow 1 element
-			
-		}
+		// TODO: Implement stack size limits for DUP operations
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // 0: Push A (stack: [A]) - at limit
@@ -847,7 +845,7 @@ func TestMemoryOperations(t *testing.T) {
 			avm.MakeInstruction(avm.MLOAD),                    // Load from address 0
 		}
 
-		r := avm.NewRuntime(1000, instructions))
+		r := avm.NewRuntime(1000, instructions)
 		gasUsed, err := r.StartExecution()
 
 		if err != nil {
@@ -890,7 +888,7 @@ func TestMemoryOperations(t *testing.T) {
 			avm.MakeInstruction(avm.MLOAD),
 		}
 
-		r := avm.NewRuntime(1000, instructions))
+		r := avm.NewRuntime(1000, instructions)
 		_, err := r.StartExecution()
 
 		if err != nil {
@@ -922,7 +920,7 @@ func TestMemoryOperations(t *testing.T) {
 			avm.MakeInstruction(avm.MLOAD),                    // Load from uninitialized address
 		}
 
-		r := avm.NewRuntime(1000, instructions))
+		r := avm.NewRuntime(1000, instructions)
 		_, err := r.StartExecution()
 
 		if err != nil {
@@ -942,10 +940,7 @@ func TestMemoryOperations(t *testing.T) {
 
 	t.Run("Memory out of bounds - store", func(t *testing.T) {
 		// Try to store beyond memory limit
-		config := avm.RuntimeConfig{
-			
-			 // Small memory limit
-		}
+		// TODO: Implement memory limits in RuntimeConfig
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")),  // address 10 (out of bounds for size 10)
@@ -967,10 +962,7 @@ func TestMemoryOperations(t *testing.T) {
 
 	t.Run("Memory out of bounds - load", func(t *testing.T) {
 		// Try to load beyond memory limit
-		config := avm.RuntimeConfig{
-			
-			 // Small memory limit
-		}
+		// TODO: Implement memory limits in RuntimeConfig
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("A")), // address 10 (out of bounds for size 10)
@@ -990,11 +982,8 @@ func TestMemoryOperations(t *testing.T) {
 	})
 
 	t.Run("Unlimited memory", func(t *testing.T) {
-		// Test with unlimited memory (MemorySize = 0)
-		config := avm.RuntimeConfig{
-			
-			 // Unlimited memory
-		}
+		// Test with unlimited memory
+		// TODO: Implement unlimited memory configuration
 
 		instructions := []avm.Instruction{
 			avm.MakeInstructionWithValue(avm.PUSH, hex("FFFF")), // Large address
@@ -1029,7 +1018,7 @@ func TestMemoryOperations(t *testing.T) {
 			avm.MakeInstruction(avm.MSTORE),                  // Needs two values: address and value
 		}
 
-		r := avm.NewRuntime(1000, instructions))
+		r := avm.NewRuntime(1000, instructions)
 		_, err := r.StartExecution()
 
 		if err == nil {
@@ -1047,7 +1036,7 @@ func TestMemoryOperations(t *testing.T) {
 			avm.MakeInstruction(avm.MLOAD), // Needs address on stack
 		}
 
-		r := avm.NewRuntime(1000, instructions))
+		r := avm.NewRuntime(1000, instructions)
 		_, err := r.StartExecution()
 
 		if err == nil {
@@ -1069,7 +1058,7 @@ func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.SWAP, 2),        // Valid: swap with 2nd from top (stack has 3 elements)
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		if err != nil {
@@ -1084,7 +1073,7 @@ func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.SWAP, 2),        // Invalid: trying to swap with 2nd from top when stack only has 2 elements (indexes 0,1)
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		if err == nil {
@@ -1104,7 +1093,7 @@ func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.SWAP, 3),        // Invalid: param equals stack size (indexes 0,1,2 but trying to access 3)
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		if err == nil {
@@ -1122,7 +1111,7 @@ func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.SWAP, 0),        // Valid: swap with self
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		if err != nil {
@@ -1135,7 +1124,7 @@ func TestSwapValidationBasedOnCurrentStackSize(t *testing.T) {
 			avm.MakeInstructionWithParam(avm.SWAP, 0), // Invalid: no elements on stack
 		}
 
-		r := avm.NewRuntime(100, instructions))
+		r := avm.NewRuntime(100, instructions)
 		_, err := r.StartExecution()
 
 		if err == nil {

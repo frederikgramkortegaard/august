@@ -26,7 +26,7 @@ func TestStorageRootUpdates(t *testing.T) {
 		Address:      blockchain.PublicKey{1, 2, 3}, // Dummy address
 		Balance:      1000,
 		Nonce:        0,
-		Instructions: []avm.Instruction{{Opcode: avm.STOP}}, // Simple contract
+		Instructions: []avm.Instruction{avm.MakeInstruction(avm.STOP)}, // Simple contract
 		Persistent:   persistent,
 		StorageRoot:  blockchain.Hash32{}, // Will be computed
 		CodeHash:     blockchain.Hash32{},
@@ -111,13 +111,13 @@ func TestStorageRootWithContractExecution(t *testing.T) {
 	t.Log("Step 2: Creating contract with storage operations")
 
 	initInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(777)}, // value
-		{Opcode: avm.PUSH, Value: big.NewInt(3)},   // address
-		{Opcode: avm.PSTORE},                       // store 777 at address 3
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(777)), // value
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)),   // address
+		avm.MakeInstruction(avm.PSTORE),                         // store 777 at address 3
 
-		{Opcode: avm.PUSH, Value: big.NewInt(888)}, // another value
-		{Opcode: avm.PUSH, Value: big.NewInt(8)},   // another address
-		{Opcode: avm.PSTORE},                       // store 888 at address 8
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(888)), // another value
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(8)),   // another address
+		avm.MakeInstruction(avm.PSTORE),                         // store 888 at address 8
 	}
 
 	// Step 3: Deploy contract and verify StorageRoot is computed
@@ -128,7 +128,7 @@ func TestStorageRootWithContractExecution(t *testing.T) {
 		To:               blockchain.PublicKey{}, // Empty = contract deployment
 		Amount:           1 * config.AUG,
 		Nonce:            1,
-		Instructions:     []avm.Instruction{{Opcode: avm.STOP}}, // Runtime code
+		Instructions:     []avm.Instruction{avm.MakeInstruction(avm.STOP)}, // Runtime code
 		InitInstructions: initInstructions,                      // Init code
 		GasLimit:         50000,
 		GasPrice:         100,

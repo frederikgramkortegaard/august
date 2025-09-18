@@ -64,9 +64,10 @@ func NewMempool() *Mempool {
 	}
 }
 
-// AddTransaction adds a transaction to the mempool after validation
-// Returns true if added, false if rejected (duplicate, invalid, etc.)
-func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[blockchain.PublicKey]*blockchain.AccountState) bool {
+// AddTransaction adds a validated transaction to the mempool
+// Returns true if added, false if rejected (duplicate or fee too low)
+// Note: Transaction must be pre-validated by the caller
+func (mp *Mempool) AddTransaction(tx blockchain.Transaction) bool {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -77,11 +78,6 @@ func (mp *Mempool) AddTransaction(tx blockchain.Transaction, accountStates map[b
 	// Check if transaction already exists
 	if _, exists := mp.transactions[hashStr]; exists {
 		return false // Duplicate transaction
-	}
-
-	// Validate transaction against current chain state
-	if err := blockchain.ValidateTransaction(&tx, accountStates); err != nil {
-		return false // Invalid transaction
 	}
 
 	entry := &MempoolEntry{

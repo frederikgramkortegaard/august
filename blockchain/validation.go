@@ -9,21 +9,6 @@ import (
 	"log"
 )
 
-// ErrMissingParent is returned when a block's parent is not found in the chain
-type ErrMissingParent struct {
-	Hash Hash32
-}
-
-func (e ErrMissingParent) Error() string { return "missing parent" }
-
-// ErrSwitchChain is returned when a block triggers a chain reorganization
-type ErrSwitchChain struct {
-	Block          *Block
-	CommonAncestor *Block
-}
-
-func (e ErrSwitchChain) Error() string { return "chain switch" }
-
 // ValidateHeaderStructure validates a single block header without chain context
 // This is used by networking layer to validate headers from peers
 func ValidateHeaderStructure(header *BlockHeader) error {
@@ -45,14 +30,11 @@ func ValidateHeaderStructure(header *BlockHeader) error {
 		}
 	}
 
-	// 3. Timestamp sanity (not too far in future)
-	// TODO: Add timestamp validation if needed
-
 	return nil
 }
 
-// ValidateHeaderWithParent validates a header including TotalWork calculation
-func ValidateHeaderWithParent(header *BlockHeader, parentTotalWork string) error {
+// ValidateHeaderTotalWork validates a header including TotalWork calculation
+func ValidateHeaderTotalWork(header *BlockHeader, previousTotalWork string) error {
 	// First do basic structure validation
 	if err := ValidateHeaderStructure(header); err != nil {
 		return err
@@ -61,7 +43,7 @@ func ValidateHeaderWithParent(header *BlockHeader, parentTotalWork string) error
 	// Validate TotalWork calculation
 	if header.Height > 0 {
 		blockWork := CalculateBlockWorkFromBits(header.Bits)
-		expectedTotalWork := AddWork(parentTotalWork, blockWork)
+		expectedTotalWork := AddWork(previousTotalWork, blockWork)
 
 		if header.TotalWork != expectedTotalWork {
 			return fmt.Errorf("invalid total work: got %s, expected %s",
@@ -95,26 +77,14 @@ func ValidateBlockStructure(block *Block) error {
 			}
 		} else {
 			// Regular transaction - validate signature structure
-			if !validateTransactionSignature(&tx) {
+			hash := tx.GetHash()
+			if !ed25519.Verify(tx.From[:], hash[:], tx.Signature[:]) {
 				return fmt.Errorf("invalid transaction signature in transaction %d", i)
 			}
 		}
 	}
 
 	return nil
-}
-
-func validateBlockHeaderIsGenesis(header *BlockHeader) bool {
-	// Ensure the first block is genesis
-	genesisHash := GenesisBlock.Header.GetHash()
-	firstBlockHash := header.GetHash()
-
-	// Direct comparison for [32]byte arrays
-	if genesisHash != firstBlockHash {
-		fmt.Println("Block is not genesis")
-		return false
-	}
-	return true
 }
 
 // validateBlockStructure validates block structure using chain context for difficulty
@@ -124,10 +94,29 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	currentHeight := len(chain.Blocks)
 
 	// Genesis block validation
-	if currentHeight == 0 {
-		if !validateBlockHeaderIsGenesis(&block.Header) {
-			return fmt.Errorf("block is not genesis")
+	blockHash := block.Header.GetHash()
+	genesisHash := GenesisBlock.Header.GetHash()
+	isGenesisBlock := blockHash == genesisHash
+	log.Printf("VALIDATION DEBUG: blockHash=%s, genesisHash=%s, isGenesis=%t", blockHash.String(), genesisHash.String(), isGenesisBlock)
+	if isGenesisBlock {
+		// Validate genesis-specific rules
+		if block.Header.PreviousHash != (Hash32{}) {
+			return fmt.Errorf("genesis block must have all-zeros parent hash")
 		}
+		if len(block.Transactions) != 1 {
+			return fmt.Errorf("genesis block must have exactly one transaction")
+		}
+		coinbase := block.Transactions[0]
+		if coinbase.From != (PublicKey{}) {
+			return fmt.Errorf("genesis coinbase must have empty From address")
+		}
+		if coinbase.To != config.FirstUser {
+			return fmt.Errorf("genesis coinbase must go to config.FirstUser")
+		}
+		if coinbase.Amount != 10*config.AUG {
+			return fmt.Errorf("genesis coinbase amount must be exactly 10 AUG, got %d", coinbase.Amount)
+		}
+		return nil
 	} else {
 		// Check if we have the parent block using O(1) lookup
 		var parentExists bool
@@ -141,6 +130,9 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 		// Check if this is a fork (parent exists but is not the tip)
 		if chain.Tip != nil && chain.Tip.Header.GetHash() != block.Header.PreviousHash {
 			// This is a fork - let ValidateAndApplyBlock handle chain switching
+			tipHash := chain.Tip.Header.GetHash()
+			log.Printf("FORK DETECTED: tip hash=%x, block.PreviousHash=%x, block height=%d, tip height=%d",
+				tipHash[:8], block.Header.PreviousHash[:8], block.Header.Height, chain.Tip.Header.Height)
 			return ErrSwitchChain{Block: block, CommonAncestor: prevBlock}
 		}
 	}
@@ -171,21 +163,6 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	}
 
 	return nil
-}
-
-// validateTransactionSignature validates just the cryptographic signature
-func validateTransactionSignature(tsx *Transaction) bool {
-	log.Printf("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
-	hash := tsx.GetHash()
-	publicKey := tsx.From[:]
-	signature := tsx.Signature[:]
-	valid := ed25519.Verify(publicKey, hash[:], signature)
-	if !valid {
-		log.Printf("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
-	} else {
-		log.Printf("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
-	}
-	return valid
 }
 
 // ValidateAndApplyTransaction validates and applies a single transaction to account states
@@ -237,9 +214,15 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 	// Regular transactions - validate only
 
 	// 1. Signature validation
-	if !validateTransactionSignature(tsx) {
+	log.Printf("VALIDATION\tValidating transaction signature from %x", tsx.From[:8])
+	hash := tsx.GetHash()
+	publicKey := tsx.From[:]
+	signature := tsx.Signature[:]
+	if !ed25519.Verify(publicKey, hash[:], signature) {
+		log.Printf("VALIDATION\tInvalid signature for transaction from %x", tsx.From[:8])
 		return fmt.Errorf("invalid transaction signature")
 	}
+	log.Printf("VALIDATION\tValid signature for transaction from %x", tsx.From[:8])
 
 	// 2. Check sender account exists and has sufficient balance
 	fromState, exists := accountStates[tsx.From]
@@ -289,13 +272,6 @@ func ValidateTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountS
 
 	// All validation passed - transaction is valid
 	return nil
-}
-
-// ValidateStandaloneTransaction validates a transaction against current chain state for mempool
-// This is used by the networking layer when receiving broadcast transactions before they're in blocks
-func ValidateStandaloneTransaction(tsx *Transaction, chain *Chain) error {
-	// Use the current chain's account states for validation
-	return ValidateTransaction(tsx, chain.AccountStates)
 }
 
 // ApplyTransaction applies a valid transaction to account states (assumes already validated)
@@ -548,7 +524,7 @@ func ValidateBlock(block *Block, chain *Chain) error {
 			Address:      v.Address,
 			Balance:      v.Balance,
 			Nonce:        v.Nonce,
-			Instructions: v.Instructions, // Include contract code
+			Instructions: v.Instructions,
 			Persistent:   make(map[string]string),
 			StorageRoot:  v.StorageRoot,
 			CodeHash:     v.CodeHash,
@@ -581,7 +557,7 @@ func ValidateBlock(block *Block, chain *Chain) error {
 		}
 	}
 
-	// Use the gas usage reported in block header (trust but verify approach)
+	// Use the gas usage reported in block header (trust but verify until we execute the contract)
 	totalGasUsed := block.Header.GasUsed
 
 	// Validate block gas usage doesn't exceed limit
@@ -639,14 +615,18 @@ func ApplyBlock(block *Block, chain *Chain) error {
 		return fmt.Errorf("block reports gas used %d but actual is %d", block.Header.GasUsed, totalGasUsed)
 	}
 
-	// Validate coinbase transaction amount based on actual gas fees
-	expectedCoinbaseAmount, err := utils.SafeAdd(totalGasFees, config.BlockReward)
-	if err != nil {
-		return fmt.Errorf("coinbase amount calculation overflow: %w", err)
-	}
-	if block.Transactions[0].Amount != expectedCoinbaseAmount {
-		return fmt.Errorf("coinbase transaction amount %d != expected %d (gas fees %d + block reward %d)",
-			block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, config.BlockReward)
+	// Skip coinbase validation for genesis block (handled in structure validation)
+	isGenesisBlock := block.Header.GetHash() == GenesisBlock.Header.GetHash()
+	if !isGenesisBlock {
+		// Validate coinbase transaction amount based on actual gas fees
+		expectedCoinbaseAmount, err := utils.SafeAdd(totalGasFees, config.BlockReward)
+		if err != nil {
+			return fmt.Errorf("coinbase amount calculation overflow: %w", err)
+		}
+		if block.Transactions[0].Amount != expectedCoinbaseAmount {
+			return fmt.Errorf("coinbase transaction amount %d != expected %d (gas fees %d + block reward %d)",
+				block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, config.BlockReward)
+		}
 	}
 
 	// Add the block to the chain and update tip/index
@@ -712,7 +692,7 @@ func ValidateHeaderChainWithWork(headers []BlockHeader, startingTotalWork string
 
 	for i, header := range headers {
 		// Validate with parent total work
-		if err := ValidateHeaderWithParent(&header, currentTotalWork); err != nil {
+		if err := ValidateHeaderTotalWork(&header, currentTotalWork); err != nil {
 			log.Printf("VALIDATION\tHeader %d failed TotalWork validation: %v", i, err)
 			return false
 		}
@@ -745,128 +725,4 @@ func ValidateHeaderChainWithWork(headers []BlockHeader, startingTotalWork string
 	return true
 }
 
-// ValidateAndBuildChain validates an entire chain and builds the account states
-func ValidateAndBuildChain(blocks []*Block) *Chain {
-	if len(blocks) == 0 {
-		fmt.Println("Chain has no blocks")
-		return nil
-	}
 
-	// Create chain with empty account states
-	chain := &Chain{
-		Blocks:        blocks,
-		AccountStates: make(map[PublicKey]*AccountState),
-	}
-
-	// Genesis block validation
-	if !validateBlockHeaderIsGenesis(&blocks[0].Header) {
-		fmt.Println("Genesis block validation failed")
-		return nil
-	}
-
-	// Process genesis block transactions (usually just coinbase)
-	for _, tsx := range blocks[0].Transactions {
-		if !ValidateAndApplyTransaction(&tsx, chain.AccountStates) {
-			fmt.Println("Genesis block transaction failed")
-			return nil
-		}
-	}
-
-	// Process remaining blocks using ValidateAndApplyBlock
-	for i := 1; i < len(blocks); i++ {
-		fmt.Printf("Validating block %d\n", i)
-
-		if err := ValidateAndApplyBlock(blocks[i], chain); err != nil {
-			fmt.Printf("Block %d validation failed: %v\n", i, err)
-			return nil
-		}
-	}
-
-	fmt.Printf("Chain validation successful! Final state has %d accounts\n", len(chain.AccountStates))
-	return chain
-}
-
-// ValidateCompleteChain validates a complete chain by rebuilding state from genesis
-// This is used for validating candidate chains before promotion
-func ValidateCompleteChain(candidateChain *Chain) error {
-	if len(candidateChain.Blocks) == 0 {
-		return fmt.Errorf("empty chain")
-	}
-
-	// Create a fresh chain starting with genesis and rebuild state from scratch
-	validationChain := &Chain{
-		Blocks:        []*Block{candidateChain.Blocks[0]}, // Start with genesis
-		AccountStates: make(map[PublicKey]*AccountState),
-	}
-
-	// Initialize with genesis account (config.FirstUser gets 10 AUG)
-	validationChain.AccountStates[config.FirstUser] = &AccountState{
-		Address: config.FirstUser,
-		Balance: 10 * config.AUG,
-		Nonce:   0,
-	}
-
-	// Validate each block sequentially
-	for i := 1; i < len(candidateChain.Blocks); i++ {
-		block := candidateChain.Blocks[i]
-		if err := ValidateAndApplyBlock(block, validationChain); err != nil {
-			return fmt.Errorf("block %d validation failed: %w", block.Header.Height, err)
-		}
-	}
-
-	return nil
-}
-
-// BlockEvaluationResult represents the result of evaluating whether we want a block
-type BlockEvaluationResult struct {
-	ShouldRequest bool
-	Reason        string
-	Action        string // "sequence", "sync", "fork", "ignore"
-}
-
-// EvaluateBlockHeaderForSync determines if we should request a block based on its header
-func EvaluateBlockHeaderForSync(header *BlockHeader, currentChain *Chain) BlockEvaluationResult {
-	ourHeight := uint64(0)
-	if len(currentChain.Blocks) > 0 {
-		ourHeight = currentChain.Blocks[len(currentChain.Blocks)-1].Header.Height
-	}
-
-	if header.Height == ourHeight+1 {
-		// This might be the next block in sequence
-		if len(currentChain.Blocks) > 0 {
-			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
-			if ourTip.Header.GetHash() == header.PreviousHash {
-				return BlockEvaluationResult{
-					ShouldRequest: true,
-					Reason:        "next block in sequence",
-					Action:        "sequence",
-				}
-			}
-		}
-	} else if header.Height > ourHeight+1 {
-		// This block is ahead of us - we might need to sync
-		return BlockEvaluationResult{
-			ShouldRequest: true,
-			Reason:        "block ahead of us, might need sync",
-			Action:        "sync",
-		}
-	} else if header.Height <= ourHeight {
-		// Check if this could be a fork with more work
-		if len(currentChain.Blocks) > 0 {
-			ourTip := currentChain.Blocks[len(currentChain.Blocks)-1]
-			if CompareWork(header.TotalWork, ourTip.Header.TotalWork) > 0 {
-				return BlockEvaluationResult{
-					ShouldRequest: true,
-					Reason:        "potential fork with more work",
-					Action:        "fork",
-				}
-			}
-		}
-	}
-
-	return BlockEvaluationResult{
-		ShouldRequest: false,
-		Reason:        "not needed",
-		Action:        "ignore",
-	}
-}

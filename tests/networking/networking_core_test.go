@@ -86,27 +86,25 @@ func stopTestNodes(nodes []*node.FullNode) {
 	wg.Wait()
 }
 
-// setupNetworkingNodes creates nodes and starts their networking
+// setupNetworkingNodes creates nodes and starts them
 // Returns the nodes - caller is responsible for cleanup with defer stopTestNodes(nodes)
 func setupNetworkingNodes(t *testing.T, nodeCount int) []*node.FullNode {
 	nodes := createTestNodes(nodeCount)
 
 	var wg sync.WaitGroup
 
-	// Start networking for all nodes
+	// Start all nodes (which includes networking)
 	for idx, n := range nodes {
 		wg.Add(1)
 		go func(id int, node *node.FullNode) {
 			defer wg.Done()
-			if !<-node.StartNetworking() {
-				t.Errorf("Node %d failed to start networking", id)
-				return
-			}
-			t.Logf("Node %d networking started", id)
+			ready := node.Start()
+			<-ready
+			t.Logf("Node %d started", id)
 		}(idx, n)
 	}
 
-	wg.Wait() // Wait for all networking to start
+	wg.Wait() // Wait for all nodes to start
 	return nodes
 }
 
@@ -123,7 +121,7 @@ func connectSeeds(t *testing.T, nodes []*node.FullNode) {
 				delay := time.Duration(1000) * time.Millisecond
 				time.Sleep(delay)
 
-				if !<-node.ConnectToSeeds() {
+				if !<-node.NetworkServer.ConnectToSeeds() {
 					t.Errorf("Node %d failed to connect to seeds", id)
 				} else {
 					t.Logf("Node %d connected to seeds", id)
@@ -167,7 +165,7 @@ func TestSeedConnection(t *testing.T) {
 
 	// Verify connections: non-seed nodes should have peer connections
 	for idx, n := range nodes {
-		peerCount := len(n.GetNetworkServer().GetConnectedPeers())
+		peerCount := len(n.NetworkServer.GetConnectedPeers())
 		if idx == 0 {
 			// Seed should have connections from other nodes
 			if peerCount != NUM_NODES-1 {
@@ -209,7 +207,7 @@ func TestDiscovery(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 
 	for idx, n := range nodes {
-		connectedPeers := n.GetNetworkServer().GetConnectedPeers()
+		connectedPeers := n.NetworkServer.GetConnectedPeers()
 		if (NUM_NODES-1)-len(connectedPeers) > _MAX_MISSING_PEERS {
 			t.Fatalf("Node %d only had %d connections but expected %d\n", idx, len(connectedPeers), NUM_NODES-1)
 		} else {

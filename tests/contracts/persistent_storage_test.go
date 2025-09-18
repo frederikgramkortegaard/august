@@ -73,29 +73,29 @@ func TestPersistentStorageBasics(t *testing.T) {
 	// Create a contract that uses persistent storage
 	// Init: Store initial value 42 at address 1
 	initInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(42)}, // Push value 42
-		{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Push address 1
-		{Opcode: avm.PSTORE},                      // Store 42 at address 1
-		{Opcode: avm.PUSH, Value: big.NewInt(1)},  // Push address 1
-		{Opcode: avm.PLOAD},                       // Load from address 1
-		{Opcode: avm.EMIT},                        // Emit the loaded value
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(42)), // Push value 42
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)),  // Push address 1
+		avm.MakeInstruction(avm.PSTORE),                        // Store 42 at address 1
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)),  // Push address 1
+		avm.MakeInstruction(avm.PLOAD),                         // Load from address 1
+		avm.MakeInstruction(avm.EMIT),                          // Emit the loaded value
 	}
 
 	// Runtime: Increment the stored value and store it back
 	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Push address 1
-		{Opcode: avm.PLOAD},                      // Load current value (stack: [42])
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Push increment value (stack: [42, 1])
-		{Opcode: avm.ADD},                        // Add 1 to current value (stack: [43])
-		{Opcode: avm.DUP},                        // Duplicate result (stack: [43, 43])
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Push address 1 (stack: [43, 43, 1])
-		{Opcode: avm.SWAP, Param: 1},             // Swap top two (stack: [43, 1, 43])
-		{Opcode: avm.POP},                        // Remove extra value (stack: [43, 1])
-		{Opcode: avm.PSTORE},                     // Store 43 at address 1 (stack: [])
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Push address 1 for loading
-		{Opcode: avm.PLOAD},                      // Load to verify (stack: [43])
-		{Opcode: avm.EMIT},                       // Emit the new value
-		{Opcode: avm.STOP},
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // Push address 1
+		avm.MakeInstruction(avm.PLOAD),                        // Load current value (stack: [42])
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // Push increment value (stack: [42, 1])
+		avm.MakeInstruction(avm.ADD),                          // Add 1 to current value (stack: [43])
+		avm.MakeInstruction(avm.DUP),                          // Duplicate result (stack: [43, 43])
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // Push address 1 (stack: [43, 43, 1])
+		avm.MakeInstructionWithParam(avm.SWAP, 1),             // Swap top two (stack: [43, 1, 43])
+		avm.MakeInstruction(avm.POP),                          // Remove extra value (stack: [43, 1])
+		avm.MakeInstruction(avm.PSTORE),                       // Store 43 at address 1 (stack: [])
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // Push address 1 for loading
+		avm.MakeInstruction(avm.PLOAD),                        // Load to verify (stack: [43])
+		avm.MakeInstruction(avm.EMIT),                         // Emit the new value
+		avm.MakeInstruction(avm.STOP),
 	}
 
 	// Deploy the contract
@@ -369,31 +369,31 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 	// Init: Store multiple values at different addresses
 	initInstructions := []avm.Instruction{
 		// Store 100 at address 1
-		{Opcode: avm.PUSH, Value: big.NewInt(100)},
-		{Opcode: avm.PUSH, Value: big.NewInt(1)},
-		{Opcode: avm.PSTORE},
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(100)),
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)),
+		avm.MakeInstruction(avm.PSTORE),
 		// Store 200 at address 2
-		{Opcode: avm.PUSH, Value: big.NewInt(200)},
-		{Opcode: avm.PUSH, Value: big.NewInt(2)},
-		{Opcode: avm.PSTORE},
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(200)),
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(2)),
+		avm.MakeInstruction(avm.PSTORE),
 		// Store 300 at address 3
-		{Opcode: avm.PUSH, Value: big.NewInt(300)},
-		{Opcode: avm.PUSH, Value: big.NewInt(3)},
-		{Opcode: avm.PSTORE},
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(300)),
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)),
+		avm.MakeInstruction(avm.PSTORE),
 	}
 
 	// Runtime: Load all values, add them up, and emit result
 	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.PUSH, Value: big.NewInt(1)}, // Load from address 1
-		{Opcode: avm.PLOAD},
-		{Opcode: avm.PUSH, Value: big.NewInt(2)}, // Load from address 2
-		{Opcode: avm.PLOAD},
-		{Opcode: avm.ADD},                        // Add first two values
-		{Opcode: avm.PUSH, Value: big.NewInt(3)}, // Load from address 3
-		{Opcode: avm.PLOAD},
-		{Opcode: avm.ADD},  // Add third value (100+200+300=600)
-		{Opcode: avm.EMIT}, // Emit the sum
-		{Opcode: avm.STOP},
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(1)), // Load from address 1
+		avm.MakeInstruction(avm.PLOAD),
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(2)), // Load from address 2
+		avm.MakeInstruction(avm.PLOAD),
+		avm.MakeInstruction(avm.ADD),                          // Add first two values
+		avm.MakeInstructionWithValue(avm.PUSH, big.NewInt(3)), // Load from address 3
+		avm.MakeInstruction(avm.PLOAD),
+		avm.MakeInstruction(avm.ADD),  // Add third value (100+200+300=600)
+		avm.MakeInstruction(avm.EMIT), // Emit the sum
+		avm.MakeInstruction(avm.STOP),
 	}
 
 	// Deploy contract

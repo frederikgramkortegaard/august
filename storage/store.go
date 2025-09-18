@@ -25,10 +25,14 @@ func NewStore(dbname string) *Store {
 	// Load existing chain from disk if present
 	chain, err := GetChain(db)
 	if err != nil {
-		// No existing chain, start with empty
+		// No existing chain, start with genesis
 		chain = &blockchain.Chain{
-			Blocks:        make([]*blockchain.Block, 0),
+			Blocks:        []*blockchain.Block{blockchain.GenesisBlock},
 			AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+		}
+		// Apply genesis transactions to account states
+		for _, tx := range blockchain.GenesisBlock.Transactions {
+			blockchain.ValidateAndApplyTransaction(&tx, chain.AccountStates)
 		}
 	}
 
@@ -41,8 +45,12 @@ func NewStore(dbname string) *Store {
 // NewMemoryStore creates a new memory-only storage instance (no persistence)
 func NewMemoryStore() *Store {
 	chain := &blockchain.Chain{
-		Blocks:        make([]*blockchain.Block, 0),
+		Blocks:        []*blockchain.Block{blockchain.GenesisBlock},
 		AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
+	}
+	// Apply genesis transactions to account states
+	for _, tx := range blockchain.GenesisBlock.Transactions {
+		blockchain.ValidateAndApplyTransaction(&tx, chain.AccountStates)
 	}
 
 	return &Store{
@@ -189,10 +197,37 @@ func (s *Store) GetChainHeight() (uint64, error) {
 	return uint64(len(s.chain.Blocks)), nil
 }
 
-// GetChain returns the complete chain (from memory)
+// GetChain returns the complete chain (from memory), initializing with genesis if empty
 func (s *Store) GetChain() (*blockchain.Chain, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If chain is empty, initialize with genesis block
+	if s.chain != nil && len(s.chain.Blocks) == 0 {
+		// Add genesis block
+		s.chain.Blocks = append(s.chain.Blocks, blockchain.GenesisBlock)
+
+		// Update block index
+		if s.chain.BlockIndex == nil {
+			s.chain.BlockIndex = make(map[blockchain.Hash32]*blockchain.Block)
+		}
+		blockHash := blockchain.GenesisBlock.Header.GetHash()
+		s.chain.BlockIndex[blockHash] = blockchain.GenesisBlock
+
+		// Update tip
+		s.chain.Tip = blockchain.GenesisBlock
+
+		// Persist to disk if we have a database
+		if s.db != nil {
+			if err := StoreBlock(s.db, blockchain.GenesisBlock); err != nil {
+				// Rollback on failure
+				s.chain.Blocks = s.chain.Blocks[:0]
+				delete(s.chain.BlockIndex, blockHash)
+				s.chain.Tip = nil
+				return nil, fmt.Errorf("failed to persist genesis block: %w", err)
+			}
+		}
+	}
 
 	return s.chain, nil
 }
@@ -212,6 +247,62 @@ func (s *Store) GetAccountStates() (map[blockchain.PublicKey]*blockchain.Account
 	}
 
 	return s.chain.AccountStates, nil
+}
+
+// GetChainHead returns information about the current chain head
+func (s *Store) GetChainHead() blockchain.ChainHead {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If chain is empty, initialize with genesis block (same logic as GetChain)
+	if s.chain != nil && len(s.chain.Blocks) == 0 {
+		// Add genesis block
+		s.chain.Blocks = append(s.chain.Blocks, blockchain.GenesisBlock)
+
+		// Update block index
+		if s.chain.BlockIndex == nil {
+			s.chain.BlockIndex = make(map[blockchain.Hash32]*blockchain.Block)
+		}
+		blockHash := blockchain.GenesisBlock.Header.GetHash()
+		s.chain.BlockIndex[blockHash] = blockchain.GenesisBlock
+
+		// Update tip
+		s.chain.Tip = blockchain.GenesisBlock
+
+		// Persist to disk if we have a database
+		if s.db != nil {
+			if err := StoreBlock(s.db, blockchain.GenesisBlock); err != nil {
+				// Rollback on failure
+				s.chain.Blocks = s.chain.Blocks[:0]
+				delete(s.chain.BlockIndex, blockHash)
+				s.chain.Tip = nil
+				// Return empty head on error
+				return blockchain.ChainHead{
+					Height:    0,
+					Hash:      blockchain.Hash32{},
+					TotalWork: "0",
+				}
+			}
+		}
+	}
+
+	if s.chain == nil || len(s.chain.Blocks) == 0 {
+		// Return empty chain info if still no blocks
+		return blockchain.ChainHead{
+			Height:    0,
+			Hash:      blockchain.Hash32{},
+			TotalWork: "0",
+		}
+	}
+
+	lastBlock := s.chain.Blocks[len(s.chain.Blocks)-1]
+	hash := lastBlock.Header.GetHash()
+
+	return blockchain.ChainHead{
+		Height:    lastBlock.Header.Height,
+		Hash:      hash,
+		TotalWork: lastBlock.Header.TotalWork,
+	}
 }
 
 // Lock acquires the write lock

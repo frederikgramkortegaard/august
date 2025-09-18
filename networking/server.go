@@ -13,13 +13,20 @@ import (
 	"time"
 )
 
+// Forward declaration to avoid circular import
+type FullNode interface {
+	ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{}
+	ProcessTransaction(tx *blockchain.Transaction) error
+	ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error
+}
+
 // NetworkConfig holds network server configuration
 type NetworkConfig struct {
-	Port                 string
-	NodeID               string
-	Store                *storage.Store
-	SeedPeers            []string                                    // Seed peers for discovery
-	TransactionProcessor func(*blockchain.Transaction) error         // Callback to process incoming transactions
+	Port      string
+	NodeID    string
+	Store     *storage.Store
+	SeedPeers []string
+	Node      FullNode
 }
 
 
@@ -27,6 +34,7 @@ type NetworkConfig struct {
 type Server struct {
 	config            NetworkConfig
 	listener          net.Listener
+	node              FullNode
 	// Peer management (integrated directly)
 	peers             map[string]*Peer
 	seedPeers         []string
@@ -39,17 +47,14 @@ type Server struct {
 	// Request-response handling (integrated directly)
 	pendingRequests   map[string]chan *Message
 	pendingMutex      sync.RWMutex
+
+	// Deduplication maps for different message types
+	recentHeaders     map[blockchain.Hash32]time.Time
+	recentHeadersMu   sync.RWMutex
 	recentBlocks      map[blockchain.Hash32]time.Time
 	recentBlocksMu    sync.RWMutex
-
-	// Transaction relay tracking (same pattern as blocks)
 	recentTransactions    map[blockchain.Hash32]time.Time
 	recentTransactionsMu  sync.RWMutex
-
-
-	// Block processing callback (set by node)
-	blockProcessor func(*blockchain.Block, ...string) <-chan struct{}
-
 }
 
 
@@ -77,6 +82,7 @@ func (s *Server) MarkTransactionSeen(txHash blockchain.Hash32) {
 func NewServer(config NetworkConfig) *Server {
 	server := &Server{
 		config:                config,
+		node:                  config.Node,
 		// Initialize peer management
 		peers:                 make(map[string]*Peer),
 		seedPeers:             config.SeedPeers,
@@ -84,6 +90,7 @@ func NewServer(config NetworkConfig) *Server {
 		peerConnections:       make(map[string]net.Conn),
 		shutdown:              make(chan bool),
 		shutdownComplete:      make(chan bool),
+		recentHeaders:         make(map[blockchain.Hash32]time.Time),
 		recentBlocks:          make(map[blockchain.Hash32]time.Time),
 		recentTransactions:    make(map[blockchain.Hash32]time.Time),
 	}
@@ -245,10 +252,6 @@ func (s *Server) GetListener() net.Listener {
 
 
 
-// SetBlockProcessor sets the callback function for processing blocks
-func (s *Server) SetBlockProcessor(processor func(*blockchain.Block, ...string) <-chan struct{}) {
-	s.blockProcessor = processor
-}
 
 
 // GetChainStore returns the chain store for testing purposes
@@ -288,7 +291,7 @@ func (s *Server) StartDiscovery() <-chan bool {
 		log.Printf(s.config.NodeID+"\t"+"Starting peer discovery with %d seed peers", len(s.config.SeedPeers))
 
 		// Connect to seed peers
-		go s.connectToSeeds()
+		go s.ConnectToSeeds()
 
 		// Periodic peer discovery is now handled by task scheduler
 
@@ -299,8 +302,8 @@ func (s *Server) StartDiscovery() <-chan bool {
 	return ready
 }
 
-// connectToSeeds attempts to connect to all seed peers and waits for completion
-func (s *Server) connectToSeeds() <-chan bool {
+// ConnectToSeeds attempts to connect to all seed peers and waits for completion
+func (s *Server) ConnectToSeeds() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
@@ -574,7 +577,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 		if len(connected) == 0 {
 			// No connections, try seed peers
 			log.Printf(s.config.NodeID+"\t"+"No connected peers, attempting to connect to seed peers")
-			<-s.connectToSeeds() // Wait for seed connections to complete
+			<-s.ConnectToSeeds() // Wait for seed connections to complete
 		} else if len(connected) < 15 {
 			// Few connections, try to get more
 			<-s.connectToDiscoveredPeers()

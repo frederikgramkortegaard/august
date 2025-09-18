@@ -249,6 +249,16 @@ func MakePushInstruction(value string) Instruction {
 	return Instruction{Opcode: PUSH, Value: &value}
 }
 
+// MakeInstructionWithValue creates a PUSH instruction with a big.Int value
+func MakeInstructionWithValue(opcode OPCODE, value *big.Int) Instruction {
+	if opcode != PUSH {
+		// For non-PUSH opcodes, ignore the value and create a simple instruction
+		return MakeInstruction(opcode)
+	}
+	hexValue := "0x" + value.Text(16)
+	return Instruction{Opcode: opcode, Value: &hexValue}
+}
+
 // instructionJSON is a helper struct for JSON serialization
 type instructionJSON struct {
 	Opcode string `json:"opcode"`

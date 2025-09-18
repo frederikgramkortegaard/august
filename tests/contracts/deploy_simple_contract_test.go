@@ -78,12 +78,12 @@ func TestDeploySimpleContract(t *testing.T) {
 
 	// Create simple contract with just NOOP instructions
 	initInstructions := []avm.Instruction{
-		{Opcode: avm.NOOP}, // Do nothing in init - this will succeed
+		avm.MakeInstruction(avm.NOOP), // Do nothing in init - this will succeed
 	}
 
 	runtimeInstructions := []avm.Instruction{
-		{Opcode: avm.NOOP}, // Do nothing in runtime
-		{Opcode: avm.STOP}, // Stop execution
+		avm.MakeInstruction(avm.NOOP), // Do nothing in runtime
+		avm.MakeInstruction(avm.STOP), // Stop execution
 	}
 
 	// Now create a contract deployment transaction from the miner
