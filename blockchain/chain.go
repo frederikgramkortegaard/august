@@ -1,6 +1,9 @@
 package blockchain
 
-import "august/avm"
+import (
+	"august/avm"
+	"sync"
+)
 
 // ChainHead represents the current head of the blockchain
 type ChainHead struct {
@@ -10,6 +13,7 @@ type ChainHead struct {
 }
 
 type Chain struct {
+	mu            sync.RWMutex                `json:"-"` // RWMutex for thread safety
 	Blocks        []*Block                    `json:"blocks"`
 	AccountStates map[PublicKey]*AccountState `json:"account_states"`
 	Tip           *Block                      `json:"-"` // Points to latest block for O(1) access

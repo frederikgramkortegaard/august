@@ -58,3 +58,13 @@ type Block struct {
 func (b *Block) GetHash() Hash32 {
 	return b.Header.GetHash()
 }
+
+// FindTransactionByHash searches for a transaction by hash within this block
+func (b *Block) FindTransactionByHash(txHash Hash32) (*Transaction, bool) {
+	for i := range b.Transactions {
+		if b.Transactions[i].GetHash() == txHash {
+			return &b.Transactions[i], true
+		}
+	}
+	return nil, false
+}
