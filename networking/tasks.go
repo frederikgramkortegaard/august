@@ -29,7 +29,6 @@ func (s *Server) NewTaskScheduler() *TaskScheduler {
 
 	// Register all tasks
 	ts.tasks["cleanup"] = ts.runCleanupTasks
-	ts.tasks["chain-sync"] = ts.runChainSync
 	ts.tasks["discovery"] = ts.runDiscovery
 	ts.tasks["peer-sharing"] = ts.runPeerSharing
 
@@ -43,9 +42,6 @@ func (s *Server) StartPeriodicProcesses() error {
 	// Start unified periodic cleanup system
 	ts.cleanupTicker = time.NewTicker(config.CleanupInterval)
 	go ts.unifiedPeriodicCleanup()
-
-	// Start chain sync
-	go ts.periodicChainSync()
 
 	return nil
 }
@@ -85,50 +81,25 @@ func (ts *TaskScheduler) unifiedPeriodicCleanup() {
 func (ts *TaskScheduler) runCleanupTasks() {
 	now := time.Now()
 
-	// 1. Clean up recent headers
-	ts.server.cleanRecentHeaders(now)
+	// Clean up all TTL-based caches
+	ts.server.cleanupTTLCaches(now)
 
-	// 2. Clean up recent blocks
-	ts.server.cleanRecentBlocks(now)
-
-	// 3. Clean up recent transactions
-	ts.server.cleanRecentTransactions(now)
-
-	// 4. Clean up dead peers
+	// Clean up dead peers
 	removed := ts.server.CleanupDeadPeers()
 	if removed > 0 {
 		log.Printf(ts.server.config.NodeID+"\t"+"Cleaned up %d dead peers", removed)
 	}
 
-	// 4. Log current chain status
+	// Log current chain status
 	ts.server.logChainStatus()
 
 	log.Printf(ts.server.config.NodeID + "\t" + "Periodic cleanup completed")
 }
 
-// periodicChainSync runs chain synchronization checks
-func (ts *TaskScheduler) periodicChainSync() {
-	ticker := time.NewTicker(config.ChainSyncFrequency)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			ts.runChainSync()
-		case <-ts.server.shutdown:
-			return
-		}
-	}
-}
-
-// runChainSync performs a single chain sync check
-func (ts *TaskScheduler) runChainSync() {
-	ts.server.checkPeerChains()
-}
 
 // periodicDiscovery runs peer discovery at regular intervals
 func (ts *TaskScheduler) periodicDiscovery() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(config.DiscoveryInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -183,82 +154,50 @@ func (s *Server) logChainStatus() {
 		len(latestBlock.Transactions))
 }
 
-// cleanRecentHeaders removes old entries from the recent headers cache
-func (s *Server) cleanRecentHeaders(now time.Time) {
+// cleanupTTLCaches removes old entries from all TTL-based caches
+func (s *Server) cleanupTTLCaches(now time.Time) {
+	// Clean up recent headers
 	s.recentHeadersMu.Lock()
-	defer s.recentHeadersMu.Unlock()
-
-	cleaned := 0
+	headersDeleted := 0
 	for hash, addedTime := range s.recentHeaders {
 		if now.Sub(addedTime) > config.RecentHeadersTTL {
 			delete(s.recentHeaders, hash)
-			cleaned++
+			headersDeleted++
 		}
 	}
+	s.recentHeadersMu.Unlock()
 
-	if cleaned > 0 {
-		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent headers", cleaned)
-	}
-}
-
-// cleanRecentBlocks removes old entries from the recent blocks cache
-func (s *Server) cleanRecentBlocks(now time.Time) {
+	// Clean up recent blocks
 	s.recentBlocksMu.Lock()
-	defer s.recentBlocksMu.Unlock()
-
-	cleaned := 0
+	blocksDeleted := 0
 	for hash, addedTime := range s.recentBlocks {
 		if now.Sub(addedTime) > config.RecentBlocksTTL {
 			delete(s.recentBlocks, hash)
-			cleaned++
+			blocksDeleted++
 		}
 	}
+	s.recentBlocksMu.Unlock()
 
-	if cleaned > 0 {
-		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent blocks", cleaned)
-	}
-}
-
-// cleanRecentTransactions removes old entries from the recent transactions cache
-func (s *Server) cleanRecentTransactions(now time.Time) {
+	// Clean up recent transactions
 	s.recentTransactionsMu.Lock()
-	defer s.recentTransactionsMu.Unlock()
-
-	cleaned := 0
+	transactionsDeleted := 0
 	for hash, addedTime := range s.recentTransactions {
 		if now.Sub(addedTime) > config.RecentTransactionsTTL {
 			delete(s.recentTransactions, hash)
-			cleaned++
+			transactionsDeleted++
 		}
 	}
+	s.recentTransactionsMu.Unlock()
 
-	if cleaned > 0 {
-		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent transactions", cleaned)
+	// Log cleanup results
+	if headersDeleted > 0 {
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent headers", headersDeleted)
+	}
+	if blocksDeleted > 0 {
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent blocks", blocksDeleted)
+	}
+	if transactionsDeleted > 0 {
+		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent transactions", transactionsDeleted)
 	}
 }
 
-// checkPeerChains requests chain heads from all connected peers to see if we need to sync
-func (s *Server) checkPeerChains() {
-	connectedPeers := s.GetConnectedPeers()
-	if len(connectedPeers) == 0 {
-		return // No peers to sync with
-	}
-
-	log.Printf(s.config.NodeID+"\t"+"Checking chain heads from %d peers", len(connectedPeers))
-
-	for _, peer := range connectedPeers {
-		go func(p *Peer) {
-			// Request chain head from peer
-			msg, err := NewMessage(MessageTypeRequestChainHead, RequestChainHeadPayload{})
-			if err != nil {
-				log.Printf(s.config.NodeID+"\t"+"Failed to create chain head request for %s: %v", p.Address, err)
-				return
-			}
-
-			// Use SendNotification since we'll handle the response in handleChainHead
-			if err := s.SendNotification(p, msg); err != nil {
-				log.Printf(s.config.NodeID+"\t"+"Failed to send chain head request to %s: %v", p.Address, err)
-			}
-		}(peer)
-	}
-}

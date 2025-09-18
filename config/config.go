@@ -61,6 +61,7 @@ const (
 	RecentTransactionsTTL = 5 * time.Minute  // How long to keep transactions in recent cache
 	CleanupInterval       = 30 * time.Second // How often to cleanup dead peers
 	ChainSyncFrequency    = 60 * time.Second // How often to ask peers about their chain information
+	DiscoveryInterval     = 30 * time.Second // How often to run peer discovery
 
 	// Mempool constants
 	MempoolMaxSize   = 1000               // Maximum number of transactions in mempool
