@@ -421,6 +421,7 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 				// Process the parent block - this should connect orphan blocks
 				<-n.ProcessBlock(blocks[0])
 			}()
+			// Return, the discovered block is now an orphan and will be connected "recursively" once it's parent n+x gets validated
 			return
 		}
 
@@ -447,7 +448,7 @@ func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...stri
 			// Perform Chain Switch - fork has more work
 			// Create new chain up to the common ancestor (fork point)
 			newChain := &blockchain.Chain{
-				Blocks:        chainCopy.Blocks[:details.CommonAncestor.Header.Height+1],
+				Blocks:        chainCopy.Blocks[:details.CommonAncestor.Header.Height+1], //@TODO : Verify this logic again
 				AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
 			}
 

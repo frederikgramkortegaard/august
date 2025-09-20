@@ -10,6 +10,104 @@ import (
 
 type Hash32 = types.Hash32
 
+// Signed 256-bit integer helper functions for two's complement arithmetic
+
+var (
+	// 2^256 for modulo operations
+	mod256 = new(big.Int).Lsh(big.NewInt(1), 256)
+	// 2^255 for sign bit check
+	sign256 = new(big.Int).Lsh(big.NewInt(1), 255)
+)
+
+// toSigned256 converts an unsigned 256-bit big.Int to signed using two's complement interpretation
+func toSigned256(n *big.Int) *big.Int {
+	// If the sign bit (bit 255) is set, convert to negative
+	if n.Cmp(sign256) >= 0 {
+		// Calculate two's complement: -(2^256 - n)
+		result := new(big.Int).Sub(mod256, n)
+		return result.Neg(result)
+	}
+	// Already positive, return copy
+	return new(big.Int).Set(n)
+}
+
+// toUnsigned256 converts a signed big.Int to unsigned 256-bit representation using two's complement
+func toUnsigned256(n *big.Int) *big.Int {
+	if n.Sign() < 0 {
+		// Calculate two's complement: 2^256 + n (since n is negative)
+		result := new(big.Int).Add(mod256, n)
+		return result
+	}
+	// Positive number, just ensure it's within 256-bit range
+	result := new(big.Int).Set(n)
+	return result.Mod(result, mod256)
+}
+
+// signedAdd performs signed addition with 256-bit overflow handling
+func signedAdd(a, b *big.Int) *big.Int {
+	// Convert to signed
+	signedA := toSigned256(a)
+	signedB := toSigned256(b)
+
+	// Perform signed addition
+	result := new(big.Int).Add(signedA, signedB)
+
+	// Convert back to unsigned representation
+	return toUnsigned256(result)
+}
+
+// signedSub performs signed subtraction with 256-bit overflow handling
+func signedSub(a, b *big.Int) *big.Int {
+	// Convert to signed
+	signedA := toSigned256(a)
+	signedB := toSigned256(b)
+
+	// Perform signed subtraction
+	result := new(big.Int).Sub(signedA, signedB)
+
+	// Convert back to unsigned representation
+	return toUnsigned256(result)
+}
+
+// signedMul performs signed multiplication with 256-bit overflow handling
+func signedMul(a, b *big.Int) *big.Int {
+	// Convert to signed
+	signedA := toSigned256(a)
+	signedB := toSigned256(b)
+
+	// Perform signed multiplication
+	result := new(big.Int).Mul(signedA, signedB)
+
+	// Convert back to unsigned representation
+	return toUnsigned256(result)
+}
+
+// signedDiv performs signed division with proper handling of negative numbers
+func signedDiv(a, b *big.Int) *big.Int {
+	// Convert to signed
+	signedA := toSigned256(a)
+	signedB := toSigned256(b)
+
+	// Check for division by zero
+	if signedB.Sign() == 0 {
+		return big.NewInt(0) // Return 0 for division by zero (could also panic)
+	}
+
+	// Perform signed division (truncates toward zero)
+	result := new(big.Int).Div(signedA, signedB)
+
+	// Convert back to unsigned representation
+	return toUnsigned256(result)
+}
+
+// signedCmp compares two unsigned 256-bit values as signed integers
+// Returns: -1 if a < b, 0 if a == b, 1 if a > b
+func signedCmp(a, b *big.Int) int {
+	signedA := toSigned256(a)
+	signedB := toSigned256(b)
+	return signedA.Cmp(signedB)
+}
+
 // BlockchainContext contains immutable blockchain data needed for AVM execution
 type BlockchainContext struct {
 	BlockNumber     uint64                                      // Current block height
@@ -271,36 +369,36 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			res := new(big.Int).Add(v2, v1)
-			mod := new(big.Int).Lsh(big.NewInt(1), 256) // 2^256
-			err = r.Stack.Push(res.Mod(res, mod))
+			// Perform signed addition with two's complement
+			res := signedAdd(v2, v1)
+			err = r.Stack.Push(res)
 		}
 	case SUB:
 		v1, v2, popErr := r.Stack.Pop2()
 		if popErr != nil {
 			err = popErr
 		} else {
-			res := new(big.Int).Sub(v2, v1)
-			mod := new(big.Int).Lsh(big.NewInt(1), 256) // 2^256
-			err = r.Stack.Push(res.Mod(res, mod))
+			// Perform signed subtraction with two's complement
+			res := signedSub(v2, v1)
+			err = r.Stack.Push(res)
 		}
 	case MUL:
 		v1, v2, popErr := r.Stack.Pop2()
 		if popErr != nil {
 			err = popErr
 		} else {
-			res := new(big.Int).Mul(v2, v1)
-			mod := new(big.Int).Lsh(big.NewInt(1), 256) // 2^256
-			err = r.Stack.Push(res.Mod(res, mod))
+			// Perform signed multiplication with two's complement
+			res := signedMul(v2, v1)
+			err = r.Stack.Push(res)
 		}
 	case DIV:
 		v1, v2, popErr := r.Stack.Pop2()
 		if popErr != nil {
 			err = popErr
 		} else {
-			res := new(big.Int).Div(v2, v1)
-			mod := new(big.Int).Lsh(big.NewInt(1), 256) // 2^256
-			err = r.Stack.Push(res.Mod(res, mod))
+			// Perform signed division with two's complement
+			res := signedDiv(v2, v1)
+			err = r.Stack.Push(res)
 		}
 	case AND:
 		v1, v2, popErr := r.Stack.Pop2()
@@ -336,7 +434,8 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			if v2.Cmp(v1) < 0 {
+			// Perform signed comparison
+			if signedCmp(v2, v1) < 0 {
 				err = r.Stack.Push(big.NewInt(1))
 			} else {
 				err = r.Stack.Push(big.NewInt(0))
@@ -347,7 +446,8 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			if v2.Cmp(v1) > 0 {
+			// Perform signed comparison
+			if signedCmp(v2, v1) > 0 {
 				err = r.Stack.Push(big.NewInt(1))
 			} else {
 				err = r.Stack.Push(big.NewInt(0))
