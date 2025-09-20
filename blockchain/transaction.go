@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"august/avm"
 	"august/utils"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -15,8 +14,8 @@ type Transaction struct {
 	Nonce            uint64            `json:"nonce"`
 	Timestamp        uint64            `json:"timestamp"`         // Unix timestamp when transaction was created
 	ChainID          uint64            `json:"chain_id"`          // Chain identifier for replay protection
-	Instructions     []avm.Instruction `json:"instructions"`      // Contract runtime code (empty for regular transfers)
-	InitInstructions []avm.Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
+	Instructions     []Instruction `json:"instructions"`      // Contract runtime code (empty for regular transfers)
+	InitInstructions []Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
 	GasLimit         uint64            `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
 	GasPrice         uint64            `json:"gas_price"`         // Price per unit of gas in leaf units
 }

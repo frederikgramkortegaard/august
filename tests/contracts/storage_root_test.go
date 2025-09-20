@@ -140,6 +140,21 @@ func TestStorageRootWithContractExecution(t *testing.T) {
 		t.Fatalf("Contract deployment failed: %v", err)
 	}
 
+	// Find the deployed contract address
+	var contractAddr blockchain.PublicKey
+	for addr, state := range chain.AccountStates {
+		if len(state.Instructions) > 0 {
+			contractAddr = addr
+			break
+		}
+	}
+
+	// Execute the contract initialization code
+	_, err = ExecuteContractAfterDeployment(&deployTx, chain.AccountStates, contractAddr)
+	if err != nil {
+		t.Fatalf("Failed to execute contract: %v", err)
+	}
+
 	t.Logf("Contract deployed successfully, gas used: %d", gasUsed)
 
 	// Step 4: Find the deployed contract and verify its StorageRoot

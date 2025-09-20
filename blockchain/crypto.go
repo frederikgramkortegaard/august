@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"august/avm"
 	"august/utils"
 	"crypto/sha256"
 	"encoding/base64"
@@ -112,7 +111,7 @@ func ComputeStateRoot(accountStates map[PublicKey]*AccountState) Hash32 {
 }
 
 // ComputeCodeHash calculates the hash of contract instructions
-func ComputeCodeHash(instructions []avm.Instruction) Hash32 {
+func ComputeCodeHash(instructions []Instruction) Hash32 {
 	if len(instructions) == 0 {
 		return Hash32{}
 	}

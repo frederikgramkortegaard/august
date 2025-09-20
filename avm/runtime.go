@@ -1,38 +1,37 @@
 package avm
 
 import (
+	"august/types"
 	"august/config"
 	"errors"
 	"fmt"
 	"math/big"
 )
 
+type Hash32 = types.Hash32
+
 // BlockchainContext contains immutable blockchain data needed for AVM execution
 type BlockchainContext struct {
-	BlockNumber uint64    // Current block height
-	Timestamp   uint64    // Current block timestamp
-	Difficulty  uint64    // Current block difficulty
-	GasLimit    uint64    // Current block gas limit
-	Coinbase    PublicKey // Current block miner/validator address
-	ChainID     uint64    // Chain identifier
+	BlockNumber     uint64                                      // Current block height
+	BlockHash       Hash32                                      // Current block hash (block being built)
+	LastBlockHash   Hash32                                      // Previous block hash (tip/last confirmed)
+	Timestamp       uint64                                      // Current block timestamp
+	Difficulty      uint64                                      // Current block difficulty
+	GasLimit        uint64                                      // Current block gas limit
+	Coinbase        types.PublicKey                             // Current block miner/validator address
+	ChainID         uint64                                      // Chain identifier
 
 	// Transaction context
-	Caller          PublicKey // Address of message sender (from CallTsx.From)
-	Origin          PublicKey // Address of transaction originator
-	GasPrice        uint64    // Price per gas unit (from CallTsx.GasPrice)
-	CallValue       uint64    // Amount of currency sent in this call (from CallTsx.Amount)
-	ContractAddress PublicKey // Address of the contract being executed
+	Caller          types.PublicKey // Address of message sender (from CallTsx.From)
+	Origin          types.PublicKey // Address of transaction originator
+	GasPrice        uint64          // Price per gas unit (from CallTsx.GasPrice)
+	CallValue       uint64          // Amount of currency sent in this call (from CallTsx.Amount)
+	ContractAddress types.PublicKey // Address of the contract being executed
 
 	// Deployment context (for contract calls)
-	Deployer       PublicKey // Address that originally deployed this contract
-	DeploymentTime uint64    // Block timestamp when contract was deployed
-	DeploymentGas  uint64    // Gas price used for deployment
-
-	// Account state snapshot (copied, not referenced)
-	AccountStates map[PublicKey]*AccountState // Copy of relevant account states for lookups
-
-	// Chain reference for historical block lookups (protected by RWMutex)
-	ChainRef *Chain // Pointer to chain for BLOCKHASH opcode - use with chain.mu.RLock()
+	Deployer       types.PublicKey // Address that originally deployed this contract
+	DeploymentTime uint64          // Block timestamp when contract was deployed
+	DeploymentGas  uint64          // Gas price used for deployment
 }
 
 type stack struct {
@@ -140,104 +139,31 @@ type Runtime struct {
 	IC           int // Instruction Counter
 	GasAvailable uint64
 	GasUsed      uint64
-	Instructions []Instruction
+	Instructions []types.Instruction
 	Persistent   map[string]string
-	Context      *BlockchainContext // Immutable blockchain context data (includes AccountStates)
+	Context      *BlockchainContext // Immutable blockchain context data
 }
 
-// NewBlockchainContext creates a BlockchainContext from a transaction and chain state
-func NewBlockchainContext(tx *Transaction, chain *Chain, contractAddress PublicKey) BlockchainContext {
-	// Lock chain for reading
-	chain.mu.RLock()
-	defer chain.mu.RUnlock()
-
-	// Get current block (tip) information
-	tip := chain.Tip
-	if tip == nil {
-		// Fallback to genesis or default values if no tip
-		if len(chain.Blocks) > 0 {
-			tip = chain.Blocks[len(chain.Blocks)-1]
-		}
-	}
-
-	// Deep copy account states to avoid reference issues
-	accountStatesCopy := make(map[PublicKey]*AccountState)
-	for pubKey, state := range chain.AccountStates {
-		if state != nil {
-			// Create a deep copy of the account state
-			stateCopy := *state // Shallow copy struct
-
-			// Deep copy Instructions slice
-			if state.Instructions != nil {
-				stateCopy.Instructions = make([]Instruction, len(state.Instructions))
-				for i, instr := range state.Instructions {
-					stateCopy.Instructions[i] = Instruction{
-						Opcode: instr.Opcode,
-						Value:  nil,
-					}
-					if instr.Value != nil {
-						valueCopy := *instr.Value
-						stateCopy.Instructions[i].Value = &valueCopy
-					}
-				}
-			}
-
-			// Deep copy Persistent storage map
-			if state.Persistent != nil {
-				stateCopy.Persistent = make(map[string]string)
-				for k, v := range state.Persistent {
-					stateCopy.Persistent[k] = v
-				}
-			}
-
-			accountStatesCopy[pubKey] = &stateCopy
-		}
-	}
-
-	context := BlockchainContext{
-		ChainID:         tx.ChainID,
-		Caller:          tx.From,
-		Origin:          tx.From, // For now, Origin same as Caller (no delegatecall yet)
-		GasPrice:        tx.GasPrice,
-		CallValue:       tx.Amount,
-		ContractAddress: contractAddress,
-		AccountStates:   accountStatesCopy,
-		ChainRef:        chain,
-	}
-
-	// If this is a contract call (not deployment), we need to look up deployment transaction
-	isDeployment := len(tx.Instructions) > 0 || len(tx.InitInstructions) > 0
-	if !isDeployment {
-		// This is a call to an existing contract - find the deployment transaction
-		if contractState, exists := chain.AccountStates[contractAddress]; exists {
-			if contractState.DeploymentBlockHash != (Hash32{}) && contractState.DeploymentTsxHash != (Hash32{}) {
-				// Look up deployment block
-				if deploymentBlock, blockFound := chain.GetBlockByHash(contractState.DeploymentBlockHash); blockFound {
-					// Look up deployment transaction within that block
-					if deploymentTx, txFound := deploymentBlock.FindTransactionByHash(contractState.DeploymentTsxHash); txFound {
-						// Extract deployment context
-						context.Deployer = deploymentTx.From
-						context.DeploymentTime = deploymentBlock.Header.Timestamp
-						context.DeploymentGas = deploymentTx.GasPrice
-					}
-				}
-			}
-		}
-	}
-
-	// Set block context if we have a tip
-	if tip != nil {
-		context.BlockNumber = tip.Header.Height
-		context.Timestamp = tip.Header.Timestamp
-		context.Difficulty = uint64(tip.Header.Bits) // Convert from compact format if needed
-		context.GasLimit = tip.Header.GasLimit
-		context.Coinbase = tip.Header.Beneficiary
-	}
-
-	return context
+// NewTestRuntime creates a Runtime with minimal blockchain context for testing
+func NewTestRuntime(gasAvailable uint64, instructions []types.Instruction) *Runtime {
+	return NewRuntime(gasAvailable, instructions, &MockBlockchainContext)
 }
 
-func NewRuntime(gasAvailable uint64, instructions []Instruction, context *BlockchainContext) *Runtime {
+// NewTestRuntimeWithLimits creates a Runtime with custom stack and memory limits for testing
+func NewTestRuntimeWithLimits(gasAvailable uint64, instructions []types.Instruction, stackSize, memorySize uint64) *Runtime {
+	return &Runtime{
+		Stack:        NewStack(stackSize),
+		Memory:       NewMemory(memorySize),
+		IC:           0,
+		GasAvailable: gasAvailable,
+		GasUsed:      0,
+		Instructions: instructions,
+		Persistent:   make(map[string]string),
+		Context:      &MockBlockchainContext,
+	}
+}
+
+func NewRuntime(gasAvailable uint64, instructions []types.Instruction, context *BlockchainContext) *Runtime {
 	return &Runtime{
 		Stack:        NewStack(config.AVMMaxStackSize),
 		Memory:       NewMemory(config.AVMMaxMemorySize),
@@ -253,27 +179,23 @@ func NewRuntime(gasAvailable uint64, instructions []Instruction, context *Blockc
 // MockBlockchainContext provides a default blockchain context for testing
 var MockBlockchainContext = BlockchainContext{
 	BlockNumber:     1,
+	BlockHash:       Hash32{},
+	LastBlockHash:   Hash32{},
 	Timestamp:       1640995200, // Jan 1, 2022
 	Difficulty:      1000,
 	GasLimit:        1000000,
-	Coinbase:        PublicKey{}, // Zero address
+	Coinbase:        types.PublicKey{}, // Zero address
 	ChainID:         1,
-	Caller:          PublicKey{}, // Zero address
-	Origin:          PublicKey{}, // Zero address
+	Caller:          types.PublicKey{}, // Zero address
+	Origin:          types.PublicKey{}, // Zero address
 	GasPrice:        1,
 	CallValue:       0,
-	ContractAddress: PublicKey{}, // Zero address
-	Deployer:        PublicKey{}, // Zero address
+	ContractAddress: types.PublicKey{}, // Zero address
+	Deployer:        types.PublicKey{}, // Zero address
 	DeploymentTime:  1640995200,  // Same as genesis block timestamp
 	DeploymentGas:   1,
-	AccountStates:   make(map[PublicKey]*AccountState),
-	ChainRef:        nil, // No chain reference for basic tests
 }
 
-// NewTestRuntime creates a Runtime with minimal blockchain context for testing
-func NewTestRuntime(gasAvailable uint64, instructions []Instruction) *Runtime {
-	return NewRuntime(gasAvailable, instructions, nil)
-}
 
 func (r *Runtime) StartExecution() (uint64, error) {
 	// Validate that the stack is clean
@@ -544,7 +466,62 @@ func (r *Runtime) ExecuteInstruction() error {
 
 	// BLOCKCHAIN CONTEXTS
 	case CALLER:
-		//
+		// Push caller address as bytes32
+		callerBytes := r.Context.Caller[:]
+		callerBig := new(big.Int).SetBytes(callerBytes)
+		err = r.Stack.Push(callerBig)
+	case ADDRESS:
+		// Push contract address as bytes32
+		addressBytes := r.Context.ContractAddress[:]
+		addressBig := new(big.Int).SetBytes(addressBytes)
+		err = r.Stack.Push(addressBig)
+	case BALANCE:
+		// Pop address from stack, push balance (requires account state - not available in AVM)
+		// For now, push 0 as placeholder
+		_, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+		} else {
+			err = r.Stack.Push(big.NewInt(0))
+		}
+	case ORIGIN:
+		// Push transaction origin address as bytes32
+		originBytes := r.Context.Origin[:]
+		originBig := new(big.Int).SetBytes(originBytes)
+		err = r.Stack.Push(originBig)
+	case GASPRICE:
+		// Push gas price
+		err = r.Stack.Push(big.NewInt(int64(r.Context.GasPrice)))
+	case CALLVALUE:
+		// Push call value (amount sent in transaction)
+		err = r.Stack.Push(big.NewInt(int64(r.Context.CallValue)))
+	case TIMESTAMP:
+		// Push block timestamp
+		err = r.Stack.Push(big.NewInt(int64(r.Context.Timestamp)))
+	case DIFFICULTY:
+		// Push block difficulty
+		err = r.Stack.Push(big.NewInt(int64(r.Context.Difficulty)))
+	case BLOCKHASH:
+		// Push current block hash as bytes32
+		blockHashBytes := r.Context.BlockHash[:]
+		blockHashBig := new(big.Int).SetBytes(blockHashBytes)
+		err = r.Stack.Push(blockHashBig)
+	case LASTBLOCKHASH:
+		// Push previous block hash as bytes32
+		lastBlockHashBytes := r.Context.LastBlockHash[:]
+		lastBlockHashBig := new(big.Int).SetBytes(lastBlockHashBytes)
+		err = r.Stack.Push(lastBlockHashBig)
+	case COINBASE:
+		// Push coinbase address as bytes32
+		coinbaseBytes := r.Context.Coinbase[:]
+		coinbaseBig := new(big.Int).SetBytes(coinbaseBytes)
+		err = r.Stack.Push(coinbaseBig)
+	case HEIGHT:
+		// Push block height
+		err = r.Stack.Push(big.NewInt(int64(r.Context.BlockNumber)))
+	case GASLIMIT:
+		// Push block gas limit
+		err = r.Stack.Push(big.NewInt(int64(r.Context.GasLimit)))
 	default:
 		err = ErrInvalidOpcode
 	}

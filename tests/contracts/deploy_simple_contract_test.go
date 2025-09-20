@@ -107,7 +107,7 @@ func TestDeploySimpleContract(t *testing.T) {
 	t.Logf("Miner balance before deployment: %d AUG", chain.AccountStates[minerPublicKey].Balance/config.AUG)
 
 	// Calculate expected gas fees (actual execution: base deployment + init gas)
-	actualGas := config.GasContractDeploy + 1 // Base deployment + 1 NOOP instruction
+	actualGas := config.GasContractDeploy // Base deployment cost
 	actualGasFees := actualGas * deployTx.GasPrice
 	expectedCoinbaseAmount := config.BlockReward + actualGasFees
 

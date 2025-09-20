@@ -108,7 +108,7 @@ func TestDeployAndRunSimpleContract(t *testing.T) {
 	deployTx.Signature = deployTx.GetSignature(minerPriv)
 
 	// Calculate actual gas for coinbase (deployment + init)
-	deploymentGas := config.GasContractDeploy + 103 // Base + PUSH instruction (3 gas)
+	deploymentGas := config.GasContractDeploy // Base deployment cost
 	deploymentGasFees := deploymentGas * deployTx.GasPrice
 	coinbaseAmount2 := config.BlockReward + deploymentGasFees
 

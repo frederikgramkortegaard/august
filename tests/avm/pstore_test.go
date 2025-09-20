@@ -15,7 +15,7 @@ func TestPSTOREBasic(t *testing.T) {
 		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(1010, instructions)
+	runtime := avm.NewTestRuntime(1010, instructions)
 	gasUsed, err := runtime.StartExecution()
 
 	if err != avm.ErrProgramStopped {
@@ -50,7 +50,7 @@ func TestPLOADBasic(t *testing.T) {
 		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(1110, instructions)
+	runtime := avm.NewTestRuntime(1110, instructions)
 
 	// Pre-populate persistent storage
 	runtime.Persistent["3"] = "555"
@@ -78,7 +78,7 @@ func TestPSTOREAndPLOAD(t *testing.T) {
 		avm.MakeInstruction(avm.STOP),
 	}
 
-	runtime := avm.NewRuntime(2110, instructions)
+	runtime := avm.NewTestRuntime(2110, instructions)
 	gasUsed, err := runtime.StartExecution()
 
 	if err != avm.ErrProgramStopped {

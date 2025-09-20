@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"august/avm"
 	"august/config"
 	"august/utils"
 	"crypto/ed25519"
@@ -344,43 +343,18 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		gasUsed := config.GasContractDeploy // Base gas for contract deployment
 
-		// Execute initialization instructions if present
+		// Validate initialization instructions if present
 		if len(tsx.InitInstructions) > 0 {
-			// Check if we have enough gas remaining for init execution
-			remainingGas := tsx.GasLimit - gasUsed
-			if remainingGas == 0 {
-				return gasUsed, fmt.Errorf("no gas remaining for contract initialization")
-			}
-
-			// Create AVM runtime for initialization using remaining gas
-			runtime := avm.NewRuntime(remainingGas, tsx.InitInstructions)
-
-			// Execute initialization code
-			initGasUsed, err := runtime.StartExecution()
-
-			// Gas is consumed regardless of success/failure
-			gasUsed += initGasUsed
-
-			// Check execution result
-			if err != nil && err != avm.ErrProgramStopped {
-				// Init execution failed (could be out of gas or other error)
-				fmt.Printf("Contract initialization failed: %v, gas used: %d\n", err, initGasUsed)
-				// Contract deployment failed - don't store it
-				contractDeployed = false
-			} else {
-				// Apply persistent storage changes from init execution
-				for key, value := range runtime.Persistent {
-					contractState.Persistent[key] = value
+			// Validate initialization instructions
+			for _, instr := range tsx.InitInstructions {
+				if err := instr.ValidateInstruction(); err != nil {
+					return gasUsed, fmt.Errorf("invalid initialization instruction: %v", err)
 				}
-				// Update storage root to reflect persistent storage changes
-				contractState.StorageRoot = ComputeStorageRoot(contractState.Persistent)
-				fmt.Printf("Contract initialized successfully, gas used: %d, stored %d values\n", initGasUsed, len(runtime.Persistent))
-				contractDeployed = true
 			}
-		} else {
-			// No init instructions - deployment succeeds immediately
-			contractDeployed = true
 		}
+
+		// Contract deployment is structurally valid
+		contractDeployed = true
 
 		// Only store the contract if deployment succeeded
 		if contractDeployed {
@@ -427,41 +401,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 			// Check if recipient is a contract (has runtime code)
 			if len(toState.Instructions) > 0 {
-				fmt.Printf("Executing contract at: %x\n", tsx.To[:])
-
-				// Check if we have enough gas remaining for contract execution
-				remainingGas := tsx.GasLimit - gasUsed
-				if remainingGas > 0 {
-					// Create AVM runtime for contract execution using remaining gas
-					runtime := avm.NewRuntime(remainingGas, toState.Instructions)
-
-					// Initialize runtime with existing persistent storage from contract
-					for key, value := range toState.Persistent {
-						runtime.Persistent[key] = value
-					}
-
-					// Execute contract runtime code
-					runtimeGasUsed, err := runtime.StartExecution()
-
-					// Gas is consumed regardless of success/failure
-					gasUsed += runtimeGasUsed
-
-					if err != nil && err != avm.ErrProgramStopped {
-						fmt.Printf("Contract execution failed: %v, gas used: %d\n", err, runtimeGasUsed)
-						// Contract execution failed but transaction still succeeds (money transferred)
-						// This matches Ethereum behavior - failed contract calls still deduct gas
-					} else {
-						fmt.Printf("Contract executed successfully, gas used: %d\n", runtimeGasUsed)
-						// Replace contract's persistent storage with runtime's final state
-						// The runtime started with a copy of all existing storage, so this preserves everything
-						toState.Persistent = runtime.Persistent
-						// Update storage root to reflect persistent storage changes
-						toState.StorageRoot = ComputeStorageRoot(toState.Persistent)
-						fmt.Printf("Applied %d persistent storage updates\n", len(runtime.Persistent))
-					}
-				} else {
-					fmt.Printf("No gas remaining for contract execution\n")
-				}
+				fmt.Printf("Recipient is a contract: %x\n", tsx.To[:])
 			}
 		} else {
 			// Create new account

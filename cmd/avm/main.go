@@ -19,7 +19,7 @@ func main() {
 	}
 
 	// Create runtime with 1000 gas and default config
-	r := avm.NewRuntime(1000, instructions)
+	r := avm.NewTestRuntime(1000, instructions)
 
 	// Execute
 	gasUsed, err := r.StartExecution()

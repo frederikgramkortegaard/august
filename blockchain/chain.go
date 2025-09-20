@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"august/avm"
 	"sync"
 )
 
@@ -38,11 +37,11 @@ func (c *Chain) DeepCopy() *Chain {
 	for pubKey, state := range c.AccountStates {
 		if state != nil {
 			// Deep copy Instructions slice
-			var instructions []avm.Instruction
+			var instructions []Instruction
 			if state.Instructions != nil {
-				instructions = make([]avm.Instruction, len(state.Instructions))
+				instructions = make([]Instruction, len(state.Instructions))
 				for i, instr := range state.Instructions {
-					instructions[i] = avm.Instruction{
+					instructions[i] = Instruction{
 						Opcode: instr.Opcode,
 						Value:  nil,
 					}
