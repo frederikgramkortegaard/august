@@ -4,6 +4,7 @@ import (
 	"august/avm"
 	"august/blockchain"
 	"august/config"
+	_ "august/execution" // Import for side effects (registers executor)
 		"crypto/ed25519"
 	"math/big"
 	"testing"

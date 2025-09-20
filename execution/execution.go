@@ -7,8 +7,16 @@ import (
 	"fmt"
 )
 
+// ExecutorImpl implements the blockchain.ContractExecutor interface
+type ExecutorImpl struct{}
+
+// init registers the executor with the blockchain package
+func init() {
+	blockchain.SetContractExecutor(&ExecutorImpl{})
+}
+
 // ExecuteTransaction executes a transaction including contract deployment and execution
-func ExecuteTransaction(tsx *blockchain.Transaction, accountStates map[types.PublicKey]*blockchain.AccountState, blockContext *avm.BlockchainContext) (uint64, error) {
+func (e *ExecutorImpl) ExecuteTransaction(tsx *blockchain.Transaction, accountStates map[types.PublicKey]*blockchain.AccountState, blockContext *avm.BlockchainContext) (uint64, error) {
 	// Determine transaction type based on content
 	isContractDeployment := len(tsx.Instructions) > 0
 

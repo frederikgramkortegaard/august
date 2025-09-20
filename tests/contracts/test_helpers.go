@@ -56,8 +56,9 @@ func ExecuteContractAfterDeployment(tsx *blockchain.Transaction, accountStates m
 		execAccountStates[types.PublicKey(k)] = v
 	}
 
-	// Execute the contract
-	executionGasUsed, err := execution.ExecuteTransaction(tsx, execAccountStates, blockContext)
+	// Execute the contract using the executor implementation
+	executor := &execution.ExecutorImpl{}
+	executionGasUsed, err := executor.ExecuteTransaction(tsx, execAccountStates, blockContext)
 	if err != nil {
 		fmt.Printf("Contract execution failed: %v\n", err)
 		return 0, err

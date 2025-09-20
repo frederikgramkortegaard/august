@@ -1,12 +1,27 @@
 package blockchain
 
 import (
+	"august/avm"
 	"august/config"
+	"august/types"
 	"august/utils"
 	"crypto/ed25519"
 	"fmt"
 	"log"
 )
+
+// ContractExecutor defines the interface for executing contracts
+type ContractExecutor interface {
+	ExecuteTransaction(tsx *Transaction, accountStates map[types.PublicKey]*AccountState, blockContext *avm.BlockchainContext) (uint64, error)
+}
+
+// Global executor instance - will be set by execution package
+var contractExecutor ContractExecutor
+
+// SetContractExecutor allows the execution package to register itself
+func SetContractExecutor(executor ContractExecutor) {
+	contractExecutor = executor
+}
 
 // ValidateHeaderStructure validates a single block header without chain context
 // This is used by networking layer to validate headers from peers
@@ -327,20 +342,6 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		// Generate contract address from sender + nonce
 		contractAddr := GenerateContractAddress(tsx.From, fromState.Nonce)
 
-		// Create initial contract state (only stored if init succeeds)
-		contractState := &AccountState{
-			Balance:      tsx.Amount, // Initial balance sent to contract
-			Address:      contractAddr,
-			Nonce:        0,
-			Instructions: tsx.Instructions, // Runtime code
-			Persistent:   make(map[string]string),
-			StorageRoot:  ComputeStorageRoot(nil),
-			CodeHash:     ComputeCodeHash(tsx.Instructions),
-		}
-
-		// Track whether contract deployment succeeds
-		contractDeployed := false
-
 		gasUsed := config.GasContractDeploy // Base gas for contract deployment
 
 		// Validate initialization instructions if present
@@ -353,16 +354,50 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			}
 		}
 
-		// Contract deployment is structurally valid
-		contractDeployed = true
-
-		// Only store the contract if deployment succeeded
-		if contractDeployed {
-			accountStates[contractAddr] = contractState
-			fmt.Printf("Deployed contract at: %x\n", contractAddr[:])
-		} else {
-			fmt.Printf("Contract deployment failed, no contract stored\n")
+		// Execute contract deployment - requires executor to be available
+		if contractExecutor == nil {
+			return gasUsed, fmt.Errorf("contract executor not available for deployment")
 		}
+
+		// Create blockchain context for execution
+		blockContext := &avm.BlockchainContext{
+			BlockNumber:     1, // Default values - will be overridden by actual block context when available
+			BlockHash:       Hash32{},
+			LastBlockHash:   Hash32{},
+			Timestamp:       1640995200, // Jan 1, 2022 - default timestamp
+			Difficulty:      0x207fffff,
+			GasLimit:        tsx.GasLimit,
+			Coinbase:        PublicKey{},
+			ChainID:         1,
+			Caller:          tsx.From,
+			Origin:          tsx.From,
+			GasPrice:        tsx.GasPrice,
+			CallValue:       tsx.Amount,
+			ContractAddress: contractAddr,
+			Deployer:        tsx.From,
+			DeploymentTime:  1640995200,
+			DeploymentGas:   tsx.GasPrice,
+		}
+
+		// Convert account states to execution format
+		execAccountStates := make(map[types.PublicKey]*AccountState)
+		for k, v := range accountStates {
+			execAccountStates[types.PublicKey(k)] = v
+		}
+
+		// Execute contract deployment with initialization
+		executionGasUsed, err := contractExecutor.ExecuteTransaction(tsx, execAccountStates, blockContext)
+		if err != nil {
+			return gasUsed, fmt.Errorf("contract deployment execution failed: %v", err)
+		}
+
+		// Copy back execution results to blockchain account states
+		for k, v := range execAccountStates {
+			accountStates[PublicKey(k)] = v
+		}
+
+		// Use execution gas instead of base gas
+		gasUsed = executionGasUsed
 
 		// Validate gas usage doesn't exceed limit (Shouldnt be possible)
 		if gasUsed > tsx.GasLimit {
@@ -371,7 +406,6 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		// Calculate actual gas cost and deduct from sender balance
 		actualGasCost := gasUsed * tsx.GasPrice
-		var err error
 		totalCostSoFar, err = utils.SafeAdd(totalCostSoFar, actualGasCost)
 		if err != nil {
 			panic(fmt.Sprintf("total cost with gas overflow during apply: %v", err))
@@ -402,6 +436,52 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			// Check if recipient is a contract (has runtime code)
 			if len(toState.Instructions) > 0 {
 				fmt.Printf("Recipient is a contract: %x\n", tsx.To[:])
+
+				// Execute contract call - requires executor to be available
+				if contractExecutor == nil {
+					fmt.Printf("Contract executor not available for call\n")
+					// Transaction still succeeds (money transferred) but no contract execution
+				} else {
+					// Create blockchain context for execution
+					blockContext := &avm.BlockchainContext{
+						BlockNumber:     1, // Default values - will be overridden by actual block context when available
+						BlockHash:       Hash32{},
+						LastBlockHash:   Hash32{},
+						Timestamp:       1640995200, // Jan 1, 2022 - default timestamp
+						Difficulty:      0x207fffff,
+						GasLimit:        tsx.GasLimit,
+						Coinbase:        PublicKey{},
+						ChainID:         1,
+						Caller:          tsx.From,
+						Origin:          tsx.From,
+						GasPrice:        tsx.GasPrice,
+						CallValue:       tsx.Amount,
+						ContractAddress: tsx.To,
+						Deployer:        toState.Address, // Use contract's own address as deployer
+						DeploymentTime:  1640995200,
+						DeploymentGas:   tsx.GasPrice,
+					}
+
+					// Convert account states to execution format
+					execAccountStates := make(map[types.PublicKey]*AccountState)
+					for k, v := range accountStates {
+						execAccountStates[types.PublicKey(k)] = v
+					}
+
+					// Execute contract call
+					contractGasUsed, err := contractExecutor.ExecuteTransaction(tsx, execAccountStates, blockContext)
+					if err != nil {
+						fmt.Printf("Contract call execution failed: %v\n", err)
+						// Contract execution failed but transaction still succeeds (money transferred)
+					} else {
+						// Copy back execution results to blockchain account states
+						for k, v := range execAccountStates {
+							accountStates[PublicKey(k)] = v
+						}
+						// Add contract execution gas to total
+						gasUsed += contractGasUsed
+					}
+				}
 			}
 		} else {
 			// Create new account

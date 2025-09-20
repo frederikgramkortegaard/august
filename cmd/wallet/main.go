@@ -3,6 +3,7 @@ package main
 import (
 	"august/avm"
 	"august/blockchain"
+	_ "august/execution" // Import for side effects (registers executor)
 	"august/node"
 	"bytes"
 	"crypto/ed25519"
