@@ -63,6 +63,7 @@ func main() {
 		sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
 		amount := sendCmd.Uint64("amount", 0, "Amount to send")
 		to := sendCmd.String("to", "", "Recipient")
+		data := sendCmd.String("data", "", "Hex-encoded data to include with transaction")
 		sendCmd.Parse(args[1:])
 
 		if *amount <= 0 || *to == "" {
@@ -71,8 +72,18 @@ func main() {
 			os.Exit(1)
 		}
 
+		var dataBytes []byte
+		if *data != "" {
+			var err error
+			dataBytes, err = hex.DecodeString(*data)
+			if err != nil {
+				fmt.Printf("Error: invalid hex data: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
 		toPub := convertHexStringToPubKey(*to)
-		err := sendMoney(&pub, &priv, *amount, &toPub, *nodeAddr)
+		err := sendMoneyWithData(&pub, &priv, *amount, &toPub, dataBytes, *nodeAddr)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -103,6 +114,7 @@ func main() {
 		amount := callCmd.Uint64("amount", 0, "Amount to send to contract")
 		gasLimit := callCmd.Uint64("gas-limit", 50000, "Gas limit for call")
 		gasPrice := callCmd.Uint64("gas-price", 100, "Gas price")
+		data := callCmd.String("data", "", "Hex-encoded data to include with transaction")
 		callCmd.Parse(args[1:])
 
 		if *contract == "" {
@@ -111,8 +123,18 @@ func main() {
 			os.Exit(1)
 		}
 
+		var dataBytes []byte
+		if *data != "" {
+			var err error
+			dataBytes, err = hex.DecodeString(*data)
+			if err != nil {
+				fmt.Printf("Error: invalid hex data: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
 		contractPub := convertHexStringToPubKey(*contract)
-		err := callContract(&pub, &priv, *amount, &contractPub, *gasLimit, *gasPrice, *nodeAddr)
+		err := callContractWithData(&pub, &priv, *amount, &contractPub, *gasLimit, *gasPrice, dataBytes, *nodeAddr)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -176,7 +198,7 @@ func checkBalance(pubKey *ed25519.PublicKey, nodeaddr string) error {
 	}
 	return nil
 }
-func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, to *ed25519.PublicKey, nodeaddr string) error {
+func sendMoneyWithData(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, to *ed25519.PublicKey, data []byte, nodeaddr string) error {
 
 	// First, get current balance and nonce
 	keyAsHex := hex.EncodeToString(*pub)
@@ -222,6 +244,7 @@ func sendMoney(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, 
 		Signature: blockchain.Signature{},
 		Nonce:     nextNonce,
 		Timestamp: uint64(time.Now().Unix()),
+		Data:      data,
 	}
 
 	tsx.Signature = tsx.GetSignature(*priv)
@@ -334,6 +357,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 		Timestamp:        uint64(time.Now().Unix()),
 		Instructions:     runtimeInstructions, // Runtime code
 		InitInstructions: initInstructions,    // Initialization code
+		Data:             nil,                  // No data for deployment
 	}
 
 	tsx.Signature = tsx.GetSignature(*priv)
@@ -372,7 +396,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 	return nil
 }
 
-func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, contract *ed25519.PublicKey, gasLimit, gasPrice uint64, nodeaddr string) error {
+func callContractWithData(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint64, contract *ed25519.PublicKey, gasLimit, gasPrice uint64, data []byte, nodeaddr string) error {
 	// Get current balance and nonce
 	keyAsHex := hex.EncodeToString(*pub)
 	url := fmt.Sprintf("http://%s/balance/%s", nodeaddr, keyAsHex)
@@ -421,6 +445,7 @@ func callContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount uint6
 		Signature: blockchain.Signature{},
 		Nonce:     nextNonce,
 		Timestamp: uint64(time.Now().Unix()),
+		Data:      data,
 	}
 
 	tsx.Signature = tsx.GetSignature(*priv)

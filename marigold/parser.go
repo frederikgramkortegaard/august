@@ -207,7 +207,7 @@ func parseIndexedAssignment(ctx *ParserContext) *Statement {
 	}
 
 	// Parse the index: [key] or [index]
-	indexExpr := parseArrayIndex(ctx, identExpr)
+	indexExpr := parseIndexOrSlice(ctx, identExpr)
 	if indexExpr == nil {
 		ctx.logError("Failed to parse index expression", ident)
 		return nil
@@ -798,7 +798,7 @@ func parseAtom(ctx *ParserContext) *Expression {
 
 		// Check for array indexing arr[i]
 		if ctx.peek() != nil && ctx.peek().Type == LSquare {
-			return parseArrayIndex(ctx, expr)
+			return parseIndexOrSlice(ctx, expr)
 		}
 
 		return expr
@@ -925,22 +925,71 @@ func parseMapLiteral(ctx *ParserContext) *Expression {
 	}
 }
 
-func parseArrayIndex(ctx *ParserContext, arrayExpr *Expression) *Expression {
+func parseIndexOrSlice(ctx *ParserContext, arrayExpr *Expression) *Expression {
 	openBracket := ctx.consumeAssert(LSquare)
 
-	indexExpr := parseExpression(ctx)
-	if indexExpr == nil {
-		ctx.logError("Expected index expression in array access", ctx.current())
+	// Check if this starts with ':' (e.g., [:5])
+	if ctx.peek().Type == Colon {
+		ctx.consume() // consume ':'
+
+		// Parse end expression (required for [:end])
+		endExpr := parseExpression(ctx)
+		if endExpr == nil {
+			ctx.logError("Expected end expression in slice [:end]", ctx.current())
+			return nil
+		}
+
+		ctx.consumeAssert(RSquare)
+
+		return &Expression{
+			Type:       SliceExpr,
+			Lhs:        arrayExpr,   // The string being sliced
+			SliceStart: nil,         // Start index is nil for [:end]
+			SliceEnd:   endExpr,     // End index
+			Token:      openBracket,
+		}
+	}
+
+	// Parse first expression (could be start index or single index)
+	firstExpr := parseExpression(ctx)
+	if firstExpr == nil {
+		ctx.logError("Expected index or slice expression", ctx.current())
 		return nil
 	}
 
-	ctx.consumeAssert(RSquare)
+	// Check if this is a slice (contains ':')
+	if ctx.peek().Type == Colon {
+		ctx.consume() // consume ':'
 
-	return &Expression{
-		Type:  IndexExpr,
-		Lhs:   arrayExpr, // The array being indexed
-		Rhs:   indexExpr, // The index expression
-		Token: openBracket,
+		// Parse end expression (could be nil for [start:])
+		var endExpr *Expression
+		if ctx.peek().Type != RSquare {
+			endExpr = parseExpression(ctx)
+			if endExpr == nil {
+				ctx.logError("Expected end expression in slice", ctx.current())
+				return nil
+			}
+		}
+
+		ctx.consumeAssert(RSquare)
+
+		return &Expression{
+			Type:       SliceExpr,
+			Lhs:        arrayExpr,   // The string being sliced
+			SliceStart: firstExpr,   // Start index
+			SliceEnd:   endExpr,     // End index (can be nil for [start:])
+			Token:      openBracket,
+		}
+	} else {
+		// This is a regular index
+		ctx.consumeAssert(RSquare)
+
+		return &Expression{
+			Type:  IndexExpr,
+			Lhs:   arrayExpr, // The array being indexed
+			Rhs:   firstExpr, // The index expression
+			Token: openBracket,
+		}
 	}
 }
 

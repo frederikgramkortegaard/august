@@ -125,6 +125,7 @@ type BlockchainContext struct {
 	GasPrice        uint64          // Price per gas unit (from CallTsx.GasPrice)
 	CallValue       uint64          // Amount of currency sent in this call (from CallTsx.Amount)
 	ContractAddress types.PublicKey // Address of the contract being executed
+	TsxData         []byte          // Transaction data field
 
 	// Deployment context (for contract calls)
 	Deployer       types.PublicKey // Address that originally deployed this contract

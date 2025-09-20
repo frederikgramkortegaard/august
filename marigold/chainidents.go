@@ -1,72 +1,82 @@
 package marigold
 
-// PrePopulateBlockchainContext adds blockchain context variables to global scope
-// these are cached during runtime so concecutive calls will only charge gas once. Furthermore, if e.g. @address is never called, no gas will be charged
-func PrePopulateBlockchainContext(globalScope *Scope) {
-	// Add blockchain context variables with @ prefix
-	globalScope.Variables["@caller"] = &Variable{
-		Name:  "@caller",
-		Value: "",
-		Type:  StringType, // Address of message sender
-	}
-
-	globalScope.Variables["@address"] = &Variable{
-		Name:  "@address",
-		Value: "",
-		Type:  StringType, // Address of contract currently executing
-	}
-
-	globalScope.Variables["@balance"] = &Variable{
-		Name:  "@balance",
-		Value: "",
-		Type:  IntType, // Balance of the current contract
-	}
-
-	globalScope.Variables["@origin"] = &Variable{
-		Name:  "@origin",
-		Value: "",
-		Type:  StringType, // Transaction originator address
-	}
-
-	globalScope.Variables["@gasprice"] = &Variable{
-		Name:  "@gasprice",
-		Value: "",
-		Type:  IntType, // Price per gas in this transaction
-	}
-
-	globalScope.Variables["@callvalue"] = &Variable{
-		Name:  "@callvalue",
-		Value: "",
-		Type:  IntType, // Amount of AUG sent with this transaction
-	}
-
-	globalScope.Variables["@timestamp"] = &Variable{
-		Name:  "@timestamp",
-		Value: "",
-		Type:  IntType, // Current block timestamp
-	}
-
-	globalScope.Variables["@difficulty"] = &Variable{
-		Name:  "@difficulty",
-		Value: "",
-		Type:  IntType, // Current block difficulty
-	}
-
-	globalScope.Variables["@coinbase"] = &Variable{
-		Name:  "@coinbase",
-		Value: "",
-		Type:  StringType, // Current block's beneficiary address
-	}
-
-	globalScope.Variables["@height"] = &Variable{
-		Name:  "@height",
-		Value: "",
-		Type:  IntType, // Current block number
-	}
-
-	globalScope.Variables["@gaslimit"] = &Variable{
-		Name:  "@gaslimit",
-		Value: "",
-		Type:  IntType, // Current block gas limit
+// GetBlockchainContextVariable returns the definition for a blockchain context variable
+// or nil if the variable name is not a valid blockchain context variable
+func GetBlockchainContextVariable(name string) *Variable {
+	switch name {
+	case "@caller":
+		return &Variable{
+			Name:  "@caller",
+			Value: "",
+			Type:  StringType, // Address of message sender
+		}
+	case "@address":
+		return &Variable{
+			Name:  "@address",
+			Value: "",
+			Type:  StringType, // Address of contract currently executing
+		}
+	case "@balance":
+		return &Variable{
+			Name:  "@balance",
+			Value: "",
+			Type:  IntType, // Balance of the current contract
+		}
+	case "@origin":
+		return &Variable{
+			Name:  "@origin",
+			Value: "",
+			Type:  StringType, // Transaction originator address
+		}
+	case "@gasprice":
+		return &Variable{
+			Name:  "@gasprice",
+			Value: "",
+			Type:  IntType, // Price per gas in this transaction
+		}
+	case "@callvalue":
+		return &Variable{
+			Name:  "@callvalue",
+			Value: "",
+			Type:  IntType, // Amount of AUG sent with this transaction
+		}
+	case "@timestamp":
+		return &Variable{
+			Name:  "@timestamp",
+			Value: "",
+			Type:  IntType, // Current block timestamp
+		}
+	case "@difficulty":
+		return &Variable{
+			Name:  "@difficulty",
+			Value: "",
+			Type:  IntType, // Current block difficulty
+		}
+	case "@coinbase":
+		return &Variable{
+			Name:  "@coinbase",
+			Value: "",
+			Type:  StringType, // Current block's beneficiary address
+		}
+	case "@height":
+		return &Variable{
+			Name:  "@height",
+			Value: "",
+			Type:  IntType, // Current block number
+		}
+	case "@gaslimit":
+		return &Variable{
+			Name:  "@gaslimit",
+			Value: "",
+			Type:  IntType, // Current block gas limit
+		}
+	case "@tsxdata":
+		return &Variable{
+			Name:  "@tsxdata",
+			Value: "",
+			Type:  StringType, // Transaction data as hex string
+		}
+	default:
+		return nil // Not a valid blockchain context variable
 	}
 }

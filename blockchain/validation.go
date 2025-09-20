@@ -344,6 +344,10 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 
 		gasUsed := config.GasContractDeploy // Base gas for contract deployment
 
+		// Add gas cost for transaction data
+		dataGasCost := uint64(len(tsx.Data)) * config.GasDataPerByte
+		gasUsed += dataGasCost
+
 		// Validate initialization instructions if present
 		if len(tsx.InitInstructions) > 0 {
 			// Validate initialization instructions
@@ -374,6 +378,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			GasPrice:        tsx.GasPrice,
 			CallValue:       tsx.Amount,
 			ContractAddress: contractAddr,
+			TsxData:         tsx.Data,
 			Deployer:        tsx.From,
 			DeploymentTime:  1640995200,
 			DeploymentGas:   tsx.GasPrice,
@@ -396,8 +401,8 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 			accountStates[PublicKey(k)] = v
 		}
 
-		// Use execution gas instead of base gas
-		gasUsed = executionGasUsed
+		// Add execution gas to base gas (base deployment + data gas + execution gas)
+		gasUsed += executionGasUsed
 
 		// Validate gas usage doesn't exceed limit (Shouldnt be possible)
 		if gasUsed > tsx.GasLimit {
@@ -424,6 +429,10 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	} else if tsx.To != (PublicKey{}) {
 		// Regular transfer to existing or new account
 		gasUsed := config.GasTransfer // Base gas for transfer
+
+		// Add gas cost for transaction data
+		dataGasCost := uint64(len(tsx.Data)) * config.GasDataPerByte
+		gasUsed += dataGasCost
 
 		if toState, ok := accountStates[tsx.To]; ok {
 			// Transfer amount to recipient
@@ -457,6 +466,7 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 						GasPrice:        tsx.GasPrice,
 						CallValue:       tsx.Amount,
 						ContractAddress: tsx.To,
+						TsxData:         tsx.Data,
 						Deployer:        toState.Address, // Use contract's own address as deployer
 						DeploymentTime:  1640995200,
 						DeploymentGas:   tsx.GasPrice,

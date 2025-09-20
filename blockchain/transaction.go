@@ -18,6 +18,7 @@ type Transaction struct {
 	InitInstructions []Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
 	GasLimit         uint64            `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
 	GasPrice         uint64            `json:"gas_price"`         // Price per unit of gas in leaf units
+	Data             []byte            `json:"data"`              // Custom data for contract calls
 }
 
 // GetHash returns the hash of this transaction
@@ -42,6 +43,11 @@ func (t *Transaction) GetHash() Hash32 {
 	if len(t.InitInstructions) > 0 {
 		initHash := ComputeCodeHash(t.InitInstructions)
 		h.Write(initHash[:])
+	}
+
+	// Hash the data if present
+	if len(t.Data) > 0 {
+		h.Write(t.Data)
 	}
 
 	var hash Hash32

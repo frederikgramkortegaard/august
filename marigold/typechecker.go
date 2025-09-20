@@ -62,6 +62,13 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			return variable.Type
 		}
 
+		// Check if it's a blockchain context variable (lazy loading)
+		if blockchainVar := GetBlockchainContextVariable(varName); blockchainVar != nil {
+			// Add it to the global scope
+			ctx.ast.Scope.Variables[varName] = blockchainVar
+			return blockchainVar.Type
+		}
+
 		// If not found as variable, check if it's a function
 		if _, exists := ctx.ast.Functions[varName]; exists {
 			return TypeFromTokenType(TFunction)
@@ -159,6 +166,55 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 
 			ctx.logFatalWithToken(fmt.Sprintf("len() can only be used on arrays, maps, or strings, got '%s'", argType.String()), expr.Token)
 			return IntType
+		}
+
+
+		if funcName == "string" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("string() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// Check that argument can be converted to string
+			argType := typecheckExpression(ctx, expr.Args[0])
+
+			if argType.Equals(IntType) || argType.Equals(FloatType) || argType.Equals(StringType) {
+				return StringType
+			}
+
+			ctx.logFatalWithToken(fmt.Sprintf("string() can only convert int, float, or string types, got '%s'", argType.String()), expr.Token)
+			return StringType
+		}
+
+		if funcName == "int" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("int() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// Check that argument can be converted to int
+			argType := typecheckExpression(ctx, expr.Args[0])
+
+			if argType.Equals(IntType) || argType.Equals(FloatType) || argType.Equals(StringType) {
+				return IntType
+			}
+
+			ctx.logFatalWithToken(fmt.Sprintf("int() can only convert int, float, or string types, got '%s'", argType.String()), expr.Token)
+			return IntType
+		}
+
+		if funcName == "float" {
+			if len(expr.Args) != 1 {
+				ctx.logFatalWithToken(fmt.Sprintf("float() expects 1 argument, got %d", len(expr.Args)), expr.Token)
+			}
+
+			// Check that argument can be converted to float
+			argType := typecheckExpression(ctx, expr.Args[0])
+
+			if argType.Equals(IntType) || argType.Equals(FloatType) || argType.Equals(StringType) {
+				return FloatType
+			}
+
+			ctx.logFatalWithToken(fmt.Sprintf("float() can only convert int, float, or string types, got '%s'", argType.String()), expr.Token)
+			return FloatType
 		}
 
 		if funcName == "emit" {
@@ -277,6 +333,35 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 
 		ctx.logFatalWithToken(fmt.Sprintf("Cannot index expression of type '%s'", lhsType.String()), expr.Token)
 		return nil
+
+	case SliceExpr:
+		// String slicing
+		lhsType := typecheckExpression(ctx, expr.Lhs)
+
+		// Only strings can be sliced
+		if !lhsType.Equals(StringType) {
+			ctx.logFatalWithToken(fmt.Sprintf("Cannot slice expression of type '%s', only strings can be sliced", lhsType.String()), expr.Token)
+			return nil
+		}
+
+		// Check start index if present
+		if expr.SliceStart != nil {
+			startType := typecheckExpression(ctx, expr.SliceStart)
+			if !startType.IsAssignableTo(IntType) {
+				ctx.logFatalWithToken(fmt.Sprintf("Slice start index must be int, got '%s'", startType.String()), expr.Token)
+			}
+		}
+
+		// Check end index if present
+		if expr.SliceEnd != nil {
+			endType := typecheckExpression(ctx, expr.SliceEnd)
+			if !endType.IsAssignableTo(IntType) {
+				ctx.logFatalWithToken(fmt.Sprintf("Slice end index must be int, got '%s'", endType.String()), expr.Token)
+			}
+		}
+
+		// Slice expressions return string type
+		return StringType
 	}
 
 	return nil

@@ -43,6 +43,7 @@ const (
 	GasTransfer          = uint64(21000)   // Base gas for regular transfer
 	GasContractDeploy    = uint64(21000)   // Base gas for contract deployment (before init execution)
 	GasContractInitLimit = uint64(1000000) // Max gas for contract init execution
+	GasDataPerByte       = uint64(68)      // Gas cost per byte of transaction data
 
 	// AVM runtime limits
 	AVMMaxStackSize  = 1024 // Maximum stack depth (0 = unlimited)

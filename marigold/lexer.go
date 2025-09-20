@@ -175,7 +175,22 @@ func Lex(text string) ([]*Token, error) {
 			}
 
 			buffer := string(text[start:cursor])
-			if toktype, ok := TokenTypeMap[buffer]; ok {
+
+			// Check if this is a type keyword followed by '(' (function call)
+			if (buffer == "string" || buffer == "int" || buffer == "float") {
+				// Look ahead to see if there's a '(' after optional whitespace
+				lookahead := cursor
+				for lookahead < len(text) && (text[lookahead] == ' ' || text[lookahead] == '\t') {
+					lookahead++
+				}
+				if lookahead < len(text) && text[lookahead] == '(' {
+					// This is a function call, treat as identifier
+					tokens = append(tokens, NewToken(buffer, Identifier, startCol, startRow, filename))
+				} else {
+					// This is a type keyword
+					tokens = append(tokens, NewToken(buffer, TokenTypeMap[buffer], startCol, startRow, filename))
+				}
+			} else if toktype, ok := TokenTypeMap[buffer]; ok {
 				tokens = append(tokens, NewToken(buffer, toktype, startCol, startRow, filename))
 			} else {
 				tokens = append(tokens, NewToken(buffer, Identifier, startCol, startRow, filename))

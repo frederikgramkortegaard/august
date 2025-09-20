@@ -37,9 +37,9 @@ func executeContractDeployment(tsx *blockchain.Transaction, accountStates map[ty
 	fromState := accountStates[tsx.From]
 	contractAddr := blockchain.GenerateContractAddress(tsx.From, fromState.Nonce)
 
-	// Create contract state
+	// Create contract state with the amount sent in the transaction
 	contractState := &blockchain.AccountState{
-		Balance:      0,
+		Balance:      tsx.Amount, // Contract receives the transaction amount
 		Address:      contractAddr,
 		Nonce:        0,
 		Instructions: tsx.Instructions,

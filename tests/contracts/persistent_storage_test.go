@@ -107,7 +107,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         30000,
-		GasPrice:         1000,
+		GasPrice:         100, // Reduced gas price to avoid balance issues
 	}
 
 	deployTx.Signature = deployTx.GetSignature(minerPriv)
@@ -233,7 +233,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		Instructions:     nil,
 		InitInstructions: nil,
 		GasLimit:         30000,
-		GasPrice:         1000,
+		GasPrice:         100, // Reduced gas price to avoid balance issues
 	}
 
 	callTx.Signature = callTx.GetSignature(minerPriv)
@@ -262,11 +262,7 @@ func TestPersistentStorageBasics(t *testing.T) {
 		t.Fatalf("Failed to execute call transaction: %v", err)
 	}
 
-	// Execute the contract call
-	_, err = ExecuteContractCall(&callTx, tempStates2)
-	if err != nil {
-		t.Fatalf("Failed to execute contract call: %v", err)
-	}
+	// Note: ApplyTransaction now executes the contract, so we don't need ExecuteContractCall
 
 	t.Logf("Contract call used %d gas", actualCallGas)
 
@@ -427,7 +423,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		Instructions:     runtimeInstructions,
 		InitInstructions: initInstructions,
 		GasLimit:         30000,
-		GasPrice:         1000,
+		GasPrice:         100, // Reduced gas price to avoid balance issues
 	}
 
 	deployTx.Signature = deployTx.GetSignature(minerPriv)
@@ -456,20 +452,8 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		t.Fatalf("Failed to deploy contract: %v", err)
 	}
 
-	// Find the deployed contract address
-	var contractAddr2 blockchain.PublicKey
-	for addr, state := range tempStates {
-		if len(state.Instructions) > 0 {
-			contractAddr2 = addr
-			break
-		}
-	}
-
-	// Execute the contract initialization code
-	_, err = ExecuteContractAfterDeployment(&deployTx, tempStates, contractAddr2)
-	if err != nil {
-		t.Fatalf("Failed to execute contract: %v", err)
-	}
+	// Note: ApplyTransaction now executes the contract deployment, so we don't need ExecuteContractAfterDeployment
+	// The contract address can be found in tempStates if needed
 
 	coinbaseTx2 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},
@@ -579,11 +563,7 @@ func TestMultiplePersistentStorageSlots(t *testing.T) {
 		t.Fatalf("Failed to execute call transaction: %v", err)
 	}
 
-	// Execute the contract call
-	_, err = ExecuteContractCall(&callTx, tempStates2)
-	if err != nil {
-		t.Fatalf("Failed to execute contract call: %v", err)
-	}
+	// Note: ApplyTransaction now executes the contract, so we don't need ExecuteContractCall
 
 	coinbaseTx3 := blockchain.Transaction{
 		From:      blockchain.PublicKey{},

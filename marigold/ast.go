@@ -25,6 +25,7 @@ const (
 	ArrayLiteral                  = "ArrayLiteral"
 	MapLiteral                    = "MapLiteral"
 	IndexExpr                     = "IndexExpr"
+	SliceExpr                     = "SliceExpr"
 )
 
 type Function struct {
@@ -38,11 +39,13 @@ type Function struct {
 type Expression struct {
 	Type         ExpressionType `json:"type"`
 	Operator     TokenType      `json:"operator,omitempty"`   // For binary/unary ops
-	Lhs          *Expression    `json:"lhs,omitempty"`        // For binary ops, array base for indexing
+	Lhs          *Expression    `json:"lhs,omitempty"`        // For binary ops, array base for indexing/slicing
 	Rhs          *Expression    `json:"rhs,omitempty"`        // For binary/unary ops, index for array indexing
 	Value        interface{}    `json:"value,omitempty"`      // For literals/identifiers
 	ValueType    TokenType      `json:"value_type,omitempty"` // IntLiteral, FloatLiteral, StringLiteral, etc
 	Args         []*Expression  `json:"args,omitempty"`       // For function calls, array literal elements
+	SliceStart   *Expression    `json:"slice_start,omitempty"` // For slice expressions: start index (can be nil)
+	SliceEnd     *Expression    `json:"slice_end,omitempty"`   // For slice expressions: end index (can be nil)
 	Token        *Token         `json:"token,omitempty"`      // Position information
 }
 
@@ -92,8 +95,7 @@ func NewAst(tokens []*Token) *Ast {
 		Type:  NewMapType(StringType, StringType), // map[string]string
 	}
 
-	// Add blockchain context variables
-	PrePopulateBlockchainContext(globalScope)
+	// Blockchain context variables (@caller, @coinbase, etc.) are lazily loaded when referenced
 
 	return &Ast{
 		Tokens:    tokens,
