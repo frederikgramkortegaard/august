@@ -533,19 +533,33 @@ func Typecheck(ast *Ast) {
 		currentScope: ast.Scope,
 	}
 
-	// Check for required main function
-	mainFunc, hasMain := ast.Functions["main"]
-	if !hasMain {
-		ctx.logFatal("Program must have a main() function")
+	// Check for required init and call functions
+	initFunc, hasInit := ast.Functions["init"]
+	if !hasInit {
+		ctx.logFatal("Program must have an init() function")
 	}
 
-	// Validate main function signature: main() : int
-	if len(mainFunc.Parameters) != 0 {
-		ctx.logFatal("main() function must take no parameters")
+	callFunc, hasCall := ast.Functions["call"]
+	if !hasCall {
+		ctx.logFatal("Program must have a call() function")
 	}
 
-	if !mainFunc.ReturnType.Equals(IntType) {
-		ctx.logFatal("main() function must return int")
+	// Validate init function signature: init() : int
+	if len(initFunc.Parameters) != 0 {
+		ctx.logFatal("init() function must take no parameters")
+	}
+
+	if !initFunc.ReturnType.Equals(IntType) {
+		ctx.logFatal("init() function must return int")
+	}
+
+	// Validate call function signature: call() : int
+	if len(callFunc.Parameters) != 0 {
+		ctx.logFatal("call() function must take no parameters")
+	}
+
+	if !callFunc.ReturnType.Equals(IntType) {
+		ctx.logFatal("call() function must return int")
 	}
 
 	for _, funcdef := range ast.Functions {
