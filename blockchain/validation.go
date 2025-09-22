@@ -533,18 +533,18 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 	return config.GasTransfer, nil // Base gas for regular transfer
 }
 
-// ValidateBlock validates a block and its transactions WITHOUT applying changes
-func ValidateBlock(block *Block, chain *Chain) error {
+// ValidateBlock validates a block and its transactions, returning the new account states if valid
+func ValidateBlock(block *Block, chain *Chain) (map[PublicKey]*AccountState, error) {
 	// First validate block structure (PoW, hashes, etc.)
 	if err := validateBlockStructure(block, chain); err != nil {
 		// Propagate ErrSwitchChain and ErrMissingParent directly, wrap other errors
 		if _, ok := err.(ErrSwitchChain); ok {
-			return err
+			return nil, err
 		}
 		if _, ok := err.(ErrMissingParent); ok {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("block structure validation failed: %w", err)
+		return nil, fmt.Errorf("block structure validation failed: %w", err)
 	}
 
 	// Create a copy of account states for validation without modifying original
@@ -565,99 +565,56 @@ func ValidateBlock(block *Block, chain *Chain) error {
 		}
 	}
 
-	// Validate each transaction without executing contracts or modifying state
-	for i, tsx := range block.Transactions {
-		if err := ValidateTransaction(&tsx, accountStatesCopy); err != nil {
-			return fmt.Errorf("transaction %d failed validation: %w", i, err)
-		}
-
-		// For sequential transaction validation, we need to simulate state changes
-		// without actually executing contracts (just update balances/nonces for validation)
-		if tsx.From != (PublicKey{}) {
-			fromState := accountStatesCopy[tsx.From]
-			fromState.Nonce += 1
-
-			// Deduct maximum possible cost for subsequent transaction validation
-			maxGasCost := tsx.GasLimit * tsx.GasPrice
-			maxCost := tsx.Amount + maxGasCost
-			if tsx.To == (PublicKey{}) && len(tsx.Instructions) > 0 {
-				maxCost += config.ContractDeploymentFee
-			}
-			fromState.Balance -= maxCost
-		}
-	}
-
-	// Use the gas usage reported in block header (trust but verify until we execute the contract)
-	totalGasUsed := block.Header.GasUsed
-
-	// Validate block gas usage doesn't exceed limit
-	if totalGasUsed > block.Header.GasLimit {
-		return fmt.Errorf("block gas used %d exceeds gas limit %d", totalGasUsed, block.Header.GasLimit)
-	}
-
-	// For lightweight validation, we trust the miner's gas calculations
-	// Exact gas fees and coinbase validation will be done during ApplyBlock
-	// where we actually execute the transactions
-
-	return nil
-}
-
-// ApplyBlock applies a validated block to the chain (assumes already validated)
-func ApplyBlock(block *Block, chain *Chain) error {
+	// Validate and execute each transaction, updating the account states copy
 	var totalGasFees uint64 = 0
 	var totalGasUsed uint64 = 0
 
-	// Apply each transaction to the chain state and track actual gas usage
 	for i, tsx := range block.Transactions {
-		gasUsed, err := ApplyTransaction(&tsx, chain.AccountStates)
-		if err != nil {
-			return fmt.Errorf("failed to apply transaction %d: %w", i, err)
+		// First validate the transaction
+		if err := ValidateTransaction(&tsx, accountStatesCopy); err != nil {
+			return nil, fmt.Errorf("transaction %d failed validation: %w", i, err)
 		}
 
-		// Debug logging
-		fmt.Printf("VALIDATION DEBUG: tx %d, gasUsed=%d, isCoinbase=%t, from=%x\n",
-			i, gasUsed, tsx.From == (PublicKey{}), tsx.From[:8])
+		// Then apply the transaction to get actual gas usage
+		gasUsed, err := ApplyTransaction(&tsx, accountStatesCopy)
+		if err != nil {
+			return nil, fmt.Errorf("transaction %d failed execution: %w", i, err)
+		}
 
-		// Track total gas used (skip coinbase transactions like mining does)
+		// Track total gas used (skip coinbase transactions)
 		if tsx.From != (PublicKey{}) {
-			newGasUsed, err := utils.SafeAdd(totalGasUsed, gasUsed)
-			if err != nil {
-				return fmt.Errorf("gas used sum overflow: %w", err)
-			}
-			totalGasUsed = newGasUsed
-
-			// Calculate gas fees for non-coinbase transactions
-			gasFee := gasUsed * tsx.GasPrice
-			newGasFees, err := utils.SafeAdd(totalGasFees, gasFee)
-			if err != nil {
-				return fmt.Errorf("gas fees sum overflow: %w", err)
-			}
-			totalGasFees = newGasFees
+			totalGasUsed += gasUsed
+			totalGasFees += gasUsed * tsx.GasPrice
 		}
 	}
-
-	// Debug total
-	fmt.Printf("VALIDATION DEBUG: block reports %d gas, validation calculated %d gas\n",
-		block.Header.GasUsed, totalGasUsed)
 
 	// Validate that block reports correct gas usage
 	if totalGasUsed != block.Header.GasUsed {
-		return fmt.Errorf("block reports gas used %d but actual is %d", block.Header.GasUsed, totalGasUsed)
+		return nil, fmt.Errorf("block reports gas used %d but actual is %d", block.Header.GasUsed, totalGasUsed)
 	}
 
-	// Skip coinbase validation for genesis block (handled in structure validation)
+	// Validate block gas usage doesn't exceed limit
+	if totalGasUsed > block.Header.GasLimit {
+		return nil, fmt.Errorf("block gas used %d exceeds gas limit %d", totalGasUsed, block.Header.GasLimit)
+	}
+
+	// Validate coinbase transaction amount (skip for genesis block)
 	isGenesisBlock := block.Header.GetHash() == GenesisBlock.Header.GetHash()
 	if !isGenesisBlock {
-		// Validate coinbase transaction amount based on actual gas fees
-		expectedCoinbaseAmount, err := utils.SafeAdd(totalGasFees, config.BlockReward)
-		if err != nil {
-			return fmt.Errorf("coinbase amount calculation overflow: %w", err)
-		}
+		expectedCoinbaseAmount := totalGasFees + config.BlockReward
 		if block.Transactions[0].Amount != expectedCoinbaseAmount {
-			return fmt.Errorf("coinbase transaction amount %d != expected %d (gas fees %d + block reward %d)",
-				block.Transactions[0].Amount, expectedCoinbaseAmount, totalGasFees, config.BlockReward)
+			return nil, fmt.Errorf("coinbase transaction amount %d != expected %d",
+				block.Transactions[0].Amount, expectedCoinbaseAmount)
 		}
 	}
+
+	return accountStatesCopy, nil
+}
+
+// ApplyBlock applies a validated block to the chain using pre-computed account states
+func ApplyBlock(block *Block, chain *Chain, newAccountStates map[PublicKey]*AccountState) error {
+	// Set the new account states (already computed and validated)
+	chain.SetAccountStates(newAccountStates)
 
 	// Add the block to the chain and update tip/index
 	chain.AddBlock(block)
@@ -666,13 +623,14 @@ func ApplyBlock(block *Block, chain *Chain) error {
 
 // ValidateAndApplyBlock validates block structure, applies transactions, and adds block to chain
 func ValidateAndApplyBlock(block *Block, chain *Chain) error {
-	// First validate
-	if err := ValidateBlock(block, chain); err != nil {
+	// First validate and get new account states
+	newAccountStates, err := ValidateBlock(block, chain)
+	if err != nil {
 		return err
 	}
 
-	// Then apply
-	if err := ApplyBlock(block, chain); err != nil {
+	// Then apply using the pre-computed states
+	if err := ApplyBlock(block, chain, newAccountStates); err != nil {
 		return fmt.Errorf("failed to apply block: %w", err)
 	}
 	return nil

@@ -3,7 +3,6 @@ package networking
 import (
 	"august/blockchain"
 	"august/config"
-	"august/storage"
 	"encoding/json"
 	"io"
 	"log"
@@ -14,27 +13,28 @@ import (
 )
 
 // Forward declaration to avoid circular import
-type FullNode interface {
-	ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{}
+type Node interface {
 	ProcessTransaction(tx *blockchain.Transaction) error
 	ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error
+	GetCurrentChain() *blockchain.Block
+	GetBlock(hash blockchain.Hash32) *blockchain.Block
+	GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader
+	GetBlockAtHeight(height uint64) *blockchain.Block
 }
 
 // NetworkConfig holds network server configuration
 type NetworkConfig struct {
 	Port      string
 	NodeID    string
-	Store     *storage.Store
 	SeedPeers []string
-	Node      FullNode
+	Node      Node
 }
-
 
 // Server handles network communication and message passing
 type Server struct {
-	config            NetworkConfig
-	listener          net.Listener
-	node              FullNode
+	config   NetworkConfig
+	listener net.Listener
+	node     Node
 	// Peer management (integrated directly)
 	peers             map[string]*Peer
 	seedPeers         []string
@@ -45,18 +45,17 @@ type Server struct {
 	shutdown          chan bool           // Signal to stop server
 	shutdownComplete  chan bool           // Signal that server has stopped
 	// Request-response handling (integrated directly)
-	pendingRequests   map[string]chan *Message
-	pendingMutex      sync.RWMutex
+	pendingRequests map[string]chan *Message
+	pendingMutex    sync.RWMutex
 
 	// Deduplication maps for different message types
-	recentHeaders     map[blockchain.Hash32]time.Time
-	recentHeadersMu   sync.RWMutex
-	recentBlocks      map[blockchain.Hash32]time.Time
-	recentBlocksMu    sync.RWMutex
-	recentTransactions    map[blockchain.Hash32]time.Time
-	recentTransactionsMu  sync.RWMutex
+	recentHeaders        map[blockchain.Hash32]time.Time
+	recentHeadersMu      sync.RWMutex
+	recentBlocks         map[blockchain.Hash32]time.Time
+	recentBlocksMu       sync.RWMutex
+	recentTransactions   map[blockchain.Hash32]time.Time
+	recentTransactionsMu sync.RWMutex
 }
-
 
 // IsRecentTransaction checks if we've recently seen this transaction (to prevent relay loops)
 func (s *Server) IsRecentTransaction(txHash blockchain.Hash32) bool {
@@ -81,18 +80,18 @@ func (s *Server) MarkTransactionSeen(txHash blockchain.Hash32) {
 // NewServer creates a new network server
 func NewServer(config NetworkConfig) *Server {
 	server := &Server{
-		config:                config,
-		node:                  config.Node,
+		config: config,
+		node:   config.Node,
 		// Initialize peer management
-		peers:                 make(map[string]*Peer),
-		seedPeers:             config.SeedPeers,
-		discoveredPeers:       make([]string, 0),
-		peerConnections:       make(map[string]net.Conn),
-		shutdown:              make(chan bool),
-		shutdownComplete:      make(chan bool),
-		recentHeaders:         make(map[blockchain.Hash32]time.Time),
-		recentBlocks:          make(map[blockchain.Hash32]time.Time),
-		recentTransactions:    make(map[blockchain.Hash32]time.Time),
+		peers:              make(map[string]*Peer),
+		seedPeers:          config.SeedPeers,
+		discoveredPeers:    make([]string, 0),
+		peerConnections:    make(map[string]net.Conn),
+		shutdown:           make(chan bool),
+		shutdownComplete:   make(chan bool),
+		recentHeaders:      make(map[blockchain.Hash32]time.Time),
+		recentBlocks:       make(map[blockchain.Hash32]time.Time),
+		recentTransactions: make(map[blockchain.Hash32]time.Time),
 	}
 
 	// Initialize request-response handling
@@ -100,7 +99,6 @@ func NewServer(config NetworkConfig) *Server {
 
 	return server
 }
-
 
 // StartListener begins listening for network connections (TCP only)
 func (s *Server) StartListener() error {
@@ -118,7 +116,6 @@ func (s *Server) StartListener() error {
 	return nil
 }
 
-
 // Start begins listening for network connections and starts all periodic processes
 func (s *Server) Start() error {
 	if err := s.StartListener(); err != nil {
@@ -127,9 +124,6 @@ func (s *Server) Start() error {
 
 	return s.StartPeriodicProcesses()
 }
-
-
-
 
 // acceptConnections handles incoming peer connections
 func (s *Server) acceptConnections() {
@@ -250,15 +244,6 @@ func (s *Server) GetListener() net.Listener {
 	return s.listener
 }
 
-
-
-
-
-// GetChainStore returns the chain store for testing purposes
-func (s *Server) GetChainStore() *storage.Store {
-	return s.config.Store
-}
-
 // Stop gracefully shuts down the network server
 func (s *Server) Stop() error {
 	if s.listener != nil {
@@ -295,7 +280,7 @@ func (s *Server) StartDiscovery() <-chan bool {
 
 		// Periodic peer discovery is now handled by task scheduler
 
-		log.Printf(s.config.NodeID+"\t"+"Peer discovery started successfully")
+		log.Printf(s.config.NodeID + "\t" + "Peer discovery started successfully")
 		ready <- true
 	}()
 
@@ -427,12 +412,12 @@ func (s *Server) requestPeerSharingAndConnect() <-chan bool {
 	done := make(chan bool, 1)
 
 	go func() {
-		log.Printf(s.config.NodeID+"\t"+"Starting peer sharing and connect sequence")
+		log.Printf(s.config.NodeID + "\t" + "Starting peer sharing and connect sequence")
 		// Request peers (synchronous - responses are handled immediately)
 		s.requestPeerSharing()
 
 		// Now try to connect to any newly discovered peers
-		log.Printf(s.config.NodeID+"\t"+"Now attempting to connect to discovered peers")
+		log.Printf(s.config.NodeID + "\t" + "Now attempting to connect to discovered peers")
 		<-s.connectToDiscoveredPeers()
 
 		done <- true
@@ -576,7 +561,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 		// Different strategies based on connection count
 		if len(connected) == 0 {
 			// No connections, try seed peers
-			log.Printf(s.config.NodeID+"\t"+"No connected peers, attempting to connect to seed peers")
+			log.Printf(s.config.NodeID + "\t" + "No connected peers, attempting to connect to seed peers")
 			<-s.ConnectToSeeds() // Wait for seed connections to complete
 		} else if len(connected) < 15 {
 			// Few connections, try to get more
@@ -586,7 +571,7 @@ func (s *Server) RunDiscoveryRound() <-chan bool {
 			<-s.connectToDiscoveredPeers()
 		}
 
-		log.Printf(s.config.NodeID+"\t"+"Discovery round completed")
+		log.Printf(s.config.NodeID + "\t" + "Discovery round completed")
 	}()
 
 	return done
@@ -607,5 +592,3 @@ func (s *Server) shouldKeepExistingConnection(existingPeer *Peer, newPeer *Peer,
 		return !existingPeer.IsOutgoing
 	}
 }
-
-

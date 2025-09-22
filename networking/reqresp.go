@@ -133,11 +133,14 @@ func (s *Server) sendMessage(conn net.Conn, msg *Message) error {
 
 // sendHandshake sends a handshake message to a peer using the reqresp pattern
 func (s *Server) sendHandshake(peerAddr string) {
-	height, err := s.config.Store.GetChainHeight()
-	if err != nil {
-		log.Printf(s.config.NodeID+"\t"+"Failed to get chain height: %v", err)
-		height = 0
+	currentChain := s.node.GetCurrentChain()
+
+	var height uint64 = 0
+	if currentChain == nil {
+		log.Printf(s.config.NodeID + "\t" + "Failed to get chain height: could not get current chain")
 	}
+
+	height = currentChain.Header.Height
 
 	handshake := HandshakePayload{
 		NodeID:      s.config.NodeID,

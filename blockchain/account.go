@@ -45,3 +45,30 @@ func (s *AccountState) GetHash() Hash32 {
 	copy(hash[:], h.Sum(nil))
 	return hash
 }
+
+// DeepCopyAccountStates creates a deep copy of account states map
+func DeepCopyAccountStates(original map[PublicKey]*AccountState) map[PublicKey]*AccountState {
+	result := make(map[PublicKey]*AccountState)
+	for k, v := range original {
+		// Deep copy Instructions slice
+		instructionsCopy := make([]Instruction, len(v.Instructions))
+		copy(instructionsCopy, v.Instructions)
+
+		result[k] = &AccountState{
+			Address:             v.Address,
+			Balance:             v.Balance,
+			Nonce:               v.Nonce,
+			Instructions:        instructionsCopy,
+			Persistent:          make(map[string]string),
+			StorageRoot:         v.StorageRoot,
+			CodeHash:            v.CodeHash,
+			DeploymentTsxHash:   v.DeploymentTsxHash,
+			DeploymentBlockHash: v.DeploymentBlockHash,
+		}
+		// Copy persistent storage
+		for pk, pv := range v.Persistent {
+			result[k].Persistent[pk] = pv
+		}
+	}
+	return result
+}

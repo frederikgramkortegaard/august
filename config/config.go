@@ -56,6 +56,9 @@ const (
 	// Network peer constants
 	MaxPeers = 128 // Maximum number of peers
 
+	// Chain management constants
+	MaxCandidateChainDepthGap = 6 // Remove candidate chains more than 6 blocks behind current
+
 	// Network TTL constants
 	RecentHeadersTTL      = 5 * time.Minute  // How long to keep headers in recent cache
 	RecentBlocksTTL       = 5 * time.Minute  // How long to keep blocks in recent cache

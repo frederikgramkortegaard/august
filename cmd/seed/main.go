@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Create and start seed node
-	seedNode := node.NewFullNode(config)
+	seedNode := node.NewNode(config)
 
 	log.Printf("%s\tStarting SEED node: Network on :%s", *nodeID, *port)
 	if len(seedPeers) > 0 {

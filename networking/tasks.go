@@ -96,7 +96,6 @@ func (ts *TaskScheduler) runCleanupTasks() {
 	log.Printf(ts.server.config.NodeID + "\t" + "Periodic cleanup completed")
 }
 
-
 // periodicDiscovery runs peer discovery at regular intervals
 func (ts *TaskScheduler) periodicDiscovery() {
 	ticker := time.NewTicker(config.DiscoveryInterval)
@@ -135,23 +134,19 @@ func (ts *TaskScheduler) Stop() {
 
 // logChainStatus logs the current state of the blockchain
 func (s *Server) logChainStatus() {
-	chain, err := s.config.Store.GetChain()
-	if err != nil {
-		log.Printf(s.config.NodeID+"\t"+"Failed to get chain for status: %v", err)
-		return
-	}
 
-	if len(chain.Blocks) == 0 {
+	currentChain := s.node.GetCurrentChain()
+
+	if currentChain == nil {
 		log.Printf(s.config.NodeID + "\t" + "CHAIN STATUS: No blocks")
 		return
 	}
 
-	latestBlock := chain.Blocks[len(chain.Blocks)-1]
-	blockHash := latestBlock.Header.GetHash()
+	blockHash := currentChain.Header.GetHash()
 	log.Printf(s.config.NodeID+"\t"+"CHAIN STATUS: Height %d, Head %x, TxCount %d",
-		latestBlock.Header.Height,
+		currentChain.Header.Height,
 		blockHash[:8],
-		len(latestBlock.Transactions))
+		len(currentChain.Transactions))
 }
 
 // cleanupTTLCaches removes old entries from all TTL-based caches
@@ -200,4 +195,3 @@ func (s *Server) cleanupTTLCaches(now time.Time) {
 		log.Printf(s.config.NodeID+"\t"+"Cleaned up %d old recent transactions", transactionsDeleted)
 	}
 }
-

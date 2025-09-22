@@ -7,6 +7,14 @@ if exists("b:current_syntax")
   finish
 endif
 
+" Comments FIRST - highest priority to prevent other syntax inside
+syn match marigoldComment "//.*$" contains=@Spell
+syn region marigoldComment start="/\*" end="\*/" contains=@Spell
+
+" String literals (also high priority)
+syn region marigoldString start='"' end='"' skip='\\"' keepend
+syn region marigoldString start="'" end="'" skip="\\'" keepend
+
 " Keywords
 syn keyword marigoldKeyword define return if else while break continue
 syn keyword marigoldKeyword map len emit stop assert
@@ -23,17 +31,9 @@ syn keyword marigoldBoolean true false
 " Blockchain context variables (starting with @)
 syn match marigoldChainVar "@\w\+"
 
-" String literals
-syn region marigoldString start='"' end='"' contained
-syn region marigoldString start="'" end="'" contained
-
 " Numeric literals
 syn match marigoldNumber "\<\d\+\>"
 syn match marigoldFloat "\<\d\+\.\d\+\>"
-
-" Comments (C-style)
-syn match marigoldComment "//.*$"
-syn region marigoldComment start="/\*" end="\*/"
 
 " Operators
 syn match marigoldOperator "+"

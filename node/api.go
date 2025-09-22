@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -80,7 +81,7 @@ type ChainStateResponse struct {
 // NodeAPI interface represents the minimal interface needed by the query API
 type NodeAPI interface {
 	GetChainHead() blockchain.ChainHead
-	ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{}
+	ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error
 	ProcessTransaction(tx *blockchain.Transaction) error
 	GetChain() (*blockchain.Chain, error)
 	GetMempool() *Mempool
@@ -170,9 +171,12 @@ func handleSubmitBlock(node NodeAPI) http.HandlerFunc {
 			return
 		}
 
-		// Process the block asynchronously (don't block the HTTP connection)
+		// Process the header asynchronously (don't block the HTTP connection)
 		go func() {
-			<-node.ProcessBlock(&block)
+			err := node.ProcessHeader(&block.Header, "api")
+			if err != nil {
+				log.Printf("Failed to process header from API: %v", err)
+			}
 		}()
 
 		w.Header().Set("Content-Type", "application/json")

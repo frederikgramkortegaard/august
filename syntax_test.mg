@@ -1,6 +1,16 @@
 // Marigold syntax highlighting test file
+// These should NOT be highlighted: define string int @caller persistent
+
+/*
+  Block comment test - none of these should highlight:
+  define function() : string {
+    @caller @callvalue persistent memory
+    return "test"
+  }
+*/
+
 define init() : int {
-  // Initialize contract with deployer balance
+  // Initialize contract with deployer balance - @caller should not highlight here
   persistent[@caller] = string(@callvalue)
   return 0
 }

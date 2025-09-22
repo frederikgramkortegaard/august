@@ -18,8 +18,6 @@ func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 		s.ProcessHandshake(msg, peer, conn)
 	case MessageTypeNewBlockHeader:
 		s.ProcessNewBlockHeader(msg, peer)
-	case MessageTypeNewBlock:
-		s.ProcessNewBlock(msg, peer)
 	case MessageTypePing:
 		s.SendPongResponse(conn)
 	case MessageTypePong:
@@ -39,11 +37,8 @@ func (s *Server) ProcessMessage(msg *Message, peer *Peer, conn net.Conn) {
 	case MessageTypeRequestHeaders:
 		s.SendHeadersResponse(conn, msg, peer)
 	case MessageTypeHeaders:
-		s.ProcessHeaders(msg, peer)
 	case MessageTypeRequestBlocks:
 		s.SendBlocksResponse(conn, msg, peer)
-	case MessageTypeBlocks:
-		s.ProcessBlocks(msg, peer)
 	default:
 		log.Printf(s.config.NodeID+"\t"+"Unknown message type: %s", msg.Type)
 	}

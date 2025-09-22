@@ -2,12 +2,13 @@ package node
 
 import (
 	"august/blockchain"
+	"august/config"
 	"august/networking"
-	"august/storage"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -30,10 +31,8 @@ type NodeConfig struct {
 	QueryPort    string // HTTP port for query API and miners (optional)
 }
 
-// FullNode orchestrates Peer Discovery and the rest of networking stuff
-type FullNode struct {
-	// Core blockchain storage
-	Store *storage.Store
+// Node orchestrates Peer Discovery and the rest of networking stuff
+type Node struct {
 
 	// Configuration
 	Config NodeConfig
@@ -42,9 +41,21 @@ type FullNode struct {
 	NetworkServer *networking.Server // Network message handling
 	Mempool       *Mempool           // Transaction pool
 
+	// Chain Management
+	chains          map[blockchain.Hash32]*blockchain.Chain // keyed by tip hash
+	chainsMu        sync.RWMutex
+	currentChainTip blockchain.Hash32 // points to which chain is current
+
+	// Global header index for reliable header walking across chains
+	headersMap   map[blockchain.Hash32]*blockchain.BlockHeader
+	headersMapMu sync.RWMutex
+
 	// Orphan block management
 	orphanBlocks   map[blockchain.Hash32]*OrphanBlock
 	orphanBlocksMu sync.RWMutex
+
+	orphanHeaders   map[blockchain.Hash32][]*blockchain.BlockHeader // keyed by PreviousHash
+	orphanHeadersMu sync.RWMutex
 
 	// Goroutine management
 	ctx    context.Context
@@ -52,10 +63,67 @@ type FullNode struct {
 	wg     sync.WaitGroup
 }
 
-// NewFullNode creates a node that runs all services
-func NewFullNode(config NodeConfig) *FullNode {
+func (n *Node) GetCurrentChain() *blockchain.Block {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	if n.currentChainTip == (blockchain.Hash32{}) {
+		return nil
+	}
+
+	chain := n.chains[n.currentChainTip]
+	if chain == nil {
+		return nil
+	}
+
+	return chain.GetTip()
+}
+
+func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	// Search through all chains for the block
+	for _, chain := range n.chains {
+		if block := chain.GetBlock(hash); block != nil {
+			return block
+		}
+	}
+	return nil
+}
+
+func (n *Node) GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	// Search through all chains for the header
+	for _, chain := range n.chains {
+		if header := chain.GetHeader(hash); header != nil {
+			return header
+		}
+	}
+	return nil
+}
+
+func (n *Node) GetBlockAtHeight(height uint64) *blockchain.Block {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	if n.currentChainTip == (blockchain.Hash32{}) {
+		return nil
+	}
+
+	chain := n.chains[n.currentChainTip]
+	if chain == nil {
+		return nil
+	}
+
+	return chain.GetBlockAtHeight(height)
+}
+
+// NewNode creates a node that runs all services
+func NewNode(config NodeConfig) *Node {
 	// Create shared store
-	chainStore := storage.NewStore(config.DatabaseName)
 
 	// Create mempool
 	nodeMempool := NewMempool()
@@ -63,19 +131,33 @@ func NewFullNode(config NodeConfig) *FullNode {
 	// Create context for goroutine management
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &FullNode{
-		Store:        chainStore,
-		Config:       config,
-		Mempool:      nodeMempool,
-		orphanBlocks: make(map[blockchain.Hash32]*OrphanBlock),
-		ctx:          ctx,
-		cancel:       cancel,
+	node := &Node{
+		Config:        config,
+		Mempool:       nodeMempool,
+		chains:        make(map[blockchain.Hash32]*blockchain.Chain),
+		headersMap:    make(map[blockchain.Hash32]*blockchain.BlockHeader),
+		orphanBlocks:  make(map[blockchain.Hash32]*OrphanBlock),
+		orphanHeaders: make(map[blockchain.Hash32][]*blockchain.BlockHeader),
+		ctx:           ctx,
+		cancel:        cancel,
 		// Components will be initialized in Start()
 	}
+
+	// Initialize with genesis chain
+	genesisChain := blockchain.NewChain()
+	genesisChain.AddHeader(&blockchain.GenesisBlock.Header)
+	genesisHash := blockchain.GenesisBlock.Header.GetHash()
+	node.chains[genesisHash] = genesisChain
+	node.currentChainTip = genesisHash
+
+	// Add genesis header to global headers map
+	node.headersMap[genesisHash] = &blockchain.GenesisBlock.Header
+
+	return node
 }
 
 // Start initializes and starts all components
-func (n *FullNode) Start() <-chan bool {
+func (n *Node) Start() <-chan bool {
 	ready := make(chan bool, 1)
 
 	go func() {
@@ -85,7 +167,6 @@ func (n *FullNode) Start() <-chan bool {
 		networkConfig := networking.NetworkConfig{
 			Port:      n.Config.Port,
 			NodeID:    n.Config.NodeID,
-			Store:     n.Store,
 			SeedPeers: n.Config.SeedPeers,
 			Node:      n,
 		}
@@ -136,9 +217,9 @@ func (n *FullNode) Start() <-chan bool {
 	return ready
 }
 
-// Stop gracefully shuts down the FullNode
-func (n *FullNode) Stop() error {
-	log.Printf("%s\tStopping FullNode...", n.Config.NodeID)
+// Stop gracefully shuts down the Node
+func (n *Node) Stop() error {
+	log.Printf("%s\tStopping Node...", n.Config.NodeID)
 
 	// Signal all goroutines to stop
 	if n.cancel != nil {
@@ -166,29 +247,31 @@ func (n *FullNode) Stop() error {
 		log.Printf("%s\tTimeout waiting for goroutines to stop", n.Config.NodeID)
 	}
 
-	// Close database connection
-	if err := n.Store.Close(); err != nil {
-		log.Printf("%s\tError closing database: %v", n.Config.NodeID, err)
-	}
-
-	log.Println("FullNode stopped successfully")
+	log.Println("Node stopped successfully")
 	return nil
 }
 
 // ProcessTransaction validates and processes a transaction (adding to mempool and relaying)
-func (n *FullNode) ProcessTransaction(tx *blockchain.Transaction) error {
+func (n *Node) ProcessTransaction(tx *blockchain.Transaction) error {
 	if n.NetworkServer == nil {
 		return fmt.Errorf("network server not initialized")
 	}
 
-	// Get current chain state for validation
-	chain, err := n.Store.GetChain()
-	if err != nil {
-		return fmt.Errorf("failed to get chain state: %w", err)
+	// Get current account states for validation
+	n.chainsMu.RLock()
+	var statesCopy map[blockchain.PublicKey]*blockchain.AccountState
+	if n.currentChainTip != (blockchain.Hash32{}) {
+		if currentChain := n.chains[n.currentChainTip]; currentChain != nil {
+			statesCopy = currentChain.GetAccountStates()
+		}
 	}
+	if statesCopy == nil {
+		statesCopy = make(map[blockchain.PublicKey]*blockchain.AccountState)
+	}
+	n.chainsMu.RUnlock()
 
-	// Validate transaction against current chain state
-	if err := blockchain.ValidateTransaction(tx, chain.AccountStates); err != nil {
+	// Validate transaction against current account states
+	if err := blockchain.ValidateTransaction(tx, statesCopy); err != nil {
 		return fmt.Errorf("transaction validation failed: %w", err)
 	}
 
@@ -215,351 +298,681 @@ func (n *FullNode) ProcessTransaction(tx *blockchain.Transaction) error {
 	return nil
 }
 
-// ProcessHeader validates and processes a block header (deciding if we need the full block)
-func (n *FullNode) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error {
-	if n.NetworkServer == nil {
-		return fmt.Errorf("network server not initialized")
-	}
-
+// ProcessHeader validates and processes a block header
+func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error {
 	blockHash := header.GetHash()
-	log.Printf("%s\tProcessing block header %s (height %d) from peer %s",
-		n.Config.NodeID, blockHash.String(), header.Height, sourcePeer)
 
-	// Get current chain to evaluate if we want this block
-	ourChain, err := n.Store.GetChain()
-	if err != nil {
-		return fmt.Errorf("failed to get our chain: %w", err)
+	// Validate the header first (no locks needed)
+	if err := blockchain.ValidateHeaderStructure(header); err != nil {
+		return fmt.Errorf("invalid header: %w", err)
 	}
 
-	// Check if we already have this exact block
-	if _, exists := ourChain.GetBlockByHash(blockHash); exists {
-		log.Printf("%s\tIgnoring block header %s: already have this block", n.Config.NodeID, blockHash.String())
+	// Check if we already have this header and find parent chain (with read lock)
+	n.chainsMu.RLock()
+	var parentChain *blockchain.Chain
+	var parentChainTip blockchain.Hash32
+	var headerExists bool
+
+	// Check if we already have this header in any chain
+	for _, chain := range n.chains {
+		if chain.GetHeader(blockHash) != nil {
+			headerExists = true
+			break
+		}
+	}
+
+	if !headerExists {
+		// Find which chain this header extends (if any)
+		for tipHash, chain := range n.chains {
+			if parentHeader := chain.GetHeader(header.PreviousHash); parentHeader != nil {
+				// Found parent in this chain, validate against parent
+				if err := blockchain.ValidateHeaderTotalWork(header, parentHeader.TotalWork); err != nil {
+					n.chainsMu.RUnlock()
+					return fmt.Errorf("invalid header against parent: %w", err)
+				}
+				parentChain = chain
+				parentChainTip = tipHash
+				break
+			}
+		}
+	}
+	n.chainsMu.RUnlock()
+
+	// Early return if header already exists
+	if headerExists {
 		return nil
 	}
 
-	// Evaluate if we should request this block
-	var shouldRequest bool
-	var reason string = "not needed"
-
-	ourHeight := uint64(0)
-	if len(ourChain.Blocks) > 0 {
-		ourHeight = ourChain.Blocks[len(ourChain.Blocks)-1].Header.Height
-	}
-
-	if header.Height == ourHeight+1 {
-		// This might be the next block in sequence
-		if len(ourChain.Blocks) > 0 {
-			ourTip := ourChain.Blocks[len(ourChain.Blocks)-1]
-			if ourTip.Header.GetHash() == header.PreviousHash {
-				shouldRequest, reason = true, "next block in sequence"
+	// Early return for orphan headers
+	if parentChain == nil {
+		// Check if we have the parent block in any chain (potential new fork)
+		n.chainsMu.RLock()
+		var parentBlock *blockchain.Block
+		var sourceChain *blockchain.Chain
+		for _, chain := range n.chains {
+			if block := chain.GetBlock(header.PreviousHash); block != nil {
+				parentBlock = block
+				sourceChain = chain
+				break
 			}
 		}
-	} else if header.Height > ourHeight+1 {
-		// We're significantly behind - initiate chain synchronization
-		log.Printf("%s\tPeer is ahead by %d blocks (our: %d, peer: %d), initiating chain sync",
-			n.Config.NodeID, header.Height-ourHeight, ourHeight, header.Height)
+		n.chainsMu.RUnlock()
 
-		// Request headers from height 1 to peer's height for headers-first sync
+		if parentBlock != nil {
+			// We have the parent block - create new candidate chain up to common ancestor
+			log.Printf("%s\tHeader %s creates new candidate chain (fork from block %s)",
+				n.Config.NodeID, blockHash.String(), header.PreviousHash.String())
+
+			// Create new candidate chain by validating and applying blocks from genesis to parent
+			newChain := blockchain.NewChain()
+
+			// Check if we have all blocks needed from genesis to parent
+			var missingBlocks []blockchain.Hash32
+			currentHash := parentBlock.Header.GetHash()
+
+			// Walk back to genesis checking for missing blocks
+			for {
+				if currentHash == blockchain.GenesisBlock.Header.GetHash() {
+					break // Reached genesis, we always have this
+				}
+
+				block := sourceChain.GetBlock(currentHash)
+				if block == nil {
+					missingBlocks = append(missingBlocks, currentHash)
+				}
+
+				// Get parent hash for next iteration
+				if block != nil {
+					currentHash = block.Header.PreviousHash
+				} else {
+					// If we don't have the block, we can't walk further back
+					// We'll need to fetch it and try again later
+					break
+				}
+			}
+
+			if len(missingBlocks) > 0 {
+				// We're missing blocks - queue this header for later processing after fetch
+				log.Printf("%s\tMissing %d blocks for new chain creation, fetching blocks", n.Config.NodeID, len(missingBlocks))
+
+				// Convert to base64 strings for request
+				var hashStrings []string
+				for _, hash := range missingBlocks {
+					hashStrings = append(hashStrings, base64.StdEncoding.EncodeToString(hash[:]))
+				}
+
+				// Fetch blocks asynchronously and retry header processing
+				go func() {
+					blocksChan := n.NetworkServer.RequestBlocksByHash(hashStrings)
+					blocks := <-blocksChan
+
+					if blocks == nil || len(blocks) != len(hashStrings) {
+						log.Printf("%s\tFailed to fetch blocks for new chain creation", n.Config.NodeID)
+						return
+					}
+
+					// Lock to add fetched blocks to source chain
+					n.chainsMu.Lock()
+					for _, block := range blocks {
+						sourceChain.AddBlock(block)
+					}
+					n.chainsMu.Unlock()
+
+					// Now retry processing this header (it should succeed now since we have all blocks)
+					n.ProcessHeader(header, sourcePeer)
+				}()
+
+				return nil // Don't process now, wait for async completion
+			}
+
+			// We have all blocks - build the chain now
+			var blocksToApply []*blockchain.Block
+			currentBlock := parentBlock
+
+			// Walk back to genesis collecting blocks
+			for currentBlock != nil {
+				blocksToApply = append([]*blockchain.Block{currentBlock}, blocksToApply...)
+				if currentBlock.Header.Height == 0 {
+					break // Reached genesis
+				}
+				currentBlock = sourceChain.GetBlock(currentBlock.Header.PreviousHash)
+			}
+
+			// Apply blocks in order from genesis to parent
+			for _, block := range blocksToApply {
+				newAccountStates, err := blockchain.ValidateBlock(block, newChain)
+				if err != nil {
+					log.Printf("%s\tFailed to validate block in new chain creation: %v", n.Config.NodeID, err)
+					return fmt.Errorf("failed to build candidate chain: %w", err)
+				}
+
+				if err := blockchain.ApplyBlock(block, newChain, newAccountStates); err != nil {
+					log.Printf("%s\tFailed to apply block in new chain creation: %v", n.Config.NodeID, err)
+					return fmt.Errorf("failed to build candidate chain: %w", err)
+				}
+
+				// Try to connect orphan headers that might now have their parent
+				n.tryConnectOrphanChildren(block.Header.GetHash())
+			}
+
+			// Add to chains map with parent as tip
+			parentHash := parentBlock.Header.GetHash()
+			n.chains[parentHash] = newChain
+
+			log.Printf("%s\tCreated new candidate chain with tip %s, continuing with header processing",
+				n.Config.NodeID, parentHash.String())
+
+			// Set parentChain to the new chain and continue processing normally
+			parentChain = newChain
+			parentChainTip = parentHash
+		} else {
+			// No parent found anywhere - true oprhan
+			// Log outside of locks
+			log.Printf("%s\tHeader %s is orphan (parent not found), adding to orphan headers", n.Config.NodeID, blockHash.String())
+
+			// Add to orphan headers
+			n.orphanHeadersMu.Lock()
+			n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
+			n.orphanHeadersMu.Unlock()
+			return nil
+		}
+	}
+
+	// Header extends an existing chain
+	log.Printf("%s\tHeader %s extends existing chain with tip %s", n.Config.NodeID, blockHash.String(), parentChainTip.String())
+
+	// Add header to the existing chain
+	parentChain.AddHeader(header)
+
+	// Add to global headers map for reliable walking
+	n.headersMapMu.Lock()
+	n.headersMap[blockHash] = header
+	n.headersMapMu.Unlock()
+
+	// Try to connect orphan headers that might now have their parent
+	n.tryConnectOrphanChildren(blockHash)
+
+	// Remove from orphans if it was there (successful connection)
+	var removedFromOrphans bool
+	n.orphanHeadersMu.Lock()
+	if orphanList, exists := n.orphanHeaders[header.PreviousHash]; exists {
+		// Find and remove this specific header from the list
+		for i, orphanHeader := range orphanList {
+			if orphanHeader.GetHash() == blockHash {
+				// Remove this header from the slice
+				n.orphanHeaders[header.PreviousHash] = append(orphanList[:i], orphanList[i+1:]...)
+				// Clean up empty lists
+				if len(n.orphanHeaders[header.PreviousHash]) == 0 {
+					delete(n.orphanHeaders, header.PreviousHash)
+				}
+				removedFromOrphans = true
+				break
+			}
+		}
+	}
+	n.orphanHeadersMu.Unlock()
+
+	if removedFromOrphans {
+		log.Printf("%s\tRemoved header %s from orphans (successfully connected)", n.Config.NodeID, blockHash.String())
+	}
+
+	// Update the chain tip in our map (remove old tip, add new tip)
+	n.chainsMu.Lock()
+	delete(n.chains, parentChainTip)
+	n.chains[blockHash] = parentChain
+	n.chainsMu.Unlock()
+
+	// Check if this extends the current chain
+	n.chainsMu.RLock()
+	extendsCurrentChain := (parentChainTip == n.currentChainTip)
+	n.chainsMu.RUnlock()
+
+	if extendsCurrentChain {
+		log.Printf("%s\tHeader %s extends current chain, fetching block for validation", n.Config.NodeID, blockHash.String())
+
+		// Request the block for this header
+		blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
+		blocksChan := n.NetworkServer.RequestBlocksByHash([]string{blockHashStr})
+
+		// Launch goroutine to handle async block fetching and validation
 		go func() {
-			headers, err := networking.RequestHeadersByHeight(n.NetworkServer, 1, header.Height)
+			// Wait for block to arrive from network (non-blocking on ProcessHeader)
+			blocks := <-blocksChan
+			if blocks == nil || len(blocks) == 0 {
+				log.Printf("%s\tFailed to fetch block %s for current chain extension", n.Config.NodeID, blockHash.String())
+				return
+			}
+
+			block := blocks[0]
+
+			// Validate block and get new account states
+			currentChain := n.chains[n.currentChainTip]
+			newAccountStates, err := blockchain.ValidateBlock(block, currentChain)
 			if err != nil {
-				log.Printf("%s\tFailed to download headers for chain sync: %v", n.Config.NodeID, err)
+				log.Printf("%s\tBlock %s failed validation: %v", n.Config.NodeID, blockHash.String(), err)
+				// Clean up: remove header from parent chain since validation failed
+				n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
 				return
 			}
 
-			// Validate header chain
-			if !blockchain.ValidateHeaderChain(headers) {
-				log.Printf("%s\tInvalid header chain during sync, rejecting", n.Config.NodeID)
+			// Apply block using pre-computed states
+			if err := blockchain.ApplyBlock(block, currentChain, newAccountStates); err != nil {
+				log.Printf("%s\tFailed to apply block %s: %v", n.Config.NodeID, blockHash.String(), err)
+				// Clean up: remove header from parent chain since application failed
+				n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
 				return
 			}
 
-			// Convert headers to block hashes and request all blocks
-			var blockHashes []string
-			for _, h := range headers {
-				hash := h.GetHash()
-				hashStr := base64.StdEncoding.EncodeToString(hash[:])
-				blockHashes = append(blockHashes, hashStr)
+			// Update current chain tip
+			n.chainsMu.Lock()
+			n.chains[blockHash] = currentChain
+			n.currentChainTip = blockHash
+			// Old tip hash naturally gets replaced since currentChain was updated
+			n.chainsMu.Unlock()
+
+			log.Printf("%s\tSuccessfully extended current chain to height %d", n.Config.NodeID, block.Header.Height)
+
+			// Try to connect orphan headers that might now have their parent
+			n.tryConnectOrphanChildren(blockHash)
+		}()
+		return nil
+	}
+
+	// Handle candidate chain extension
+	log.Printf("%s\tHeader %s extends candidate chain, checking for potential reorg", n.Config.NodeID, blockHash.String())
+
+	// Compare total work between candidate chain and current chain
+	n.chainsMu.RLock()
+	currentChain := n.chains[n.currentChainTip]
+	if currentChain == nil || currentChain.Tip == nil {
+		n.chainsMu.RUnlock()
+		return nil
+	}
+
+	currentWork := currentChain.Tip.Header.TotalWork
+	n.chainsMu.RUnlock()
+
+	candidateWork := header.TotalWork
+	workComparison := blockchain.CompareWork(candidateWork, currentWork)
+	if workComparison <= 0 {
+		log.Printf("%s\tCandidate chain has less work, keeping current chain", n.Config.NodeID)
+		return nil
+	}
+
+	log.Printf("%s\tCandidate chain has more work (candidate: %s, current: %s), preparing for reorg",
+		n.Config.NodeID, candidateWork, currentWork)
+
+	// Fetch all blocks needed for this candidate chain
+	go func() {
+		// Find all headers we need to fetch blocks for
+		var headersToFetch []blockchain.Hash32
+		currentHash := blockHash
+
+		// Walk back from tip to find which blocks we need
+		for {
+			if block := parentChain.GetBlock(currentHash); block != nil {
+				// We already have this block, stop here
+				break
 			}
 
-			// Download all blocks
-			blocks, err := n.NetworkServer.RequestBlocksByHash(blockHashes)
-			if err != nil {
-				log.Printf("%s\tFailed to download blocks for chain sync: %v", n.Config.NodeID, err)
+			headersToFetch = append([]blockchain.Hash32{currentHash}, headersToFetch...)
+
+			n.headersMapMu.RLock()
+			header := n.headersMap[currentHash]
+			n.headersMapMu.RUnlock()
+			if header == nil {
+				break
+			}
+			currentHash = header.PreviousHash
+		}
+
+		// Convert to base64 strings for request
+		var hashStrings []string
+		for _, hash := range headersToFetch {
+			hashStrings = append(hashStrings, base64.StdEncoding.EncodeToString(hash[:]))
+		}
+
+		if len(hashStrings) > 0 {
+			log.Printf("%s\tFetching %d blocks for candidate chain", n.Config.NodeID, len(hashStrings))
+			blocksChan := n.NetworkServer.RequestBlocksByHash(hashStrings)
+
+			blocks := <-blocksChan
+			if blocks == nil || len(blocks) != len(hashStrings) {
+				log.Printf("%s\tFailed to fetch all blocks for reorg", n.Config.NodeID)
 				return
 			}
 
-			// Process each block sequentially
+			// Sort blocks by height to ensure proper validation order
+			sort.Slice(blocks, func(i, j int) bool {
+				return blocks[i].Header.Height < blocks[j].Header.Height
+			})
+
+			// Create a deep copy of parent chain's account states for sequential validation
+			tempAccountStates := blockchain.DeepCopyAccountStates(parentChain.GetAccountStates())
+
+			// Create temporary chain for sequential validation
+			tempChain := &blockchain.Chain{
+				Blocks:        parentChain.Blocks,
+				BlockIndex:    parentChain.BlockIndex,
+				Headers:       parentChain.Headers,
+				AccountStates: tempAccountStates,
+				Tip:           parentChain.Tip,
+			}
+
+			// Sequentially validate each block, only keeping the final state
+			var finalAccountStates map[blockchain.PublicKey]*blockchain.AccountState
+			for i, block := range blocks {
+				newAccountStates, err := blockchain.ValidateBlock(block, tempChain)
+				if err != nil {
+					log.Printf("%s\tBlock %d failed validation for reorg: %v", n.Config.NodeID, i, err)
+					// Clean up: remove header from parent chain since validation failed
+					n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
+					return // Fail fast - validation failed
+				}
+
+				// Update temp chain with new states for next block validation
+				tempChain.SetAccountStates(newAccountStates)
+				finalAccountStates = newAccountStates
+			}
+
+			// All blocks validated successfully - now perform atomic reorg check and commit
+			n.chainsMu.Lock()
+			currentChain := n.chains[n.currentChainTip]
+			shouldReorg := false
+
+			// Re-check if reorg is still needed (current chain might have grown during validation)
+			if currentChain != nil && currentChain.Tip != nil {
+				currentWork := currentChain.Tip.Header.TotalWork
+				candidateWork := blocks[len(blocks)-1].Header.TotalWork
+
+				if blockchain.CompareWork(candidateWork, currentWork) > 0 {
+					shouldReorg = true
+					log.Printf("%s\tCandidate chain still has more work, performing atomic reorg", n.Config.NodeID)
+				} else {
+					log.Printf("%s\tCurrent chain grew during validation, keeping current chain", n.Config.NodeID)
+				}
+			}
+
+			// Always update candidate chain with validated blocks (don't waste validation work)
+			// Add headers to candidate chain
 			for _, block := range blocks {
-				done := n.ProcessBlock(block)
-				<-done // Wait for each block to be processed
+				parentChain.AddHeader(&block.Header)
 			}
 
-			log.Printf("%s\tChain synchronization completed", n.Config.NodeID)
-		}()
-		return nil // Don't continue with single block processing
-	} else if header.Height <= ourHeight {
-		// Check if this could be a fork with more work
-		if len(ourChain.Blocks) > 0 {
-			ourTip := ourChain.Blocks[len(ourChain.Blocks)-1]
-			if blockchain.CompareWork(header.TotalWork, ourTip.Header.TotalWork) > 0 {
-				shouldRequest, reason = true, "potential fork with more work"
+			// Add full blocks to candidate chain
+			for _, block := range blocks {
+				parentChain.AddBlock(block)
 			}
+
+			// Try to connect orphans for each newly added block
+			for _, block := range blocks {
+				n.tryConnectOrphanChildren(block.Header.GetHash())
+			}
+
+			// Set the final account states
+			parentChain.SetAccountStates(finalAccountStates)
+
+			if shouldReorg {
+				// Atomic reorg: switch current chain to the candidate chain
+				newTipHash := blocks[len(blocks)-1].Header.GetHash()
+				n.chains[newTipHash] = parentChain
+				n.currentChainTip = newTipHash
+				// Old current chain remains in n.chains as a candidate chain
+
+				log.Printf("%s\tSuccessfully performed atomic chain reorganization to height %d",
+					n.Config.NodeID, blocks[len(blocks)-1].Header.Height)
+
+				// Clean up old candidate chains
+				n.cleanupCandidateChains()
+			} else {
+				// Update candidate chain tip mapping even if no reorg
+				newTipHash := blocks[len(blocks)-1].Header.GetHash()
+				n.chains[newTipHash] = parentChain
+				delete(n.chains, parentChainTip) // Remove old tip mapping
+
+				log.Printf("%s\tCandidate chain updated but no reorg needed", n.Config.NodeID)
+			}
+
+			n.chainsMu.Unlock()
 		}
-	}
-	if shouldRequest {
-		log.Printf("%s\tRequesting full block %s: %s", n.Config.NodeID, blockHash.String(), reason)
-
-		// Request the full block through networking
-		hashString := base64.StdEncoding.EncodeToString(blockHash[:])
-		go func() {
-			blocks, err := n.NetworkServer.RequestBlocksByHash([]string{hashString})
-			if err != nil {
-				log.Printf("%s\tFailed to request block %s from peers: %v", n.Config.NodeID, blockHash.String(), err)
-				return
-			}
-
-			if len(blocks) == 0 {
-				log.Printf("%s\tNo block returned for %s from peers", n.Config.NodeID, blockHash.String())
-				return
-			}
-
-			log.Printf("%s\tReceived the block we requested: %s", n.Config.NodeID, blockHash.String())
-			// Process the requested block
-			<-n.ProcessBlock(blocks[0])
-		}()
-	} else {
-		log.Printf("%s\tIgnoring block header %s: %s", n.Config.NodeID, blockHash.String(), reason)
-	}
+	}()
 
 	return nil
 }
 
-// ProcessBlock attempts to add a block to the main chain, handling orphans
-// Returns a completion channel that will be closed when processing completes
-// excludePeerAddr: if provided, this peer will be excluded from relay (used when block came from a peer)
-func (n *FullNode) ProcessBlock(block *blockchain.Block, excludePeerAddr ...string) <-chan struct{} {
-	complete := make(chan struct{})
+// tryConnectOrphanChildren attempts to connect orphan headers that are children of the given header
+func (n *Node) tryConnectOrphanChildren(parentHash blockchain.Hash32) {
+	// Get orphan headers that have this header as their parent
+	n.orphanHeadersMu.RLock()
+	orphanChildren, exists := n.orphanHeaders[parentHash]
+	if !exists || len(orphanChildren) == 0 {
+		n.orphanHeadersMu.RUnlock()
+		return
+	}
 
-	go func() {
-		defer close(complete)
+	// Make a copy of the orphan list to avoid holding the lock while processing
+	childrenToProcess := make([]*blockchain.BlockHeader, len(orphanChildren))
+	copy(childrenToProcess, orphanChildren)
+	n.orphanHeadersMu.RUnlock()
 
-		if block == nil {
-			return
+	// Try to process each orphan child header
+	for _, orphanHeader := range childrenToProcess {
+		// ProcessHeader will remove from orphans if successful
+		go func(header *blockchain.BlockHeader) {
+			n.ProcessHeader(header, "orphan-connection")
+		}(orphanHeader)
+	}
+}
+
+// processOrphanHeaders attempts to connect orphan headers to existing chains
+func (n *Node) processOrphanHeaders() {
+	n.orphanHeadersMu.RLock()
+	var orphansToProcess []*blockchain.BlockHeader
+	for _, headerList := range n.orphanHeaders {
+		orphansToProcess = append(orphansToProcess, headerList...)
+	}
+	n.orphanHeadersMu.RUnlock()
+
+	// Process each orphan header (ProcessHeader will remove from orphans if successful)
+	for _, header := range orphansToProcess {
+		n.ProcessHeader(header, "orphan-processing")
+	}
+}
+
+// cleanupCandidateChains removes candidate chains that are too far behind current chain
+func (n *Node) cleanupCandidateChains() {
+	// Get current chain height
+	currentChain := n.chains[n.currentChainTip]
+	if currentChain == nil || currentChain.Tip == nil {
+		return
+	}
+
+	currentHeight := currentChain.Tip.Header.Height
+	minHeight := uint64(0)
+	if currentHeight > config.MaxCandidateChainDepthGap {
+		minHeight = currentHeight - config.MaxCandidateChainDepthGap
+	}
+
+	// Remove candidate chains that are too far behind
+	var toRemove []blockchain.Hash32
+	var removeInfo []struct {
+		hash   blockchain.Hash32
+		height uint64
+	}
+
+	for tipHash, chain := range n.chains {
+		if tipHash == n.currentChainTip {
+			continue // Don't remove current chain
 		}
-		blockHash := block.Header.GetHash()
 
-		// Determine exclude address for relay
-		var excludeAddr string
-		if len(excludePeerAddr) > 0 {
-			excludeAddr = excludePeerAddr[0]
+		if chain.Tip != nil && chain.Tip.Header.Height < minHeight {
+			toRemove = append(toRemove, tipHash)
+			removeInfo = append(removeInfo, struct {
+				hash   blockchain.Hash32
+				height uint64
+			}{tipHash, chain.Tip.Header.Height})
 		}
+	}
 
-		// Get current chain and make a deep copy for validation
-		originalChain, err := n.Store.GetChain()
-		if err != nil {
-			log.Printf("%s\tFailed to get chain for block %s: %v", n.Config.NodeID, blockHash.String(), err)
-			return
+	// Remove the stale chains
+	for i, tipHash := range toRemove {
+		delete(n.chains, tipHash)
+		log.Printf("%s\tRemoved stale candidate chain with tip %s (height %d, current height %d)",
+			n.Config.NodeID, removeInfo[i].hash.String(), removeInfo[i].height, currentHeight)
+	}
+
+	if len(toRemove) > 0 {
+		log.Printf("%s\tCleaned up %d stale candidate chains", n.Config.NodeID, len(toRemove))
+	}
+
+	// Also cleanup orphan headers that are lower than any candidate chain
+	n.cleanupStaleOrphans()
+}
+
+// cleanupStaleOrphans removes orphan headers that are lower than any candidate chain
+func (n *Node) cleanupStaleOrphans() {
+	n.orphanHeadersMu.Lock()
+	defer n.orphanHeadersMu.Unlock()
+
+	// Find minimum height across all candidate chains
+	minChainHeight := uint64(^uint64(0)) // Start with max uint64
+	for _, chain := range n.chains {
+		if chain.Tip != nil && chain.Tip.Header.Height < minChainHeight {
+			minChainHeight = chain.Tip.Header.Height
 		}
+	}
 
-		// Make a deep copy to validate on without affecting the original
-		chainCopy := originalChain.DeepCopy()
-		if chainCopy == nil {
-			log.Printf("%s\tFailed to create chain copy for block %s", n.Config.NodeID, blockHash.String())
-			return
-		}
+	// If no chains have tips, don't remove any orphans
+	if minChainHeight == uint64(^uint64(0)) {
+		return
+	}
 
-		// Check if we have the parent block before attempting validation
-		// Special case: if PreviousHash equals genesis hash and we have genesis, parent exists
-		genesisHash := blockchain.GenesisBlock.Header.GetHash()
-		isGenesisChild := block.Header.PreviousHash == genesisHash && len(chainCopy.Blocks) > 0
-
-		// Also check for all-zeros hash (should only be genesis itself)
-		isAllZeros := block.Header.PreviousHash == blockchain.Hash32{}
-		isGenesisBlock := blockHash == genesisHash
-
-		_, parentExists := chainCopy.GetBlockByHash(block.Header.PreviousHash)
-
-		// DEBUG: Log the chain state and checks
-		log.Printf("%s\tDEBUG: Processing block %s", n.Config.NodeID, blockHash.String())
-		log.Printf("%s\tDEBUG: Chain has %d blocks", n.Config.NodeID, len(chainCopy.Blocks))
-		log.Printf("%s\tDEBUG: isGenesisBlock=%t, isGenesisChild=%t, isAllZeros=%t, parentExists=%t",
-			n.Config.NodeID, isGenesisBlock, isGenesisChild, isAllZeros, parentExists)
-		if len(chainCopy.Blocks) > 0 {
-			firstBlockHash := chainCopy.Blocks[0].Header.GetHash()
-			log.Printf("%s\tDEBUG: First block in chain: %s", n.Config.NodeID, firstBlockHash.String())
-		}
-
-		if !parentExists && !isGenesisChild && !isGenesisBlock {
-			// This is an orphan block - we don't have its parent
-			log.Printf("%s\tBlock %s is orphan, missing parent %s. Adding to candidate blocks.",
-				n.Config.NodeID, blockHash.String(), block.Header.PreviousHash.String())
-
-			// Store in orphan blocks
-			n.AddOrphanBlock(block, excludeAddr, block.Header.PreviousHash)
-
-			// Never request all-zeros hash from peers (genesis parent doesn't exist)
-			if isAllZeros {
-				log.Printf("%s\tCannot request all-zeros parent hash from peers", n.Config.NodeID)
-				return
+	// Remove orphans that are lower than the minimum chain height
+	var toRemove []blockchain.Hash32
+	for parentHash, headerList := range n.orphanHeaders {
+		// Filter out headers that are too old
+		var filteredHeaders []*blockchain.BlockHeader
+		for _, header := range headerList {
+			if header.Height >= minChainHeight {
+				filteredHeaders = append(filteredHeaders, header)
 			}
-
-			// Request missing parent block from peers
-			log.Printf("%s\tNeed to request parent block %s from peers", n.Config.NodeID, block.Header.PreviousHash.String())
-			hashString := base64.StdEncoding.EncodeToString(block.Header.PreviousHash[:])
-			go func() {
-				blocks, err := n.NetworkServer.RequestBlocksByHash([]string{hashString})
-				if err != nil {
-					log.Printf("%s\tFailed to request parent block %s from peers: %v", n.Config.NodeID, block.Header.PreviousHash.String(), err)
-					return
-				}
-
-				if len(blocks) == 0 {
-					log.Printf("%s\tNo parent block returned for %s from peers", n.Config.NodeID, block.Header.PreviousHash.String())
-					return
-				}
-
-				// Process the parent block - this should connect orphan blocks
-				<-n.ProcessBlock(blocks[0])
-			}()
-			// Return, the discovered block is now an orphan and will be connected "recursively" once it's parent n+x gets validated
-			return
 		}
 
-		// We have the parent block, proceed with validation
-		err = blockchain.ValidateAndApplyBlock(block, chainCopy)
-
-		// Check if this is a chain switch request (fork detected)
-		if details, ok := err.(blockchain.ErrSwitchChain); ok {
-			log.Printf("%s\tBlock %s detected fork, need to check for chain reorganization", n.Config.NodeID, blockHash.String())
-
-			currentTipWork := chainCopy.Blocks[len(chainCopy.Blocks)-1].Header.TotalWork
-			newBlockWork := details.Block.Header.TotalWork
-			workComparison := blockchain.CompareWork(newBlockWork, currentTipWork)
-
-			log.Printf("%s\tWork comparison: new block work=%s, current tip work=%s, comparison=%d",
-				n.Config.NodeID, newBlockWork, currentTipWork, workComparison)
-
-			// Check if current chain has more work
-			if workComparison <= 0 {
-				log.Printf("%s\tCurrent chain has more total work, ignoring block %s", n.Config.NodeID, blockHash.String())
-				return
-			}
-
-			// Perform Chain Switch - fork has more work
-			// Create new chain up to the common ancestor (fork point)
-			newChain := &blockchain.Chain{
-				Blocks:        chainCopy.Blocks[:details.CommonAncestor.Header.Height+1], //@TODO : Verify this logic again
-				AccountStates: make(map[blockchain.PublicKey]*blockchain.AccountState),
-			}
-
-			// Rebuild account states up to the fork point
-			for _, block := range newChain.Blocks {
-				for _, tx := range block.Transactions {
-					blockchain.ValidateAndApplyTransaction(&tx, newChain.AccountStates)
-				}
-			}
-
-			// Now apply the fork block using ValidateAndApplyBlock
-			err = blockchain.ValidateAndApplyBlock(details.Block, newChain)
-			if err != nil {
-				log.Printf("%s\tFailed to apply fork block %s: %v", n.Config.NodeID, blockHash.String(), err)
-				return
-			}
-
-			chainCopy = newChain
-			log.Printf("%s\tReorganized Chain", n.Config.NodeID)
-
-			// Clean mempool after chain reorganization
-			n.wg.Add(1)
-			go func() {
-				defer n.wg.Done()
-				select {
-				case <-n.ctx.Done():
-					return
-				default:
-					// Revalidate all transactions against new chain state
-					invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-					if invalidated > 0 {
-						log.Printf("%s\tRemoved %d invalid transactions from mempool after chain reorganization", n.Config.NodeID, invalidated)
-					}
-				}
-			}()
-
-			// Other validation errors
-		} else if err != nil {
-			log.Printf("%s\tBlock %s validation failed: %v", n.Config.NodeID, blockHash.String(), err)
-			return
+		// Update the list or remove it entirely
+		if len(filteredHeaders) == 0 {
+			toRemove = append(toRemove, parentHash)
+		} else {
+			n.orphanHeaders[parentHash] = filteredHeaders
 		}
+	}
 
-		// Block validation succeeded and was added to the copy, now atomically replace the chain
-		if err := n.Store.ReplaceChain(chainCopy); err != nil {
-			log.Printf("%s\tFailed to replace chain with validated block %s: %v", n.Config.NodeID, blockHash.String(), err)
-			return
-		}
+	// Remove empty orphan lists
+	for _, hash := range toRemove {
+		delete(n.orphanHeaders, hash)
+	}
 
-		// Block successfully added to main chain
-		log.Printf("%s\tBlock %s added to main chain", n.Config.NodeID, blockHash.String())
+	if len(toRemove) > 0 {
+		log.Printf("%s\tCleaned up %d stale orphan headers (below minimum chain height %d)",
+			n.Config.NodeID, len(toRemove), minChainHeight)
+	}
+}
 
-		// Clean mempool after new block is added
-		n.wg.Add(1)
-		go func() {
-			defer n.wg.Done()
-			select {
-			case <-n.ctx.Done():
-				return
-			default:
-				// Remove transactions that were included in this block from mempool
-				removed := n.Mempool.RemoveTransactions(block.Transactions)
-				if removed > 0 {
-					log.Printf("%s\tRemoved %d transactions from mempool (included in block %s)", n.Config.NodeID, removed, blockHash.String())
-				}
+// cleanupFailedHeader removes a header from parent chain when validation/application fails
+func (n *Node) cleanupFailedHeader(header *blockchain.BlockHeader, blockHash blockchain.Hash32, parentChain *blockchain.Chain, parentChainTip blockchain.Hash32) {
+	n.chainsMu.Lock()
+	defer n.chainsMu.Unlock()
 
-				// Revalidate remaining transactions against new chain state
-				invalidated := n.Mempool.RevalidateTransactions(chainCopy.AccountStates)
-				if invalidated > 0 {
-					log.Printf("%s\tRemoved %d invalid transactions from mempool after block %s", n.Config.NodeID, invalidated, blockHash.String())
-				}
-			}
-		}()
+	// Remove header from parent chain
+	delete(parentChain.Headers, blockHash)
 
-		// Relay the block header to connected peers (headers-first approach)
-		n.wg.Add(1)
-		go func() {
-			defer n.wg.Done()
-			select {
-			case <-n.ctx.Done():
-				return
-			case <-networking.RelayBlockHeader(n.NetworkServer, &block.Header, excludeAddr):
-				// Header relayed successfully
-			}
-		}()
+	// Remove from global headers map since it's invalid
+	n.headersMapMu.Lock()
+	delete(n.headersMap, blockHash)
+	n.headersMapMu.Unlock()
 
-		// Try to connect any orphan blocks that might now be connectible
-		if err := n.TryConnectOrphanBlocks(); err != nil {
-			log.Printf("%s\tError connecting orphan blocks: %v", n.Config.NodeID, err)
-		}
-	}()
+	// Restore original chain mapping (revert the tip update)
+	delete(n.chains, blockHash)
+	n.chains[parentChainTip] = parentChain
 
-	return complete
+	// Re-add to orphans since it couldn't be processed
+	n.orphanHeadersMu.Lock()
+	n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
+	n.orphanHeadersMu.Unlock()
+
+	log.Printf("%s\tCleaned up failed header %s, restored to orphans", n.Config.NodeID, blockHash.String())
 }
 
 // GetChainHead returns information about the current chain head
-func (n *FullNode) GetChainHead() blockchain.ChainHead {
-	return n.Store.GetChainHead()
+func (n *Node) GetChainHead() blockchain.ChainHead {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	if n.currentChainTip == (blockchain.Hash32{}) {
+		return blockchain.ChainHead{
+			Height:    0,
+			Hash:      blockchain.Hash32{},
+			TotalWork: "0",
+		}
+	}
+
+	currentChain := n.chains[n.currentChainTip]
+	if currentChain == nil || currentChain.Tip == nil {
+		return blockchain.ChainHead{
+			Height:    0,
+			Hash:      blockchain.Hash32{},
+			TotalWork: "0",
+		}
+	}
+
+	return blockchain.ChainHead{
+		Height:    currentChain.Tip.Header.Height,
+		Hash:      currentChain.Tip.Header.GetHash(),
+		TotalWork: currentChain.Tip.Header.TotalWork,
+	}
 }
 
 // GetChain returns the current blockchain state (required by NodeAPI interface)
-func (n *FullNode) GetChain() (*blockchain.Chain, error) {
-	return n.Store.GetChain()
+func (n *Node) GetChain() (*blockchain.Chain, error) {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	if n.currentChainTip == (blockchain.Hash32{}) {
+		// Return empty chain
+		return blockchain.NewChain(), nil
+	}
+
+	currentChain := n.chains[n.currentChainTip]
+	if currentChain == nil {
+		return blockchain.NewChain(), nil
+	}
+
+	// Return a copy of the current chain
+	chainCopy := &blockchain.Chain{
+		Blocks:        make([]*blockchain.Block, len(currentChain.Blocks)),
+		BlockIndex:    make(map[blockchain.Hash32]*blockchain.Block),
+		Headers:       make(map[blockchain.Hash32]*blockchain.BlockHeader),
+		AccountStates: currentChain.GetAccountStates(),
+		Tip:           currentChain.Tip,
+	}
+
+	copy(chainCopy.Blocks, currentChain.Blocks)
+	for k, v := range currentChain.BlockIndex {
+		chainCopy.BlockIndex[k] = v
+	}
+	for k, v := range currentChain.Headers {
+		chainCopy.Headers[k] = v
+	}
+
+	return chainCopy, nil
 }
 
 // GetMempool returns the mempool instance (required by NodeAPI interface)
-func (n *FullNode) GetMempool() *Mempool {
+func (n *Node) GetMempool() *Mempool {
 	return n.Mempool
 }
 
 // AddOrphanBlock stores an orphan block waiting for its parent
-func (n *FullNode) AddOrphanBlock(block *blockchain.Block, source string, parentHash blockchain.Hash32) {
+func (n *Node) AddOrphanBlock(block *blockchain.Block, source string, parentHash blockchain.Hash32) {
 	n.orphanBlocksMu.Lock()
 	defer n.orphanBlocksMu.Unlock()
 
@@ -570,26 +983,4 @@ func (n *FullNode) AddOrphanBlock(block *blockchain.Block, source string, parent
 		ReceivedAt:   time.Now(),
 		ParentNeeded: parentHash,
 	}
-}
-
-// TryConnectOrphanBlocks attempts to connect all orphan blocks by trying to validate and apply them
-func (n *FullNode) TryConnectOrphanBlocks() error {
-	n.orphanBlocksMu.Lock()
-	// Make a copy to avoid concurrent modification
-	orphansCopy := make(map[blockchain.Hash32]*OrphanBlock)
-	for hash, orphan := range n.orphanBlocks {
-		orphansCopy[hash] = orphan
-	}
-	n.orphanBlocksMu.Unlock()
-
-	// Try to process all orphan blocks from the copy
-	for hash, orphan := range orphansCopy {
-		go func(blockHash blockchain.Hash32, orphanBlock *OrphanBlock) {
-			done := n.ProcessBlock(orphanBlock.Block, orphanBlock.Source)
-			<-done
-			// If processing succeeds, ProcessBlock will handle removing it from the orphans map
-		}(hash, orphan)
-	}
-
-	return nil
 }
