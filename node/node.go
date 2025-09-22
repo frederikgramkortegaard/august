@@ -24,11 +24,10 @@ type OrphanBlock struct {
 
 // NodeConfig holds all configuration for a full node
 type NodeConfig struct {
-	Port         string
-	NodeID       string
-	SeedPeers    []string
-	DatabaseName string
-	QueryPort    string // HTTP port for query API and miners (optional)
+	Port      string
+	NodeID    string
+	SeedPeers []string
+	QueryPort string // HTTP port for query API and miners (optional)
 }
 
 // Node orchestrates Peer Discovery and the rest of networking stuff
@@ -146,6 +145,7 @@ func NewNode(config NodeConfig) *Node {
 	// Initialize with genesis chain
 	genesisChain := blockchain.NewChain()
 	genesisChain.AddHeader(&blockchain.GenesisBlock.Header)
+	genesisChain.AddBlock(blockchain.GenesisBlock) // Add the full genesis block
 	genesisHash := blockchain.GenesisBlock.Header.GetHash()
 	node.chains[genesisHash] = genesisChain
 	node.currentChainTip = genesisHash
@@ -546,8 +546,8 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 			block := blocks[0]
 
 			// Validate block and get new account states
-			currentChain := n.chains[n.currentChainTip]
-			newAccountStates, err := blockchain.ValidateBlock(block, currentChain)
+			// Use parentChain instead of re-fetching to avoid race conditions
+			newAccountStates, err := blockchain.ValidateBlock(block, parentChain)
 			if err != nil {
 				log.Printf("%s\tBlock %s failed validation: %v", n.Config.NodeID, blockHash.String(), err)
 				// Clean up: remove header from parent chain since validation failed
@@ -556,7 +556,7 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 			}
 
 			// Apply block using pre-computed states
-			if err := blockchain.ApplyBlock(block, currentChain, newAccountStates); err != nil {
+			if err := blockchain.ApplyBlock(block, parentChain, newAccountStates); err != nil {
 				log.Printf("%s\tFailed to apply block %s: %v", n.Config.NodeID, blockHash.String(), err)
 				// Clean up: remove header from parent chain since application failed
 				n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
@@ -565,7 +565,7 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 
 			// Update current chain tip
 			n.chainsMu.Lock()
-			n.chains[blockHash] = currentChain
+			n.chains[blockHash] = parentChain
 			n.currentChainTip = blockHash
 			// Old tip hash naturally gets replaced since currentChain was updated
 			n.chainsMu.Unlock()
@@ -983,4 +983,48 @@ func (n *Node) AddOrphanBlock(block *blockchain.Block, source string, parentHash
 		ReceivedAt:   time.Now(),
 		ParentNeeded: parentHash,
 	}
+}
+
+// AddBlockDirectly adds a block directly to the node's blockchain (for testing)
+func (n *Node) AddBlockDirectly(block *blockchain.Block) error {
+	n.chainsMu.Lock()
+	defer n.chainsMu.Unlock()
+
+	blockHash := block.Header.GetHash()
+
+	// Find the appropriate chain to add this block to
+	var targetChain *blockchain.Chain
+	for _, chain := range n.chains {
+		if chain.GetHeader(block.Header.PreviousHash) != nil {
+			targetChain = chain
+			break
+		}
+	}
+
+	if targetChain == nil {
+		return fmt.Errorf("no chain found for block with parent %s", block.Header.PreviousHash.String())
+	}
+
+	// Add header and block to the chain
+	targetChain.AddHeader(&block.Header)
+	targetChain.AddBlock(block)
+
+	// Add to global headers map
+	n.headersMapMu.Lock()
+	n.headersMap[blockHash] = &block.Header
+	n.headersMapMu.Unlock()
+
+	// Update chain tip mapping
+	delete(n.chains, block.Header.PreviousHash)
+	n.chains[blockHash] = targetChain
+
+	// Update current chain tip if this extends the current chain
+	if block.Header.PreviousHash == n.currentChainTip {
+		n.currentChainTip = blockHash
+	} else if n.currentChainTip == (blockchain.Hash32{}) {
+		// If no current chain tip (genesis scenario), set this as current
+		n.currentChainTip = blockHash
+	}
+
+	return nil
 }

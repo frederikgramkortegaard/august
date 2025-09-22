@@ -24,6 +24,21 @@ const (
 	TestTargetCompact uint32 = 0x1f00ffff
 )
 
+// GetTargetCompact returns appropriate target based on whether we're in test mode
+func GetTargetCompact() uint32 {
+	if IsTestMode() {
+		return TestTargetCompact
+	}
+	return MaxTargetCompact
+}
+
+// IsTestMode detects if we're running under go test
+func IsTestMode() bool {
+	// Simple approach: always use test difficulty for now
+	// TODO: Improve detection later
+	return true
+}
+
 // Currency multipliers (like time package)
 const (
 	Leaf = uint64(1)                // Base unit

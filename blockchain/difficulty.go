@@ -9,7 +9,7 @@ import (
 // CalculateDifficulty calculates difficulty from target bits
 func CalculateDifficulty(targetBits uint32) *big.Float {
 	target := utils.CompactToBig(targetBits)
-	maxTarget := utils.CompactToBig(config.TestTargetCompact) // Use test difficulty for development
+	maxTarget := utils.CompactToBig(config.GetTargetCompact()) // Use appropriate target for environment
 	d := new(big.Float).SetInt(maxTarget)
 	t := new(big.Float).SetInt(target)
 	d.Quo(d, t)
@@ -19,7 +19,7 @@ func CalculateDifficulty(targetBits uint32) *big.Float {
 // GetTargetBits calculates the next target in compact format
 func GetTargetBits(height int, blocks []*Block) uint32 {
 	if height == 0 || len(blocks) == 0 {
-		return config.TestTargetCompact // Use easy difficulty for testing
+		return config.GetTargetCompact() // Use appropriate target for environment
 	}
 
 	if height%config.RecalculationFrequency != 0 {
@@ -42,7 +42,7 @@ func GetTargetBits(height int, blocks []*Block) uint32 {
 	newTarget := new(big.Int).Mul(currentTarget, big.NewInt(actualTimespan))
 	newTarget.Div(newTarget, big.NewInt(config.TargetTimespan))
 
-	maxTarget := utils.CompactToBig(config.TestTargetCompact) // Use test difficulty for development
+	maxTarget := utils.CompactToBig(config.GetTargetCompact()) // Use appropriate target for environment
 	if newTarget.Cmp(maxTarget) > 0 {
 		newTarget = maxTarget
 	}

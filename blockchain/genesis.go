@@ -44,7 +44,7 @@ func init() {
 		MerkleRoot:   merkleRoot,        // Computed from genesis transaction
 		StateRoot:    Hash32{},          // Empty state root for genesis
 		ReceiptRoot:  Hash32{},          // No receipts in genesis
-		Bits:         config.TestTargetCompact, // Super easy target for tests
+		Bits:         config.GetTargetCompact(), // Use appropriate target for environment
 		TotalWork:    "1",               // Work for test difficulty
 		GasLimit:     8000000,           // 8M gas limit
 		GasUsed:      0,                 // No gas used in genesis

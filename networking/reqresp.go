@@ -138,9 +138,9 @@ func (s *Server) sendHandshake(peerAddr string) {
 	var height uint64 = 0
 	if currentChain == nil {
 		log.Printf(s.config.NodeID + "\t" + "Failed to get chain height: could not get current chain")
+	} else {
+		height = currentChain.Header.Height
 	}
-
-	height = currentChain.Header.Height
 
 	handshake := HandshakePayload{
 		NodeID:      s.config.NodeID,
