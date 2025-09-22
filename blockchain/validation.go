@@ -111,7 +111,6 @@ func validateBlockStructure(block *Block, chain *Chain) error {
 	blockHash := block.Header.GetHash()
 	genesisHash := GenesisBlock.Header.GetHash()
 	isGenesisBlock := blockHash == genesisHash
-	log.Printf("VALIDATION DEBUG: blockHash=%s, genesisHash=%s, isGenesis=%t", blockHash.String(), genesisHash.String(), isGenesisBlock)
 	if isGenesisBlock {
 		// Validate genesis-specific rules
 		if block.Header.PreviousHash != (Hash32{}) {

@@ -56,6 +56,13 @@ type Node struct {
 	orphanHeaders   map[blockchain.Hash32][]*blockchain.BlockHeader // keyed by PreviousHash
 	orphanHeadersMu sync.RWMutex
 
+	// Header processing synchronization to prevent race conditions
+	headerProcessingMu sync.Mutex
+
+	// API submitted blocks (temporary storage until processed)
+	submittedBlocks   map[blockchain.Hash32]*blockchain.Block
+	submittedBlocksMu sync.RWMutex
+
 	// Goroutine management
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -79,10 +86,18 @@ func (n *Node) GetCurrentChain() *blockchain.Block {
 }
 
 func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
+	// First check submitted blocks (from API)
+	n.submittedBlocksMu.RLock()
+	if block := n.submittedBlocks[hash]; block != nil {
+		n.submittedBlocksMu.RUnlock()
+		return block
+	}
+	n.submittedBlocksMu.RUnlock()
+
+	// Then search through all chains for the block
 	n.chainsMu.RLock()
 	defer n.chainsMu.RUnlock()
 
-	// Search through all chains for the block
 	for _, chain := range n.chains {
 		if block := chain.GetBlock(hash); block != nil {
 			return block
@@ -131,14 +146,15 @@ func NewNode(config NodeConfig) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	node := &Node{
-		Config:        config,
-		Mempool:       nodeMempool,
-		chains:        make(map[blockchain.Hash32]*blockchain.Chain),
-		headersMap:    make(map[blockchain.Hash32]*blockchain.BlockHeader),
-		orphanBlocks:  make(map[blockchain.Hash32]*OrphanBlock),
-		orphanHeaders: make(map[blockchain.Hash32][]*blockchain.BlockHeader),
-		ctx:           ctx,
-		cancel:        cancel,
+		Config:          config,
+		Mempool:         nodeMempool,
+		chains:          make(map[blockchain.Hash32]*blockchain.Chain),
+		headersMap:      make(map[blockchain.Hash32]*blockchain.BlockHeader),
+		orphanBlocks:    make(map[blockchain.Hash32]*OrphanBlock),
+		orphanHeaders:   make(map[blockchain.Hash32][]*blockchain.BlockHeader),
+		submittedBlocks: make(map[blockchain.Hash32]*blockchain.Block),
+		ctx:             ctx,
+		cancel:          cancel,
 		// Components will be initialized in Start()
 	}
 
@@ -300,7 +316,12 @@ func (n *Node) ProcessTransaction(tx *blockchain.Transaction) error {
 
 // ProcessHeader validates and processes a block header
 func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error {
+	// Serialize header processing to prevent race conditions with current chain updates
+	n.headerProcessingMu.Lock()
+	defer n.headerProcessingMu.Unlock()
+
 	blockHash := header.GetHash()
+	log.Printf("%s\tProcessing header %s (height %d) from peer %s", n.Config.NodeID, blockHash.String()[:8], header.Height, sourcePeer)
 
 	// Validate the header first (no locks needed)
 	if err := blockchain.ValidateHeaderStructure(header); err != nil {
@@ -323,16 +344,19 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 
 	if !headerExists {
 		// Find which chain this header extends (if any)
+		// Only extend a chain if the parent is the TIP of that chain
 		for tipHash, chain := range n.chains {
-			if parentHeader := chain.GetHeader(header.PreviousHash); parentHeader != nil {
-				// Found parent in this chain, validate against parent
-				if err := blockchain.ValidateHeaderTotalWork(header, parentHeader.TotalWork); err != nil {
-					n.chainsMu.RUnlock()
-					return fmt.Errorf("invalid header against parent: %w", err)
+			if tipHash == header.PreviousHash {
+				if parentHeader := chain.GetHeader(header.PreviousHash); parentHeader != nil {
+					// Found parent as tip of this chain, validate against parent
+					if err := blockchain.ValidateHeaderTotalWork(header, parentHeader.TotalWork); err != nil {
+						n.chainsMu.RUnlock()
+						return fmt.Errorf("invalid header against parent: %w", err)
+					}
+					parentChain = chain
+					parentChainTip = tipHash
+					break
 				}
-				parentChain = chain
-				parentChainTip = tipHash
-				break
 			}
 		}
 	}
@@ -474,6 +498,47 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 			n.orphanHeadersMu.Lock()
 			n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
 			n.orphanHeadersMu.Unlock()
+
+			// Only request parent headers if this header didn't come from orphan processing
+			// This prevents infinite loops where orphan processing triggers more orphan processing
+			if sourcePeer != "orphan-connection" {
+				// Request parent header to find common ancestor, but only if we don't already have it
+				parentHeader := n.GetHeader(header.PreviousHash)
+				if parentHeader == nil {
+					log.Printf("%s\tOrphan header at height %d, requesting parent header and block to find common ancestor",
+						n.Config.NodeID, header.Height)
+
+					// Request parent header and block recursively
+					go func() {
+						parentHashStr := base64.StdEncoding.EncodeToString(header.PreviousHash[:])
+
+						// First get the header
+						headers, err := networking.RequestHeadersByHash(n.NetworkServer, []string{parentHashStr})
+						if err == nil && len(headers) > 0 {
+							// Process the parent header first - this will recursively handle any missing ancestors
+							n.ProcessHeader(&headers[0], sourcePeer)
+
+							// Then get the corresponding block and add it to candidate chains
+							blocksChan := n.NetworkServer.RequestBlocksByHash([]string{parentHashStr})
+							blocks := <-blocksChan
+							if blocks != nil && len(blocks) > 0 {
+								// Add the block to any candidate chain that has this header
+								n.chainsMu.Lock()
+								for _, chain := range n.chains {
+									if chain.GetHeader(header.PreviousHash) != nil {
+										chain.AddBlock(blocks[0])
+									}
+								}
+								n.chainsMu.Unlock()
+							}
+						}
+					}()
+				} else {
+					log.Printf("%s\tOrphan header at height %d, parent exists (height %d), not requesting",
+						n.Config.NodeID, header.Height, parentHeader.Height)
+				}
+			}
+
 			return nil
 		}
 	}
@@ -530,56 +595,71 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 	if extendsCurrentChain {
 		log.Printf("%s\tHeader %s extends current chain, fetching block for validation", n.Config.NodeID, blockHash.String())
 
-		// Request the block for this header
-		blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
-		blocksChan := n.NetworkServer.RequestBlocksByHash([]string{blockHashStr})
+		// Handle synchronously to avoid race conditions with subsequent headers
+		var blocks []*blockchain.Block
 
-		// Launch goroutine to handle async block fetching and validation
-		go func() {
-			// Wait for block to arrive from network (non-blocking on ProcessHeader)
-			blocks := <-blocksChan
-			if blocks == nil || len(blocks) == 0 {
-				log.Printf("%s\tFailed to fetch block %s for current chain extension", n.Config.NodeID, blockHash.String())
-				return
+		// First check if we have the block locally (from API submission)
+		if localBlock := n.GetBlock(blockHash); localBlock != nil {
+			blocks = []*blockchain.Block{localBlock}
+		} else {
+			// Request the block from network
+			blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
+			blocksChan := n.NetworkServer.RequestBlocksByHash([]string{blockHashStr})
+
+			// Wait for block to arrive from network
+			blocks = <-blocksChan
+		}
+
+		if blocks == nil || len(blocks) == 0 {
+			log.Printf("%s\tFailed to fetch block %s for current chain extension", n.Config.NodeID, blockHash.String())
+			return nil
+		}
+
+		block := blocks[0]
+
+		// Validate block and get new account states
+		// Use parentChain instead of re-fetching to avoid race conditions
+		newAccountStates, err := blockchain.ValidateBlock(block, parentChain)
+		if err != nil {
+			log.Printf("%s\tBlock %s failed validation: %v", n.Config.NodeID, blockHash.String(), err)
+			// Clean up: remove header from parent chain since validation failed
+			// But don't restore to orphans if it's a chain switch error (not a real validation failure)
+			restoreToOrphans := true
+			if _, isChainSwitch := err.(blockchain.ErrSwitchChain); isChainSwitch {
+				restoreToOrphans = false
 			}
+			n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip, restoreToOrphans)
+			return err
+		}
 
-			block := blocks[0]
+		// Apply block using pre-computed states
+		if err := blockchain.ApplyBlock(block, parentChain, newAccountStates); err != nil {
+			log.Printf("%s\tFailed to apply block %s: %v", n.Config.NodeID, blockHash.String(), err)
+			// Clean up: remove header from parent chain since application failed
+			n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip, true)
+			return err
+		}
 
-			// Validate block and get new account states
-			// Use parentChain instead of re-fetching to avoid race conditions
-			newAccountStates, err := blockchain.ValidateBlock(block, parentChain)
-			if err != nil {
-				log.Printf("%s\tBlock %s failed validation: %v", n.Config.NodeID, blockHash.String(), err)
-				// Clean up: remove header from parent chain since validation failed
-				n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
-				return
-			}
+		// Update current chain tip
+		n.chainsMu.Lock()
+		oldTip := n.currentChainTip
+		n.chains[blockHash] = parentChain
+		n.currentChainTip = blockHash
+		// Remove old tip mapping to avoid stale references
+		if oldTip != (blockchain.Hash32{}) && oldTip != blockHash {
+			delete(n.chains, oldTip)
+		}
+		n.chainsMu.Unlock()
 
-			// Apply block using pre-computed states
-			if err := blockchain.ApplyBlock(block, parentChain, newAccountStates); err != nil {
-				log.Printf("%s\tFailed to apply block %s: %v", n.Config.NodeID, blockHash.String(), err)
-				// Clean up: remove header from parent chain since application failed
-				n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
-				return
-			}
+		log.Printf("%s\tSuccessfully extended current chain to height %d", n.Config.NodeID, block.Header.Height)
 
-			// Update current chain tip
-			n.chainsMu.Lock()
-			n.chains[blockHash] = parentChain
-			n.currentChainTip = blockHash
-			// Old tip hash naturally gets replaced since currentChain was updated
-			n.chainsMu.Unlock()
-
-			log.Printf("%s\tSuccessfully extended current chain to height %d", n.Config.NodeID, block.Header.Height)
-
-			// Try to connect orphan headers that might now have their parent
-			n.tryConnectOrphanChildren(blockHash)
-		}()
+		// Try to connect orphan headers that might now have their parent
+		n.tryConnectOrphanChildren(blockHash)
 		return nil
 	}
 
 	// Handle candidate chain extension
-	log.Printf("%s\tHeader %s extends candidate chain, checking for potential reorg", n.Config.NodeID, blockHash.String())
+	log.Printf("%s\tHeader %s extends candidate chain, checking for potential reorg (TotalWork: %s)", n.Config.NodeID, blockHash.String(), header.TotalWork)
 
 	// Compare total work between candidate chain and current chain
 	n.chainsMu.RLock()
@@ -588,154 +668,152 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 		n.chainsMu.RUnlock()
 		return nil
 	}
-
 	currentWork := currentChain.Tip.Header.TotalWork
 	n.chainsMu.RUnlock()
 
 	candidateWork := header.TotalWork
+	log.Printf("%s\tWork comparison: candidate=%s, current=%s", n.Config.NodeID, candidateWork, currentWork)
 	workComparison := blockchain.CompareWork(candidateWork, currentWork)
 	if workComparison <= 0 {
 		log.Printf("%s\tCandidate chain has less work, keeping current chain", n.Config.NodeID)
 		return nil
 	}
 
-	log.Printf("%s\tCandidate chain has more work (candidate: %s, current: %s), preparing for reorg",
+	log.Printf("%s\tCandidate chain has more work (candidate: %s, current: %s), performing reorg",
 		n.Config.NodeID, candidateWork, currentWork)
 
-	// Fetch all blocks needed for this candidate chain
-	go func() {
-		// Find all headers we need to fetch blocks for
-		var headersToFetch []blockchain.Hash32
-		currentHash := blockHash
+	// Fetch all blocks needed for this candidate chain synchronously
+	// Find all headers we need to fetch blocks for
+	var headersToFetch []blockchain.Hash32
+	currentHash := blockHash
 
-		// Walk back from tip to find which blocks we need
-		for {
-			if block := parentChain.GetBlock(currentHash); block != nil {
-				// We already have this block, stop here
-				break
-			}
-
-			headersToFetch = append([]blockchain.Hash32{currentHash}, headersToFetch...)
-
-			n.headersMapMu.RLock()
-			header := n.headersMap[currentHash]
-			n.headersMapMu.RUnlock()
-			if header == nil {
-				break
-			}
-			currentHash = header.PreviousHash
+	// Walk back from tip to find which blocks we need
+	for {
+		if block := parentChain.GetBlock(currentHash); block != nil {
+			// We already have this block, stop here
+			break
 		}
 
-		// Convert to base64 strings for request
-		var hashStrings []string
-		for _, hash := range headersToFetch {
-			hashStrings = append(hashStrings, base64.StdEncoding.EncodeToString(hash[:]))
+		headersToFetch = append([]blockchain.Hash32{currentHash}, headersToFetch...)
+
+		n.headersMapMu.RLock()
+		header := n.headersMap[currentHash]
+		n.headersMapMu.RUnlock()
+		if header == nil {
+			break
+		}
+		currentHash = header.PreviousHash
+	}
+
+	// Convert to base64 strings for request
+	var hashStrings []string
+	for _, hash := range headersToFetch {
+		hashStrings = append(hashStrings, base64.StdEncoding.EncodeToString(hash[:]))
+	}
+
+	if len(hashStrings) > 0 {
+		log.Printf("%s\tFetching %d blocks for candidate chain", n.Config.NodeID, len(hashStrings))
+		blocksChan := n.NetworkServer.RequestBlocksByHash(hashStrings)
+
+		blocks := <-blocksChan
+		if blocks == nil || len(blocks) != len(hashStrings) {
+			log.Printf("%s\tFailed to fetch all blocks for reorg", n.Config.NodeID)
+			return nil
 		}
 
-		if len(hashStrings) > 0 {
-			log.Printf("%s\tFetching %d blocks for candidate chain", n.Config.NodeID, len(hashStrings))
-			blocksChan := n.NetworkServer.RequestBlocksByHash(hashStrings)
+		// Sort blocks by height to ensure proper validation order
+		sort.Slice(blocks, func(i, j int) bool {
+			return blocks[i].Header.Height < blocks[j].Header.Height
+		})
 
-			blocks := <-blocksChan
-			if blocks == nil || len(blocks) != len(hashStrings) {
-				log.Printf("%s\tFailed to fetch all blocks for reorg", n.Config.NodeID)
-				return
+		// Create a fresh temporary chain starting from genesis for sequential validation
+		tempChain := blockchain.NewChain()
+
+		// Initialize with genesis account states
+		genesisStates := make(map[blockchain.PublicKey]*blockchain.AccountState)
+		genesisStates[config.FirstUser] = &blockchain.AccountState{
+			Balance: 10 * config.AUG,
+			Nonce:   0,
+		}
+		tempChain.SetAccountStates(genesisStates)
+
+		// Sequentially validate each block, only keeping the final state
+		var finalAccountStates map[blockchain.PublicKey]*blockchain.AccountState
+		for i, block := range blocks {
+			newAccountStates, err := blockchain.ValidateBlock(block, tempChain)
+			if err != nil {
+				log.Printf("%s\tBlock %d failed validation for reorg: %v", n.Config.NodeID, i, err)
+				// Don't clean up anything - just abort the reorg attempt
+				// The original chains remain intact
+				return nil // Fail fast - validation failed
 			}
 
-			// Sort blocks by height to ensure proper validation order
-			sort.Slice(blocks, func(i, j int) bool {
-				return blocks[i].Header.Height < blocks[j].Header.Height
-			})
+			// Update temp chain with new states and add block for next block validation
+			tempChain.SetAccountStates(newAccountStates)
+			tempChain.AddBlock(block)
+			finalAccountStates = newAccountStates
+		}
 
-			// Create a deep copy of parent chain's account states for sequential validation
-			tempAccountStates := blockchain.DeepCopyAccountStates(parentChain.GetAccountStates())
+		// All blocks validated successfully - now perform atomic reorg check and commit
+		n.chainsMu.Lock()
+		currentChain := n.chains[n.currentChainTip]
+		shouldReorg := false
 
-			// Create temporary chain for sequential validation
-			tempChain := &blockchain.Chain{
-				Blocks:        parentChain.Blocks,
-				BlockIndex:    parentChain.BlockIndex,
-				Headers:       parentChain.Headers,
-				AccountStates: tempAccountStates,
-				Tip:           parentChain.Tip,
-			}
+		// Re-check if reorg is still needed (current chain might have grown during validation)
+		if currentChain != nil && currentChain.Tip != nil {
+			currentWork := currentChain.Tip.Header.TotalWork
+			candidateWork := blocks[len(blocks)-1].Header.TotalWork
 
-			// Sequentially validate each block, only keeping the final state
-			var finalAccountStates map[blockchain.PublicKey]*blockchain.AccountState
-			for i, block := range blocks {
-				newAccountStates, err := blockchain.ValidateBlock(block, tempChain)
-				if err != nil {
-					log.Printf("%s\tBlock %d failed validation for reorg: %v", n.Config.NodeID, i, err)
-					// Clean up: remove header from parent chain since validation failed
-					n.cleanupFailedHeader(header, blockHash, parentChain, parentChainTip)
-					return // Fail fast - validation failed
-				}
-
-				// Update temp chain with new states for next block validation
-				tempChain.SetAccountStates(newAccountStates)
-				finalAccountStates = newAccountStates
-			}
-
-			// All blocks validated successfully - now perform atomic reorg check and commit
-			n.chainsMu.Lock()
-			currentChain := n.chains[n.currentChainTip]
-			shouldReorg := false
-
-			// Re-check if reorg is still needed (current chain might have grown during validation)
-			if currentChain != nil && currentChain.Tip != nil {
-				currentWork := currentChain.Tip.Header.TotalWork
-				candidateWork := blocks[len(blocks)-1].Header.TotalWork
-
-				if blockchain.CompareWork(candidateWork, currentWork) > 0 {
-					shouldReorg = true
-					log.Printf("%s\tCandidate chain still has more work, performing atomic reorg", n.Config.NodeID)
-				} else {
-					log.Printf("%s\tCurrent chain grew during validation, keeping current chain", n.Config.NodeID)
-				}
-			}
-
-			// Always update candidate chain with validated blocks (don't waste validation work)
-			// Add headers to candidate chain
-			for _, block := range blocks {
-				parentChain.AddHeader(&block.Header)
-			}
-
-			// Add full blocks to candidate chain
-			for _, block := range blocks {
-				parentChain.AddBlock(block)
-			}
-
-			// Try to connect orphans for each newly added block
-			for _, block := range blocks {
-				n.tryConnectOrphanChildren(block.Header.GetHash())
-			}
-
-			// Set the final account states
-			parentChain.SetAccountStates(finalAccountStates)
-
-			if shouldReorg {
-				// Atomic reorg: switch current chain to the candidate chain
-				newTipHash := blocks[len(blocks)-1].Header.GetHash()
-				n.chains[newTipHash] = parentChain
-				n.currentChainTip = newTipHash
-				// Old current chain remains in n.chains as a candidate chain
-
-				log.Printf("%s\tSuccessfully performed atomic chain reorganization to height %d",
-					n.Config.NodeID, blocks[len(blocks)-1].Header.Height)
-
-				// Clean up old candidate chains
-				n.cleanupCandidateChains()
+			if blockchain.CompareWork(candidateWork, currentWork) > 0 {
+				shouldReorg = true
+				log.Printf("%s\tCandidate chain still has more work, performing atomic reorg", n.Config.NodeID)
 			} else {
-				// Update candidate chain tip mapping even if no reorg
-				newTipHash := blocks[len(blocks)-1].Header.GetHash()
-				n.chains[newTipHash] = parentChain
-				delete(n.chains, parentChainTip) // Remove old tip mapping
-
-				log.Printf("%s\tCandidate chain updated but no reorg needed", n.Config.NodeID)
+				log.Printf("%s\tCurrent chain grew during validation, keeping current chain", n.Config.NodeID)
 			}
-
-			n.chainsMu.Unlock()
 		}
-	}()
+
+		// Always update candidate chain with validated blocks (don't waste validation work)
+		// Add headers to candidate chain
+		for _, block := range blocks {
+			parentChain.AddHeader(&block.Header)
+		}
+
+		// Add full blocks to candidate chain
+		for _, block := range blocks {
+			parentChain.AddBlock(block)
+		}
+
+		// Try to connect orphans for each newly added block
+		for _, block := range blocks {
+			n.tryConnectOrphanChildren(block.Header.GetHash())
+		}
+
+		// Set the final account states
+		parentChain.SetAccountStates(finalAccountStates)
+
+		if shouldReorg {
+			// Atomic reorg: switch current chain to the candidate chain
+			newTipHash := blocks[len(blocks)-1].Header.GetHash()
+			n.chains[newTipHash] = parentChain
+			n.currentChainTip = newTipHash
+			// Old current chain remains in n.chains as a candidate chain
+
+			log.Printf("%s\tSuccessfully performed atomic chain reorganization to height %d",
+				n.Config.NodeID, blocks[len(blocks)-1].Header.Height)
+
+			// Clean up old candidate chains
+			n.cleanupCandidateChains()
+		} else {
+			// Update candidate chain tip mapping even if no reorg
+			newTipHash := blocks[len(blocks)-1].Header.GetHash()
+			n.chains[newTipHash] = parentChain
+			delete(n.chains, parentChainTip) // Remove old tip mapping
+
+			log.Printf("%s\tCandidate chain updated but no reorg needed", n.Config.NodeID)
+		}
+
+		n.chainsMu.Unlock()
+	}
 
 	return nil
 }
@@ -878,7 +956,7 @@ func (n *Node) cleanupStaleOrphans() {
 }
 
 // cleanupFailedHeader removes a header from parent chain when validation/application fails
-func (n *Node) cleanupFailedHeader(header *blockchain.BlockHeader, blockHash blockchain.Hash32, parentChain *blockchain.Chain, parentChainTip blockchain.Hash32) {
+func (n *Node) cleanupFailedHeader(header *blockchain.BlockHeader, blockHash blockchain.Hash32, parentChain *blockchain.Chain, parentChainTip blockchain.Hash32, restoreToOrphans bool) {
 	n.chainsMu.Lock()
 	defer n.chainsMu.Unlock()
 
@@ -894,12 +972,15 @@ func (n *Node) cleanupFailedHeader(header *blockchain.BlockHeader, blockHash blo
 	delete(n.chains, blockHash)
 	n.chains[parentChainTip] = parentChain
 
-	// Re-add to orphans since it couldn't be processed
-	n.orphanHeadersMu.Lock()
-	n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
-	n.orphanHeadersMu.Unlock()
-
-	log.Printf("%s\tCleaned up failed header %s, restored to orphans", n.Config.NodeID, blockHash.String())
+	// Only re-add to orphans if it's a real validation failure (not a chain switch)
+	if restoreToOrphans {
+		n.orphanHeadersMu.Lock()
+		n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
+		n.orphanHeadersMu.Unlock()
+		log.Printf("%s\tCleaned up failed header %s, restored to orphans", n.Config.NodeID, blockHash.String())
+	} else {
+		log.Printf("%s\tCleaned up failed header %s, not restored to orphans (chain switch)", n.Config.NodeID, blockHash.String())
+	}
 }
 
 // GetChainHead returns information about the current chain head
@@ -1027,4 +1108,30 @@ func (n *Node) AddBlockDirectly(block *blockchain.Block) error {
 	}
 
 	return nil
+}
+
+
+// StoreBlock stores a block in the node's submitted blocks map (used by submit-block API)
+func (n *Node) StoreBlock(block *blockchain.Block) error {
+	blockHash := block.Header.GetHash()
+
+	n.submittedBlocksMu.Lock()
+	defer n.submittedBlocksMu.Unlock()
+
+	// Store the block so it's available for fetching
+	n.submittedBlocks[blockHash] = block
+
+	return nil
+}
+
+// GetCandidateChains returns a map of all candidate chains (keyed by tip hash)
+func (n *Node) GetCandidateChains() map[blockchain.Hash32]*blockchain.Chain {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	result := make(map[blockchain.Hash32]*blockchain.Chain)
+	for tipHash, chain := range n.chains {
+		result[tipHash] = chain
+	}
+	return result
 }

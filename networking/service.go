@@ -484,6 +484,7 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 	return successfulResponses[0].headers, nil
 }
 
+
 // RequestBlocksByHash requests specific blocks by their hashes using Bitcoin-style peer selection
 func (s *Server) RequestBlocksByHash(blockHashes []string) <-chan []*blockchain.Block {
 	resultChan := make(chan []*blockchain.Block, 1)
@@ -908,6 +909,7 @@ func (s *Server) ProcessSharedPeers(msg *Message, peer *Peer) {
 	log.Printf(s.config.NodeID+"\t"+"Received %d peers from %s", len(sharePayload.Peers), peer.Address)
 	// The discovery component handles adding these peers
 }
+
 
 // ProcessNewTransaction handles incoming transaction announcements
 func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {

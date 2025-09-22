@@ -127,10 +127,17 @@ func (c *Chain) GetBlockByHash(hash Hash32) (*Block, bool) {
 
 // NewChain creates a new chain
 func NewChain() *Chain {
-	return &Chain{
+	chain := &Chain{
 		Blocks:        make([]*Block, 0),
 		BlockIndex:    make(map[Hash32]*Block),
 		Headers:       make(map[Hash32]*BlockHeader),
 		AccountStates: make(map[PublicKey]*AccountState),
 	}
+
+	// Always include genesis block in new chains
+	genesisHash := GenesisBlock.Header.GetHash()
+	chain.BlockIndex[genesisHash] = GenesisBlock
+	chain.Headers[genesisHash] = &GenesisBlock.Header
+
+	return chain
 }

@@ -4,15 +4,12 @@ import (
 	"august/blockchain"
 	"august/config"
 	"august/testutils"
+	"time"
 )
 
 // CreateTestBlockWithCoinbase creates a block with coinbase transaction
 // This is what most tests will want - a valid block with proper coinbase
 func CreateTestBlockWithCoinbase(parent *blockchain.BlockHeader, beneficiary blockchain.PublicKey, additionalTxs []*blockchain.Transaction) *blockchain.Block {
-	height := uint64(1)
-	if parent != nil {
-		height = parent.Height + 1
-	}
 
 	// Create coinbase transaction
 	coinbase := &blockchain.Transaction{
@@ -20,7 +17,7 @@ func CreateTestBlockWithCoinbase(parent *blockchain.BlockHeader, beneficiary blo
 		To:               beneficiary,
 		Amount:           config.BlockReward, // 50 AUG block reward
 		Nonce:            0,
-		Timestamp:        uint64(height), // Use height for deterministic timestamp
+		Timestamp:        uint64(time.Now().UnixNano()), // Use actual time for realistic timestamps
 		ChainID:          config.MainnetChainID,
 		Instructions:     []blockchain.Instruction{},
 		InitInstructions: []blockchain.Instruction{},

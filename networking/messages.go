@@ -123,7 +123,6 @@ type BlocksPayload struct {
 	Blocks []*blockchain.Block `json:"blocks"`
 }
 
-
 // NewMessage creates a new network message with the given type and payload
 func NewMessage(msgType MessageType, payload interface{}) (*Message, error) {
 	payloadBytes, err := json.Marshal(payload)

@@ -2,6 +2,7 @@ package node
 
 import (
 	"august/blockchain"
+	"august/networking"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -85,6 +86,7 @@ type NodeAPI interface {
 	ProcessTransaction(tx *blockchain.Transaction) error
 	GetChain() (*blockchain.Chain, error)
 	GetMempool() *Mempool
+	StoreBlock(block *blockchain.Block) error
 }
 
 // StartQueryAPI starts the HTTP API server for miners and blockchain queries (completely separate from P2P)
@@ -171,11 +173,26 @@ func handleSubmitBlock(node NodeAPI) http.HandlerFunc {
 			return
 		}
 
-		// Process the header asynchronously (don't block the HTTP connection)
+		// Store the block first, then process the header asynchronously
 		go func() {
-			err := node.ProcessHeader(&block.Header, "api")
+			// Store the block so it's available when ProcessHeader tries to fetch it
+			err := node.StoreBlock(&block)
+			if err != nil {
+				log.Printf("Failed to store block from API: %v", err)
+				return
+			}
+
+			// Now process the header
+			err = node.ProcessHeader(&block.Header, "api")
 			if err != nil {
 				log.Printf("Failed to process header from API: %v", err)
+				return
+			}
+
+			// For API-submitted blocks (like from miners), propagate to peers
+			// Cast to access NetworkServer (this is safe since we know the implementation)
+			if nodeImpl, ok := node.(*Node); ok {
+				go func() { <-networking.RelayBlockHeader(nodeImpl.NetworkServer, &block.Header) }()
 			}
 		}()
 
