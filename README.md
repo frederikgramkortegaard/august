@@ -87,8 +87,29 @@ curl http://localhost:8080/balance/<public_key_address>
 ```
 
 ### Smart Contract Development
+```bash
+
+# Compile to AVM bytecode
+go run cmd/marigold/main.go token.mg
+
+# Deploy to blockchain
+go run cmd/wallet/main.go --privkey <key> --node localhost:8080 deploy \
+  --init empty.avmbc --body token.avmbc --amount 0 --gas-limit 100000
+
+# Mint tokens by sending AUG to contract
+go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
+  --contract <address> --amount 1000 --gas-limit 50000
+
+# Query token balance
+go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
+  --contract <address> --amount 0 --gas-limit 50000
+```
+
+## Language Features
+
+### Marigold Syntax
 ```go
-# Write a simple fungible token contract in Marigold
+// Write a simple fungible token contract in Marigold
 define init() : int {
   // Initial supply minted to deployer based on AUG sent
   persistent[@caller] = string(@callvalue)
@@ -124,60 +145,6 @@ define call() : int {
   }
 
   return 0
-}
-```
-# Compile to AVM bytecode
-go run cmd/marigold/main.go token.mg
-
-# Deploy to blockchain
-go run cmd/wallet/main.go --privkey <key> --node localhost:8080 deploy \
-  --init empty.avmbc --body token.avmbc --amount 0 --gas-limit 100000
-
-# Mint tokens by sending AUG to contract
-go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
-  --contract <address> --amount 1000 --gas-limit 50000
-
-# Query token balance
-go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
-  --contract <address> --amount 0 --gas-limit 50000
-```
-
-## Language Features
-
-### Marigold Syntax
-```marigold
-define transfer(to: string, amount: int) : bool {
-    // Type declarations and initialization
-    balance: int = 1000
-    rates: map[string]float = {}
-    active: bool = true
-
-    // Control flow with blockchain context
-    if @balance < amount {
-        emit("Insufficient contract balance")
-        return false
-    }
-
-    current: int = persistent[to]
-    persistent[to] = current + amount
-
-    emit("Transfer completed")
-    return true
-}
-
-define main() : int {
-    // Loop constructs with break/continue
-    i: int = 0
-    while i < 10 {
-        if i % 2 == 0 {
-            i = i + 1
-            continue
-        }
-        emit(i)
-        if i > 7 { break }
-        i = i + 1
-    }
-    return 0
 }
 ```
 
