@@ -74,6 +74,10 @@ Session.vim
 tags
 .*.swp
 *.swp
+*.swo
+*.swn
+.*.swo
+.*.swn
 # coc.nvim
 coc-settings.json
 
