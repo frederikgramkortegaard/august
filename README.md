@@ -87,27 +87,45 @@ curl http://localhost:8080/balance/<public_key_address>
 ```
 
 ### Smart Contract Development
-```bash
-# Write contract in Marigold
-cat > token.mg << 'EOF'
-define main() : int {
-    if @callvalue > 0 {
-        // Mint tokens: 1 AUG sent = 1 token minted
-        current: int = persistent[@caller]
-        new_balance: int = current + @callvalue
-        persistent[@caller] = new_balance
-        emit("Tokens minted:")
-        emit(new_balance)
-    } else {
-        // Query balance
-        balance: int = persistent[@caller]
-        emit("Token balance:")
-        emit(balance)
-    }
-    return 0
+```go
+# Write a simple fungible token contract in Marigold
+define init() : int {
+  // Initial supply minted to deployer based on AUG sent
+  persistent[@caller] = string(@callvalue)
+  return 0
 }
-EOF
 
+define call() : int {
+  // Buy tokens with AUG
+  if len(@tsxdata) == 3 && @tsxdata[:3] == "buy" {
+    persistent[@caller] = string(int(persistent[@caller]) + @callvalue)
+    return 0
+  }
+
+  // Transfer tokens to another address
+  // Format: "transfer" + 64-char hex address + amount
+  if len(@tsxdata) >= 73 && @tsxdata[:8] == "transfer" {
+    recipient: string = @tsxdata[8:72]
+    amount: int = int(@tsxdata[72:])
+
+    // Validate positive amount
+    if amount <= 0 {
+      return 1
+    }
+
+    // Check sufficient balance
+    if int(persistent[@caller]) < amount {
+      return 1
+    }
+
+    // Transfer tokens
+    persistent[@caller] = string(int(persistent[@caller]) - amount)
+    persistent[recipient] = string(int(persistent[recipient]) + amount)
+  }
+
+  return 0
+}
+```
 # Compile to AVM bytecode
 go run cmd/marigold/main.go token.mg
 
