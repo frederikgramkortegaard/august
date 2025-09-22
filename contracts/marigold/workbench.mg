@@ -7,7 +7,12 @@ define init() : int {
 
 define call() : int {
 
+<<<<<<< HEAD
   if @tsxdata[:3] == "buy" && len(@tsxdata) == 3{ 
+=======
+  // Really need better string operations
+  if @tsxdata[:3] == "buy" && len(@tsxdata) == 3 { 
+>>>>>>> 3b1666d46edf80f41fe084d92da04dbd931d6d7a
     // Simply add to balance (defaults to 0 if not exists)
     persistent[@caller] = string(int(persistent[@caller]) + @callvalue)
     return 0
