@@ -1,6 +1,7 @@
 package main
 
 import (
+	"august/config"
 	"august/node"
 	"august/tests"
 	"testing"
@@ -8,8 +9,10 @@ import (
 )
 
 func TestBasicHeaderProcessing(t *testing.T) {
-	// Create test block
-	testBlock := tests.CreateSimpleBlock()
+	_NUM_BLOCKS_TO_ADD := 3
+
+	// Create test blocks chain
+	testBlocks := tests.CreateBlockChainWithCoinbase(_NUM_BLOCKS_TO_ADD, config.FirstUser)
 
 	// Node 1: Peer node with the block data
 	node1 := node.NewNode(node.NodeConfig{
@@ -21,10 +24,12 @@ func TestBasicHeaderProcessing(t *testing.T) {
 
 	<-node1.Start()
 
-	// Add the block directly to node1's blockchain so it can serve it
-	err := node1.AddBlockDirectly(testBlock)
-	if err != nil {
-		t.Fatalf("Failed to add block to peer node: %v", err)
+	// Add all blocks directly to node1's blockchain so it can serve them
+	for i, block := range testBlocks {
+		err := node1.AddBlockDirectly(block)
+		if err != nil {
+			t.Fatalf("Failed to add block %d to peer node: %v", i+1, err)
+		}
 	}
 
 	// Node 2: Test subject that will receive header and fetch block
@@ -40,28 +45,38 @@ func TestBasicHeaderProcessing(t *testing.T) {
 	// Wait for nodes to connect
 	time.Sleep(200 * time.Millisecond)
 
-	// Send only the header to node2 (simulating header-first sync)
-	err = node2.ProcessHeader(&testBlock.Header, "peer")
-	if err != nil {
-		t.Fatalf("Failed to process header: %v", err)
+	// Process blocks sequentially (simulating header-first sync)
+	for i, block := range testBlocks {
+		t.Logf("Processing block %d (height %d)", i+1, block.Header.Height)
+
+		// Send only the header to node2 (simulating header-first sync)
+		err := node2.ProcessHeader(&block.Header, "peer")
+		if err != nil {
+			t.Fatalf("Failed to process header %d: %v", i+1, err)
+		}
+
+		// Wait for async block fetching and validation
+		time.Sleep(300 * time.Millisecond)
+
+		// Verify node2 has successfully processed the block
+		currentTip := node2.GetCurrentChain()
+		if currentTip == nil {
+			t.Fatalf("Current chain tip should not be nil after block %d fetch", i+1)
+		}
+
+		expectedHeight := uint64(i + 1)
+		if currentTip.Header.Height != expectedHeight {
+			t.Fatalf("Block %d: Expected height %d, got %d", i+1, expectedHeight, currentTip.Header.Height)
+		}
+
+		if currentTip.Header.GetHash() != block.Header.GetHash() {
+			t.Fatalf("Block %d: Current chain tip should match the processed block", i+1)
+		}
+
+		t.Logf("Block %d successfully processed and validated", i+1)
 	}
 
-	// Wait for async block fetching and validation
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify node2 has successfully processed the block
-	currentTip := node2.GetCurrentChain()
-	if currentTip == nil {
-		t.Fatal("Current chain tip should not be nil after block fetch")
-	}
-
-	if currentTip.Header.Height != 1 {
-		t.Fatalf("Expected height 1, got %d", currentTip.Header.Height)
-	}
-
-	if currentTip.Header.GetHash() != testBlock.Header.GetHash() {
-		t.Fatal("Current chain tip should match the processed block")
-	}
+	t.Logf("All %d blocks processed successfully!", _NUM_BLOCKS_TO_ADD)
 
 	// Cleanup
 	node1.Stop()

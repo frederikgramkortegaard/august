@@ -128,11 +128,17 @@ func CreateTestHeader(parent *blockchain.BlockHeader, txs []*blockchain.Transact
 	targetBits := config.GetTargetCompact()
 	fmt.Printf("DEBUG: Creating test header with target bits: 0x%x\n", targetBits)
 
+	// Ensure timestamps are in ascending order
+	timestamp := uint64(time.Now().Unix())
+	if parent != nil && timestamp <= parent.Timestamp {
+		timestamp = parent.Timestamp + 1
+	}
+
 	header := &blockchain.BlockHeader{
 		Version:      1,
 		PreviousHash: parentHash,
 		Height:       height,
-		Timestamp:    uint64(time.Now().Unix()),
+		Timestamp:    timestamp,
 		Nonce:        0, // Will be set by mining
 		MerkleRoot:   blockchain.MerkleTransactions(txsToValue(txs)), // ACTUAL merkle root
 		StateRoot:    blockchain.Hash32{}, // TODO: Calculate from account states in tests
