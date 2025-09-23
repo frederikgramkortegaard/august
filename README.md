@@ -1,5 +1,4 @@
-# August: Proof-of-Work Blockchain Implementation
-
+# August: Bitcoin-Style Blockchain with Smart Contracts
 **Go · Distributed Systems · Blockchain · Virtual Machines · Compiler Design**
 
 A blockchain platform built from scratch in Go, featuring proof-of-work consensus, a custom virtual machine, and a high-level smart contract programming language. Implements Bitcoin-inspired consensus with Ethereum-style smart contracts and gas-metered execution.
