@@ -7,7 +7,7 @@ A blockchain platform built from scratch in Go, featuring proof-of-work consensu
 
 August is a blockchain platform implementing the technology stack from consensus protocols to high-level programming languages. The system combines Bitcoin's proof-of-work consensus model with Ethereum-style smart contracts, featuring a custom virtual machine (AVM) and the Marigold programming language.
 
-The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a compiler pipeline with lexer, parser, type checker, and code generator (code generator is WIP).
+The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a compiler pipeline with lexer, parser, type checker, and code generator (code generator is WIP, for now use AVMBC instead).
 
 The P2P network implements decentralized peer discovery and headers-first synchronization without hardcoded seed nodes. The toolchain includes wallet, miner, compiler, and HTTP API for development and interaction.
 
