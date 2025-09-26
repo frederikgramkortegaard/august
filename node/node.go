@@ -28,6 +28,7 @@ type NodeConfig struct {
 	NodeID    string
 	SeedPeers []string
 	QueryPort string // HTTP port for query API and miners (optional)
+
 }
 
 // Node orchestrates Peer Discovery and the rest of networking stuff
@@ -1109,7 +1110,6 @@ func (n *Node) AddBlockDirectly(block *blockchain.Block) error {
 
 	return nil
 }
-
 
 // StoreBlock stores a block in the node's submitted blocks map (used by submit-block API)
 func (n *Node) StoreBlock(block *blockchain.Block) error {

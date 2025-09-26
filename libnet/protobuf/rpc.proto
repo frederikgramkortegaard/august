@@ -1,0 +1,39 @@
+
+syntax = "proto3";
+
+package protocols.rpcprotos;
+
+// This line tells protoc where to put the Go code and what package to use
+option go_package = "august/libnet/protobuf;protobuf";
+
+// Shared between all protocols
+message MessageData {
+  string clientVersion = 1;
+  uint64 timestamp = 2;
+  string messageId = 3;
+}
+
+message HeaderData {
+  uint64 version = 1;
+  bytes previousHash = 2;
+  uint64 height = 3;
+  uint64 timestamp = 4;
+  uint64 nonce = 5;
+  bytes merkleRoot = 6;
+  bytes stateRoot = 7;
+  uint32 bits = 8;
+  string totalWork = 9;
+  uint64 gasLimit = 10;
+  uint64 gasUsed = 11;
+  bytes beneficiary = 12;
+}
+
+message HeadersRequest {
+  MessageData messageData = 1;
+  repeated bytes hashes = 2;
+}
+
+message HeadersResponse {
+  MessageData messageData = 1;
+  repeated HeaderData headerData = 2;
+}
