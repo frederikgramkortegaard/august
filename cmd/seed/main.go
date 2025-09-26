@@ -14,7 +14,6 @@ func main() {
 	// Command line flags for seed node
 	port := flag.String("port", "9372", "Network port")
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
-	dbname := flag.String("dbname", "seeddb", "Name of the Pebble DB")
 	minerport := flag.String("minerport", "8080", "HTTP port for miners")
 	seeds := flag.String("seeds", "", "Comma-separated list of seed nodes (e.g., localhost:9371,192.168.1.100:9372)")
 	flag.Parse()
@@ -41,7 +40,6 @@ func main() {
 		Port:      *port,
 		NodeID:    *nodeID,
 		SeedPeers: seedPeers,
-		DatabaseName:    *dbname,
 		QueryPort: *minerport,
 	}
 
