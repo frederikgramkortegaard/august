@@ -326,6 +326,346 @@ func (x *HeadersResponse) GetHeaderData() []*HeaderData {
 	return nil
 }
 
+type InstructionData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Opcode        []byte                 `protobuf:"bytes,1,opt,name=opcode,proto3" json:"opcode,omitempty"` // Actually a uint8
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`   // types/types.go::Instruction  Value is actually a string representing a hex
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstructionData) Reset() {
+	*x = InstructionData{}
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstructionData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstructionData) ProtoMessage() {}
+
+func (x *InstructionData) ProtoReflect() protoreflect.Message {
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstructionData.ProtoReflect.Descriptor instead.
+func (*InstructionData) Descriptor() ([]byte, []int) {
+	return file_libnet_protobuf_rpc_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *InstructionData) GetOpcode() []byte {
+	if x != nil {
+		return x.Opcode
+	}
+	return nil
+}
+
+func (x *InstructionData) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type TransactionData struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Frompk           []byte                 `protobuf:"bytes,1,opt,name=frompk,proto3" json:"frompk,omitempty"`
+	Topk             []byte                 `protobuf:"bytes,2,opt,name=topk,proto3" json:"topk,omitempty"`
+	Amount           uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Signature        []byte                 `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	Nonce            uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Timestamp        uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Chainid          uint64                 `protobuf:"varint,7,opt,name=chainid,proto3" json:"chainid,omitempty"`
+	CallInstructions []*InstructionData     `protobuf:"bytes,8,rep,name=callInstructions,proto3" json:"callInstructions,omitempty"`
+	InitInstructions []*InstructionData     `protobuf:"bytes,9,rep,name=initInstructions,proto3" json:"initInstructions,omitempty"`
+	GasLimit         uint64                 `protobuf:"varint,10,opt,name=gasLimit,proto3" json:"gasLimit,omitempty"`
+	GasPrice         uint64                 `protobuf:"varint,11,opt,name=gasPrice,proto3" json:"gasPrice,omitempty"`
+	Data             []byte                 `protobuf:"bytes,12,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *TransactionData) Reset() {
+	*x = TransactionData{}
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransactionData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransactionData) ProtoMessage() {}
+
+func (x *TransactionData) ProtoReflect() protoreflect.Message {
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransactionData.ProtoReflect.Descriptor instead.
+func (*TransactionData) Descriptor() ([]byte, []int) {
+	return file_libnet_protobuf_rpc_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TransactionData) GetFrompk() []byte {
+	if x != nil {
+		return x.Frompk
+	}
+	return nil
+}
+
+func (x *TransactionData) GetTopk() []byte {
+	if x != nil {
+		return x.Topk
+	}
+	return nil
+}
+
+func (x *TransactionData) GetAmount() uint64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *TransactionData) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *TransactionData) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+func (x *TransactionData) GetTimestamp() uint64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+func (x *TransactionData) GetChainid() uint64 {
+	if x != nil {
+		return x.Chainid
+	}
+	return 0
+}
+
+func (x *TransactionData) GetCallInstructions() []*InstructionData {
+	if x != nil {
+		return x.CallInstructions
+	}
+	return nil
+}
+
+func (x *TransactionData) GetInitInstructions() []*InstructionData {
+	if x != nil {
+		return x.InitInstructions
+	}
+	return nil
+}
+
+func (x *TransactionData) GetGasLimit() uint64 {
+	if x != nil {
+		return x.GasLimit
+	}
+	return 0
+}
+
+func (x *TransactionData) GetGasPrice() uint64 {
+	if x != nil {
+		return x.GasPrice
+	}
+	return 0
+}
+
+func (x *TransactionData) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type BlockData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Header        *HeaderData            `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	Transactions  []*TransactionData     `protobuf:"bytes,2,rep,name=transactions,proto3" json:"transactions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlockData) Reset() {
+	*x = BlockData{}
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlockData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlockData) ProtoMessage() {}
+
+func (x *BlockData) ProtoReflect() protoreflect.Message {
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlockData.ProtoReflect.Descriptor instead.
+func (*BlockData) Descriptor() ([]byte, []int) {
+	return file_libnet_protobuf_rpc_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *BlockData) GetHeader() *HeaderData {
+	if x != nil {
+		return x.Header
+	}
+	return nil
+}
+
+func (x *BlockData) GetTransactions() []*TransactionData {
+	if x != nil {
+		return x.Transactions
+	}
+	return nil
+}
+
+type BlocksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageData   *MessageData           `protobuf:"bytes,1,opt,name=messageData,proto3" json:"messageData,omitempty"`
+	Hashes        [][]byte               `protobuf:"bytes,2,rep,name=hashes,proto3" json:"hashes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlocksRequest) Reset() {
+	*x = BlocksRequest{}
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlocksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlocksRequest) ProtoMessage() {}
+
+func (x *BlocksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlocksRequest.ProtoReflect.Descriptor instead.
+func (*BlocksRequest) Descriptor() ([]byte, []int) {
+	return file_libnet_protobuf_rpc_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *BlocksRequest) GetMessageData() *MessageData {
+	if x != nil {
+		return x.MessageData
+	}
+	return nil
+}
+
+func (x *BlocksRequest) GetHashes() [][]byte {
+	if x != nil {
+		return x.Hashes
+	}
+	return nil
+}
+
+type BlocksResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageData   *MessageData           `protobuf:"bytes,1,opt,name=messageData,proto3" json:"messageData,omitempty"`
+	BlockData     []*BlockData           `protobuf:"bytes,2,rep,name=blockData,proto3" json:"blockData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlocksResponse) Reset() {
+	*x = BlocksResponse{}
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlocksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlocksResponse) ProtoMessage() {}
+
+func (x *BlocksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_libnet_protobuf_rpc_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlocksResponse.ProtoReflect.Descriptor instead.
+func (*BlocksResponse) Descriptor() ([]byte, []int) {
+	return file_libnet_protobuf_rpc_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *BlocksResponse) GetMessageData() *MessageData {
+	if x != nil {
+		return x.MessageData
+	}
+	return nil
+}
+
+func (x *BlocksResponse) GetBlockData() []*BlockData {
+	if x != nil {
+		return x.BlockData
+	}
+	return nil
+}
+
 var File_libnet_protobuf_rpc_proto protoreflect.FileDescriptor
 
 const file_libnet_protobuf_rpc_proto_rawDesc = "" +
@@ -360,7 +700,33 @@ const file_libnet_protobuf_rpc_proto_rawDesc = "" +
 	"\vmessageData\x18\x01 \x01(\v2 .protocols.rpcprotos.MessageDataR\vmessageData\x12?\n" +
 	"\n" +
 	"headerData\x18\x02 \x03(\v2\x1f.protocols.rpcprotos.HeaderDataR\n" +
-	"headerDataB!Z\x1faugust/libnet/protobuf;protobufb\x06proto3"
+	"headerData\"?\n" +
+	"\x0fInstructionData\x12\x16\n" +
+	"\x06opcode\x18\x01 \x01(\fR\x06opcode\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\xb1\x03\n" +
+	"\x0fTransactionData\x12\x16\n" +
+	"\x06frompk\x18\x01 \x01(\fR\x06frompk\x12\x12\n" +
+	"\x04topk\x18\x02 \x01(\fR\x04topk\x12\x16\n" +
+	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\fR\tsignature\x12\x14\n" +
+	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12\x1c\n" +
+	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x12\x18\n" +
+	"\achainid\x18\a \x01(\x04R\achainid\x12P\n" +
+	"\x10callInstructions\x18\b \x03(\v2$.protocols.rpcprotos.InstructionDataR\x10callInstructions\x12P\n" +
+	"\x10initInstructions\x18\t \x03(\v2$.protocols.rpcprotos.InstructionDataR\x10initInstructions\x12\x1a\n" +
+	"\bgasLimit\x18\n" +
+	" \x01(\x04R\bgasLimit\x12\x1a\n" +
+	"\bgasPrice\x18\v \x01(\x04R\bgasPrice\x12\x12\n" +
+	"\x04data\x18\f \x01(\fR\x04data\"\x8e\x01\n" +
+	"\tBlockData\x127\n" +
+	"\x06header\x18\x01 \x01(\v2\x1f.protocols.rpcprotos.HeaderDataR\x06header\x12H\n" +
+	"\ftransactions\x18\x02 \x03(\v2$.protocols.rpcprotos.TransactionDataR\ftransactions\"k\n" +
+	"\rBlocksRequest\x12B\n" +
+	"\vmessageData\x18\x01 \x01(\v2 .protocols.rpcprotos.MessageDataR\vmessageData\x12\x16\n" +
+	"\x06hashes\x18\x02 \x03(\fR\x06hashes\"\x92\x01\n" +
+	"\x0eBlocksResponse\x12B\n" +
+	"\vmessageData\x18\x01 \x01(\v2 .protocols.rpcprotos.MessageDataR\vmessageData\x12<\n" +
+	"\tblockData\x18\x02 \x03(\v2\x1e.protocols.rpcprotos.BlockDataR\tblockDataB!Z\x1faugust/libnet/protobuf;protobufb\x06proto3"
 
 var (
 	file_libnet_protobuf_rpc_proto_rawDescOnce sync.Once
@@ -374,22 +740,34 @@ func file_libnet_protobuf_rpc_proto_rawDescGZIP() []byte {
 	return file_libnet_protobuf_rpc_proto_rawDescData
 }
 
-var file_libnet_protobuf_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_libnet_protobuf_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_libnet_protobuf_rpc_proto_goTypes = []any{
 	(*MessageData)(nil),     // 0: protocols.rpcprotos.MessageData
 	(*HeaderData)(nil),      // 1: protocols.rpcprotos.HeaderData
 	(*HeadersRequest)(nil),  // 2: protocols.rpcprotos.HeadersRequest
 	(*HeadersResponse)(nil), // 3: protocols.rpcprotos.HeadersResponse
+	(*InstructionData)(nil), // 4: protocols.rpcprotos.InstructionData
+	(*TransactionData)(nil), // 5: protocols.rpcprotos.TransactionData
+	(*BlockData)(nil),       // 6: protocols.rpcprotos.BlockData
+	(*BlocksRequest)(nil),   // 7: protocols.rpcprotos.BlocksRequest
+	(*BlocksResponse)(nil),  // 8: protocols.rpcprotos.BlocksResponse
 }
 var file_libnet_protobuf_rpc_proto_depIdxs = []int32{
-	0, // 0: protocols.rpcprotos.HeadersRequest.messageData:type_name -> protocols.rpcprotos.MessageData
-	0, // 1: protocols.rpcprotos.HeadersResponse.messageData:type_name -> protocols.rpcprotos.MessageData
-	1, // 2: protocols.rpcprotos.HeadersResponse.headerData:type_name -> protocols.rpcprotos.HeaderData
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: protocols.rpcprotos.HeadersRequest.messageData:type_name -> protocols.rpcprotos.MessageData
+	0,  // 1: protocols.rpcprotos.HeadersResponse.messageData:type_name -> protocols.rpcprotos.MessageData
+	1,  // 2: protocols.rpcprotos.HeadersResponse.headerData:type_name -> protocols.rpcprotos.HeaderData
+	4,  // 3: protocols.rpcprotos.TransactionData.callInstructions:type_name -> protocols.rpcprotos.InstructionData
+	4,  // 4: protocols.rpcprotos.TransactionData.initInstructions:type_name -> protocols.rpcprotos.InstructionData
+	1,  // 5: protocols.rpcprotos.BlockData.header:type_name -> protocols.rpcprotos.HeaderData
+	5,  // 6: protocols.rpcprotos.BlockData.transactions:type_name -> protocols.rpcprotos.TransactionData
+	0,  // 7: protocols.rpcprotos.BlocksRequest.messageData:type_name -> protocols.rpcprotos.MessageData
+	0,  // 8: protocols.rpcprotos.BlocksResponse.messageData:type_name -> protocols.rpcprotos.MessageData
+	6,  // 9: protocols.rpcprotos.BlocksResponse.blockData:type_name -> protocols.rpcprotos.BlockData
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_libnet_protobuf_rpc_proto_init() }
@@ -403,7 +781,7 @@ func file_libnet_protobuf_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_libnet_protobuf_rpc_proto_rawDesc), len(file_libnet_protobuf_rpc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -106,6 +106,20 @@ func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
 	}
 	return nil
 }
+func (n *Node) GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	var blocks []*blockchain.Block
+
+	for _, hash := range hashes {
+		if block := n.GetBlock(hash); block != nil {
+			blocks = append(blocks, block)
+			continue
+		}
+	}
+	return blocks
+}
 
 func (n *Node) GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader {
 	n.chainsMu.RLock()

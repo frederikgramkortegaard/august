@@ -38,3 +38,39 @@ message HeadersResponse {
   MessageData messageData = 1;
   repeated HeaderData headerData = 2;
 }
+
+message InstructionData{
+  bytes opcode = 1; // Actually a uint8
+  bytes value = 2; // types/types.go::Instruction  Value is actually a string representing a hex
+                   // value, we send it as bytes here
+} 
+
+message TransactionData{
+  bytes frompk = 1;
+  bytes topk = 2;
+  uint64 amount = 3;
+  bytes signature = 4;
+  uint64 nonce=  5;
+  uint64 timestamp = 6;
+  uint64 chainid = 7;
+  repeated InstructionData callInstructions =8;
+  repeated InstructionData initInstructions=9;
+  uint64 gasLimit=10;
+  uint64 gasPrice=11;
+  bytes data=12;
+}
+
+message BlockData{
+  HeaderData header = 1; 
+  repeated TransactionData transactions = 2;
+  
+}
+message BlocksRequest{
+  MessageData messageData = 1;
+  repeated bytes hashes = 2;
+}
+message BlocksResponse{
+  MessageData messageData = 1;
+  repeated BlockData blockData = 2;
+}
+

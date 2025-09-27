@@ -3,11 +3,11 @@ package main
 import (
 	"august/blockchain"
 	"august/libnet"
+	"august/libnet/protobuf"
 	"august/networking"
 	"august/node"
 	"context"
 	"crypto/rand"
-	"august/libnet/protobuf"
 	"fmt"
 	"github.com/google/uuid"
 	peerstore "github.com/libp2p/go-libp2p/core/peer"
@@ -77,11 +77,25 @@ func main() {
 	data := h2.GetDataFromMessage(messageID)
 	for _, msg := range data {
 		resp := msg.(*protobuf.HeadersResponse)
-		for _, protoHeader := range resp.HeaderData{
+		for _, protoHeader := range resp.HeaderData {
 			blockHeader := libnet.ProtoHeaderToBlockHeader(protoHeader)
 			log.Print(blockHeader.GetHash())
-		
-	}
+		}
 	}
 
+	// Request a block
+	messageID = uuid.New().String()
+	ch = h2.AddMessageToPending(messageID)
+	h2.Rpcprotocol.RequestBlocks(messageID, hashes)
+	<-ch
+	data = h2.GetDataFromMessage(messageID)
+	for _, msg := range data {
+		resp := msg.(*protobuf.BlocksResponse)
+		for _, protoBlock := range resp.BlockData {
+			block := libnet.ProtoBlockToBlock(protoBlock)
+			log.Print(block.Header.PreviousHash.String())
+		}
+	}
+	
 }
+
