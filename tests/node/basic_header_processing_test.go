@@ -4,6 +4,7 @@ import (
 	"august/config"
 	"august/node"
 	"august/tests"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 
 	// Node 1: Peer node with the block data
 	node1 := node.NewNode(node.NodeConfig{
-		Port:      "8880",
+		Port:      8880,
 		NodeID:    "Peer-Node",
 		SeedPeers: []string{},
 		QueryPort: 9990,
@@ -32,11 +33,16 @@ func TestBasicHeaderProcessing(t *testing.T) {
 		}
 	}
 
+	// Get node1's peer info for node2 to connect to
+	node1PeerInfo := node1.GetPeerInfo()
+	node1Addrs, _ := peer.AddrInfoToP2pAddrs(&node1PeerInfo)
+	t.Logf("Node1 multiaddr: %s", node1Addrs[0].String())
+
 	// Node 2: Test subject that will receive header and fetch block
 	node2 := node.NewNode(node.NodeConfig{
-		Port:      "8881",
+		Port:      8881,
 		NodeID:    "Test-Node",
-		SeedPeers: []string{"localhost:8880"}, // Connect to node1
+		SeedPeers: []string{node1Addrs[0].String()}, // Connect to node1
 		QueryPort: 9991,
 	})
 

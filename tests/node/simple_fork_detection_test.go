@@ -7,6 +7,7 @@ import (
 	"august/tests"
 	"bytes"
 	"encoding/json"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"net/http"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestSimpleForkDetection(t *testing.T) {
 
 	// Node A: Has the longer/better chain
 	nodeA := node.NewNode(node.NodeConfig{
-		Port:      "8882",
+		Port:      8882,
 		NodeID:    "Node-A-Long-Chain",
 		SeedPeers: []string{},
 		QueryPort: 9992,
@@ -41,11 +42,16 @@ func TestSimpleForkDetection(t *testing.T) {
 		}
 	}
 
+	// Get node A's peer info for node B to connect to
+	nodeAPeerInfo := nodeA.GetPeerInfo()
+	nodeAAddrs, _ := peer.AddrInfoToP2pAddrs(&nodeAPeerInfo)
+	t.Logf("Node A multiaddr: %s", nodeAAddrs[0].String())
+
 	// Node B: Has shorter chain, will connect to A and should reorganize
 	nodeB := node.NewNode(node.NodeConfig{
-		Port:      "8883",
+		Port:      8883,
 		NodeID:    "Node-B-Short-Chain",
-		SeedPeers: []string{"localhost:8882"}, // Connect to node A
+		SeedPeers: []string{nodeAAddrs[0].String()}, // Connect to node A
 		QueryPort: 9993,
 	})
 

@@ -1,6 +1,17 @@
 package node
 
-import "august/blockchain"
+import (
+	"august/blockchain"
+	"github.com/libp2p/go-libp2p/core/peer"
+)
+
+// GetPeerInfo returns this node's libp2p peer information for connecting other nodes
+func (n *Node) GetPeerInfo() peer.AddrInfo {
+	return peer.AddrInfo{
+		ID:    n.PeerService.Host.ID(),
+		Addrs: n.PeerService.Host.Addrs(),
+	}
+}
 
 // GetCurrentChain returns the current chain's tip block
 func (n *Node) GetCurrentChain() *blockchain.Block {

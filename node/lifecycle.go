@@ -33,15 +33,17 @@ func NewNode(config NodeConfig) *Node {
 
 	// PeerService
 	// Setup Seeds as LibP2P Multiaddr
-	var seeds []peer.AddrInfo = make([]peer.AddrInfo, len(config.SeedPeers))
+	var seeds []peer.AddrInfo
 
 	for _, s := range config.SeedPeers {
 		m, err := ma.NewMultiaddr(s)
 		if err != nil {
+			log.Printf("%s\tFailed to parse seed multiaddr %s: %v", config.NodeID, s, err)
 			continue
 		}
 		ai, err := peer.AddrInfoFromP2pAddr(m)
 		if err != nil {
+			log.Printf("%s\tFailed to convert seed to AddrInfo %s: %v", config.NodeID, s, err)
 			continue
 		}
 		seeds = append(seeds, *ai)
