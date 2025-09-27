@@ -26,7 +26,8 @@ type MessageData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClientVersion string                 `protobuf:"bytes,1,opt,name=clientVersion,proto3" json:"clientVersion,omitempty"`
 	Timestamp     uint64                 `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	MessageId     string                 `protobuf:"bytes,3,opt,name=messageId,proto3" json:"messageId,omitempty"`
+	MessageID     string                 `protobuf:"bytes,3,opt,name=messageID,proto3" json:"messageID,omitempty"`
+	SenderID      string                 `protobuf:"bytes,4,opt,name=senderID,proto3" json:"senderID,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -75,9 +76,16 @@ func (x *MessageData) GetTimestamp() uint64 {
 	return 0
 }
 
-func (x *MessageData) GetMessageId() string {
+func (x *MessageData) GetMessageID() string {
 	if x != nil {
-		return x.MessageId
+		return x.MessageID
+	}
+	return ""
+}
+
+func (x *MessageData) GetSenderID() string {
+	if x != nil {
+		return x.SenderID
 	}
 	return ""
 }
@@ -322,11 +330,12 @@ var File_libnet_protobuf_rpc_proto protoreflect.FileDescriptor
 
 const file_libnet_protobuf_rpc_proto_rawDesc = "" +
 	"\n" +
-	"\x19libnet/protobuf/rpc.proto\x12\x13protocols.rpcprotos\"o\n" +
+	"\x19libnet/protobuf/rpc.proto\x12\x13protocols.rpcprotos\"\x8b\x01\n" +
 	"\vMessageData\x12$\n" +
 	"\rclientVersion\x18\x01 \x01(\tR\rclientVersion\x12\x1c\n" +
 	"\ttimestamp\x18\x02 \x01(\x04R\ttimestamp\x12\x1c\n" +
-	"\tmessageId\x18\x03 \x01(\tR\tmessageId\"\xde\x02\n" +
+	"\tmessageID\x18\x03 \x01(\tR\tmessageID\x12\x1a\n" +
+	"\bsenderID\x18\x04 \x01(\tR\bsenderID\"\xde\x02\n" +
 	"\n" +
 	"HeaderData\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x12\"\n" +

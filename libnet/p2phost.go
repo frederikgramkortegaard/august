@@ -2,22 +2,18 @@
 package libnet
 
 import (
-	"sync"
-	pb "august/libnet/protobuf"
 	"august/node"
 	"context"
 	"fmt"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p/config"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"google.golang.org/protobuf/proto"
 	"log"
-	"time"
+	"sync"
 )
 
 type P2PHost struct {
@@ -29,38 +25,25 @@ type P2PHost struct {
 	// Protocols
 	Rpcprotocol *RPCProtocol
 
-	PendingRequestsMu sync.Mutex
-	PendingRequests map[string][]proto.Message
+	// ReqResp
+	PendingRequestsMu      sync.Mutex
+	PendingRequests        map[string][]proto.Message
 	PendingRequestsWaiters map[string][]chan struct{}
 }
 
-func (n *P2PHost) sendProtoMessage(id peer.ID, p protocol.ID, data proto.Message) bool {
-	s, err := n.Host.NewStream(context.Background(), id, p)
-	if err != nil {
-		log.Println("Failed to open stream:", err)
-		return false
-	}
-	defer s.Close()
 
-	WriteProtoMsgStream(s, data)
-	return true
-}
-func (n *P2PHost) NewMessageData(messageId string) *pb.MessageData {
-	return &pb.MessageData{ClientVersion: "1.0.0",
-		Timestamp: uint64(time.Now().Unix()),
-		MessageId: messageId, 
-	}
-}
+
 
 // NewP2PHost returns a pointer to a new P2PHost structure
 // It also initializes a Kademlia DHT and builds a RoutingDiscovery,
 // on which it bootstraps by attempting to connect to 'seeds'
 func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...peer.AddrInfo) (*P2PHost, error) {
 
-	var opt config.Option = libp2p.ListenAddrStrings(
+	var opt = libp2p.ListenAddrStrings(
 		fmt.Sprintf("/ip4/%s/tcp/%d", listenIP, listenPort),
 	)
 
+	// Create LibP2P Host
 	h, err := libp2p.New(opt)
 	if err != nil {
 		log.Println("Failed to create new libp2p host", err)
@@ -88,11 +71,11 @@ func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...p
 	routedDiscovery := routing.NewRoutingDiscovery(kad)
 
 	pn := &P2PHost{
-		Host:      h,
-		DHT:       kad,
-		Discovery: routedDiscovery,
-		PendingRequests: make(map[string][]proto.Message, 1),
-		PendingRequestsWaiters: make(map[string][]chan struct{}, 1),
+		Host:                   h,
+		DHT:                    kad,
+		Discovery:              routedDiscovery,
+		PendingRequests:        make(map[string][]proto.Message, 0),
+		PendingRequestsWaiters: make(map[string][]chan struct{}, 0),
 	}
 
 	pn.Rpcprotocol = NewRPCProtocol(pn)

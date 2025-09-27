@@ -12,14 +12,9 @@ func StringToHash32(hashStr string) (blockchain.Hash32, error) {
 	var hashBytes []byte
 	var err error
 
-	// Try base64 first (common in networking layer)
-	hashBytes, err = base64.StdEncoding.DecodeString(hashStr)
+	hashBytes, err = hex.DecodeString(hashStr)
 	if err != nil {
-		// Try hex as fallback
-		hashBytes, err = hex.DecodeString(hashStr)
-		if err != nil {
-			return blockchain.Hash32{}, fmt.Errorf("invalid hash format (tried base64 and hex): %w", err)
-		}
+		return blockchain.Hash32{}, fmt.Errorf("invalid hash format (tried base64 and hex): %w", err)
 	}
 
 	if len(hashBytes) != 32 {

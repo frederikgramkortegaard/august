@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// Meta
+const (
+	RPCClientVersion = "1.0.0"
+)
+
 // Difficulty adjustment constants
 const (
 	RecalculationFrequency = 2016

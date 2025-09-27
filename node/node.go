@@ -119,6 +119,23 @@ func (n *Node) GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader {
 	}
 	return nil
 }
+func (n *Node) GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader {
+	n.chainsMu.RLock()
+	defer n.chainsMu.RUnlock()
+
+	var headers []*blockchain.BlockHeader
+
+	for _, hash := range hashes {
+		// Search through all chains for the header
+		for _, chain := range n.chains {
+			if header := chain.GetHeader(hash); header != nil {
+				headers = append(headers, header)
+				continue
+			}
+		}
+	}
+	return headers
+}
 
 func (n *Node) GetBlockAtHeight(height uint64) *blockchain.Block {
 	n.chainsMu.RLock()

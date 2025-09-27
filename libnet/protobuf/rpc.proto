@@ -10,7 +10,8 @@ option go_package = "august/libnet/protobuf;protobuf";
 message MessageData {
   string clientVersion = 1;
   uint64 timestamp = 2;
-  string messageId = 3;
+  string messageID = 3;
+  string senderID = 4;
 }
 
 message HeaderData {
