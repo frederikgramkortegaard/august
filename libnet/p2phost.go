@@ -27,8 +27,8 @@ type NodeInterface interface {
 type RPCProtocol interface {
 	RequestHeaders(messageID string, hashes []blockchain.Hash32)
 	RequestBlocks(messageID string, hashes []blockchain.Hash32)
-	AnnounceHeader(header *blockchain.BlockHeader, exclude peer.ID)
-	AnnounceTransaction(tx *blockchain.Transaction, exclude peer.ID)
+	AnnounceHeader(header *blockchain.BlockHeader)
+	AnnounceTransaction(tx *blockchain.Transaction)
 	SetOnHeaderAnnouncementCallback(f func(*blockchain.BlockHeader))
 	SetOnTransactionAnnouncementCallback(f func(*blockchain.Transaction))
 }

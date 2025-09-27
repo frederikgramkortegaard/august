@@ -5,7 +5,6 @@ import (
 	"august/libnet"
 	"august/libnet/protobuf"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"log"
 )
 
@@ -31,13 +30,10 @@ func (rpc *RPCProtocol) onTransactionAnnouncement(s network.Stream) {
 
 }
 
-func (rpc *RPCProtocol) AnnounceTransaction(tsx *blockchain.Transaction, exclude peer.ID) {
+func (rpc *RPCProtocol) AnnounceTransaction(tsx *blockchain.Transaction) {
 	peers := rpc.Host.Host.Network().Peers()
 	h := libnet.TransactionToProtoTransaction(*tsx)
 	for _, peer := range peers {
-		if peer == exclude {
-			continue
-		}
 		log.Println("Sending RPCTransactionAnnouncement to Peer", peer)
 		rpc.Host.SendProtoMessage(peer, RPCTransactionAnnouncement, h)
 	}

@@ -5,7 +5,6 @@ import (
 	"august/libnet/protobuf"
 	"august/libnet"
 	"august/libnet/rpc"
-	"august/networking"
 	"august/node"
 	"context"
 	"crypto/rand"
@@ -61,7 +60,7 @@ func main() {
 		}
 		hashes = append(hashes, h)
 	}
-	s, _ := networking.StringToHash32("0000c8cca9d9f92d927f1c628f799ff68a5ac83317d00a803b579ff44f4351f6")
+	s, _ := libnet.StringToHash32("0000c8cca9d9f92d927f1c628f799ff68a5ac83317d00a803b579ff44f4351f6")
 	hashes = append(hashes, s)
 
 	// Request some Headers

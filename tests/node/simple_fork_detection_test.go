@@ -80,7 +80,6 @@ func TestSimpleForkDetection(t *testing.T) {
 
 	// Wait for nodes to connect
 	t.Logf("Waiting for nodes to connect...")
-	time.Sleep(5000 * time.Millisecond)
 
 	// Add one more block to node A via HTTP API to trigger propagation
 	t.Logf("Submitting new block via HTTP API to trigger fork detection...")
@@ -106,7 +105,7 @@ func TestSimpleForkDetection(t *testing.T) {
 
 	// Wait for block propagation and reorganization
 	t.Logf("Waiting for block propagation and reorganization...")
-	time.Sleep(30 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Check if node B reorganized to match node A's longer chain
 	finalChainB := nodeB.GetCurrentChain()

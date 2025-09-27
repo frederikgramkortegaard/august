@@ -33,13 +33,10 @@ func (rpc *RPCProtocol) onHeaderAnnouncement(s network.Stream) {
 	rpc.onHeaderAnnouncementCallback(h)
 
 }
-func (rpc *RPCProtocol) AnnounceHeader(header *blockchain.BlockHeader, exclude peer.ID) {
+func (rpc *RPCProtocol) AnnounceHeader(header *blockchain.BlockHeader) {
 	peers := rpc.Host.Host.Network().Peers()
 	h := libnet.BlockHeaderToProtoHeader(header)
 	for _, peer := range peers {
-		if peer == exclude {
-			continue
-		}
 		log.Println("Sending RPCHeaderAnnouncement to Peer", peer)
 		rpc.Host.SendProtoMessage(peer, RPCHeaderAnnouncement, h)
 	}

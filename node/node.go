@@ -3,7 +3,6 @@ package node
 import (
 	"august/blockchain"
 	"august/libnet"
-	"august/networking"
 	"context"
 	"fmt"
 	"log"
@@ -26,7 +25,6 @@ type Node struct {
 	Config NodeConfig
 
 	// Components (each package handles its own concern)
-	NetworkServer *networking.Server  // Network message handling
 	PeerService   *libnet.PeerService // Handles P2P Networking //@NOTE : Replaces NetworkServer
 	Mempool       *Mempool            // Transaction pool
 
@@ -62,10 +60,6 @@ type Node struct {
 
 // ProcessTransaction validates and processes a transaction (adding to mempool and relaying)
 func (n *Node) ProcessTransaction(tx *blockchain.Transaction) error {
-	if n.NetworkServer == nil {
-		return fmt.Errorf("network server not initialized")
-	}
-
 	// Get current account states for validation
 	n.chainsMu.RLock()
 	var statesCopy map[blockchain.PublicKey]*blockchain.AccountState
@@ -93,16 +87,18 @@ func (n *Node) ProcessTransaction(tx *blockchain.Transaction) error {
 	log.Printf("%s\tTransaction added to mempool: %s", n.Config.NodeID, txHash.String())
 
 	// Broadcast the transaction to all connected peers
-	n.wg.Add(1)
-	go func() {
-		defer n.wg.Done()
-		select {
-		case <-n.ctx.Done():
-			return // Node is shutting down
-		case <-networking.RelayTransaction(n.NetworkServer, tx):
-			// Transaction relayed successfully
-		}
-	}()
+	if n.PeerService != nil && n.PeerService.RPC != nil {
+		n.wg.Add(1)
+		go func() {
+			defer n.wg.Done()
+			select {
+			case <-n.ctx.Done():
+				return // Node is shutting down
+			default:
+				n.PeerService.RPC.AnnounceTransaction(tx)
+			}
+		}()
+	}
 
 	return nil
 }

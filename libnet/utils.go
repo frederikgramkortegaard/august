@@ -1,9 +1,13 @@
 package libnet
 
 import (
+	"august/blockchain"
 	"august/config"
 	pb "august/libnet/protobuf"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"google.golang.org/protobuf/proto"
@@ -90,4 +94,26 @@ func (n *PeerService) SendProtoMessage(id peer.ID, p protocol.ID, data proto.Mes
 
 	WriteProtoMsgStream(s, data)
 	return true
+}
+
+func StringToHash32(hashStr string) (blockchain.Hash32, error) {
+	var hashBytes []byte
+	var err error
+
+	hashBytes, err = hex.DecodeString(hashStr)
+	if err != nil {
+		return blockchain.Hash32{}, fmt.Errorf("invalid hash format (tried base64 and hex): %w", err)
+	}
+
+	if len(hashBytes) != 32 {
+		return blockchain.Hash32{}, fmt.Errorf("hash must be 32 bytes, got %d bytes", len(hashBytes))
+	}
+
+	var hash blockchain.Hash32
+	copy(hash[:], hashBytes)
+	return hash, nil
+}
+
+func Hash32ToString(hash blockchain.Hash32) string {
+	return base64.StdEncoding.EncodeToString(hash[:])
 }

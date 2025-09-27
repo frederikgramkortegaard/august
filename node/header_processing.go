@@ -5,8 +5,6 @@ import (
 	"august/config"
 	"august/libnet"
 	"august/libnet/protobuf"
-	"august/networking"
-	"encoding/base64"
 	"fmt"
 	"github.com/google/uuid"
 	"log"
@@ -199,22 +197,54 @@ func (n *Node) handleOrphanHeader(header *blockchain.BlockHeader) error {
 
 func (n *Node) fetchParentForOrphan(header *blockchain.BlockHeader) {
 	go func() {
-		parentHashStr := base64.StdEncoding.EncodeToString(header.PreviousHash[:])
+		// Request parent header first
+		headerMessageID := uuid.New().String()
+		headerCh := n.PeerService.AddMessageToPending(headerMessageID)
+		n.PeerService.RPC.RequestHeaders(headerMessageID, []blockchain.Hash32{header.PreviousHash})
 
-		headers, err := networking.RequestHeadersByHash(n.NetworkServer, []string{parentHashStr})
-		if err == nil && len(headers) > 0 {
-			n.ProcessHeader(&headers[0])
+		select {
+		case <-headerCh:
+		case <-time.After(2 * time.Minute):
+			log.Printf("%s\tTimeout waiting for parent header", n.Config.NodeID)
+			return
+		}
 
-			blocksChan := n.NetworkServer.RequestBlocksByHash([]string{parentHashStr})
-			blocks := <-blocksChan
-			if blocks != nil && len(blocks) > 0 {
-				n.chainsMu.Lock()
-				for _, chain := range n.chains {
-					if chain.GetHeader(header.PreviousHash) != nil {
-						chain.AddBlock(blocks[0])
+		headerData := n.PeerService.GetDataFromMessage(headerMessageID)
+		if len(headerData) == 0 {
+			return
+		}
+
+		// Process parent header
+		resp := headerData[0].(*protobuf.HeadersResponse)
+		if len(resp.HeaderData) > 0 {
+			parentHeader := libnet.ProtoHeaderToBlockHeader(resp.HeaderData[0])
+			n.ProcessHeader(parentHeader)
+
+			// Request parent block
+			blockMessageID := uuid.New().String()
+			blockCh := n.PeerService.AddMessageToPending(blockMessageID)
+			n.PeerService.RPC.RequestBlocks(blockMessageID, []blockchain.Hash32{header.PreviousHash})
+
+			select {
+			case <-blockCh:
+			case <-time.After(2 * time.Minute):
+				log.Printf("%s\tTimeout waiting for parent block", n.Config.NodeID)
+				return
+			}
+
+			blockData := n.PeerService.GetDataFromMessage(blockMessageID)
+			if len(blockData) > 0 {
+				blockResp := blockData[0].(*protobuf.BlocksResponse)
+				if len(blockResp.BlockData) > 0 {
+					block := libnet.ProtoBlockToBlock(blockResp.BlockData[0])
+					n.chainsMu.Lock()
+					for _, chain := range n.chains {
+						if chain.GetHeader(header.PreviousHash) != nil {
+							chain.AddBlock(block)
+						}
 					}
+					n.chainsMu.Unlock()
 				}
-				n.chainsMu.Unlock()
 			}
 		}
 	}()
@@ -275,9 +305,31 @@ func (n *Node) handleCurrentChainExtension(header *blockchain.BlockHeader, block
 	if localBlock := n.GetBlock(blockHash); localBlock != nil {
 		blocks = []*blockchain.Block{localBlock}
 	} else {
-		blockHashStr := base64.StdEncoding.EncodeToString(blockHash[:])
-		blocksChan := n.NetworkServer.RequestBlocksByHash([]string{blockHashStr})
-		blocks = <-blocksChan
+		messageID := uuid.New().String()
+		ch := n.PeerService.AddMessageToPending(messageID)
+		n.PeerService.RPC.RequestBlocks(messageID, []blockchain.Hash32{blockHash})
+
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Minute):
+			log.Printf("%s\tTimeout waiting for block %s", n.Config.NodeID, blockHash.String()[:8])
+			return nil
+		}
+
+		data := n.PeerService.GetDataFromMessage(messageID)
+		if len(data) > 0 {
+			blocksMap := make(map[blockchain.Hash32]*blockchain.Block)
+			for _, msg := range data {
+				resp := msg.(*protobuf.BlocksResponse)
+				for _, protoBlock := range resp.BlockData {
+					block := libnet.ProtoBlockToBlock(protoBlock)
+					blocksMap[block.GetHash()] = block
+				}
+			}
+			for _, block := range blocksMap {
+				blocks = append(blocks, block)
+			}
+		}
 	}
 
 	if blocks == nil || len(blocks) == 0 {
@@ -365,19 +417,38 @@ func (n *Node) handleCandidateChainExtension(header *blockchain.BlockHeader, blo
 		currentHash = h.PreviousHash
 	}
 
-	var hashStrings []string
-	for _, hash := range headersToFetch {
-		hashStrings = append(hashStrings, base64.StdEncoding.EncodeToString(hash[:]))
-	}
+	if len(headersToFetch) > 0 {
+		log.Printf("%s\tFetching %d blocks for candidate chain", n.Config.NodeID, len(headersToFetch))
 
-	if len(hashStrings) > 0 {
-		log.Printf("%s\tFetching %d blocks for candidate chain", n.Config.NodeID, len(hashStrings))
-		blocksChan := n.NetworkServer.RequestBlocksByHash(hashStrings)
+		messageID := uuid.New().String()
+		ch := n.PeerService.AddMessageToPending(messageID)
+		n.PeerService.RPC.RequestBlocks(messageID, headersToFetch)
 
-		blocks := <-blocksChan
-		if blocks == nil || len(blocks) != len(hashStrings) {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Minute):
+			log.Printf("%s\tTimeout waiting for blocks for reorg", n.Config.NodeID)
+			return nil
+		}
+
+		data := n.PeerService.GetDataFromMessage(messageID)
+		if len(data) == 0 {
 			log.Printf("%s\tFailed to fetch all blocks for reorg", n.Config.NodeID)
 			return nil
+		}
+
+		blocksMap := make(map[blockchain.Hash32]*blockchain.Block)
+		for _, msg := range data {
+			resp := msg.(*protobuf.BlocksResponse)
+			for _, protoBlock := range resp.BlockData {
+				block := libnet.ProtoBlockToBlock(protoBlock)
+				blocksMap[block.GetHash()] = block
+			}
+		}
+
+		var blocks []*blockchain.Block
+		for _, block := range blocksMap {
+			blocks = append(blocks, block)
 		}
 
 		sort.Slice(blocks, func(i, j int) bool {
@@ -421,6 +492,10 @@ func (n *Node) handleCandidateChainExtension(header *blockchain.BlockHeader, blo
 				log.Printf("%s\tCurrent chain grew during validation, keeping current chain", n.Config.NodeID)
 			}
 		}
+
+		// Add genesis to parent chain first
+		parentChain.AddHeader(&blockchain.GenesisBlock.Header)
+		parentChain.AddBlock(blockchain.GenesisBlock)
 
 		n.headersMapMu.Lock()
 		for _, block := range blocks {

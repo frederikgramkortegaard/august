@@ -2,7 +2,6 @@ package node
 
 import (
 	"august/blockchain"
-	"august/networking"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -190,9 +189,12 @@ func handleSubmitBlock(node NodeAPI) http.HandlerFunc {
 			}
 
 			// For API-submitted blocks (like from miners), propagate to peers
-			// Cast to access NetworkServer (this is safe since we know the implementation)
 			if nodeImpl, ok := node.(*Node); ok {
-				go func() { <-networking.RelayBlockHeader(nodeImpl.NetworkServer, &block.Header) }()
+				if nodeImpl.PeerService != nil && nodeImpl.PeerService.RPC != nil {
+					go func() {
+						nodeImpl.PeerService.RPC.AnnounceHeader(&block.Header)
+					}()
+				}
 			}
 		}()
 
