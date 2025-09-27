@@ -43,22 +43,20 @@ func (rpc *RPCProtocol) onHeadersRequest(s network.Stream) {
 		s.Conn().RemotePeer())
 
 	// Attempt to find the headers
-	var hash32Headers []blockchain.Hash32
+	hash32Headers := make([]blockchain.Hash32, len(data.Hashes))
 
-	for _, h := range data.Hashes {
+	for i, h := range data.Hashes {
 		var hash [32]byte
 		copy(hash[:], h)
-		hash32Headers = append(hash32Headers, hash)
+		hash32Headers[i] = hash
 	}
 
 	headers := rpc.Host.Node.GetHeaders(hash32Headers)
-	log.Print("test", hash32Headers)
-	log.Print("test", headers)
 
-	var headersData []*protobuf.HeaderData
+	headersData := make([]*protobuf.HeaderData, len(headers))
 
-	for _, h := range headers {
-		headersData = append(headersData, BlockHeaderToProtoHeader(h))
+	for i, h := range headers {
+		headersData[i] = BlockHeaderToProtoHeader(h)
 	}
 
 	headerResponseData := &protobuf.HeadersResponse{
@@ -155,22 +153,20 @@ func (rpc *RPCProtocol) onBlocksRequest(s network.Stream){
 		s.Conn().RemotePeer())
 
 	// Attempt to find the headers
-	var hash32Blocks []blockchain.Hash32
+	hash32Blocks := make([]blockchain.Hash32, len(data.Hashes))
 
-	for _, h := range data.Hashes {
+	for i, h := range data.Hashes {
 		var hash [32]byte
 		copy(hash[:], h)
-		hash32Blocks = append(hash32Blocks, hash)
+		hash32Blocks[i] = hash
 	}
 
 	blocks := rpc.Host.Node.GetBlocks(hash32Blocks)
-	log.Print("testblocks", hash32Blocks)
-	log.Print("testblocks", blocks)
 
-	var blocksData []*protobuf.BlockData
+	blocksData := make([]*protobuf.BlockData, len(blocks))
 
-	for _, h := range blocks {
-		blocksData = append(blocksData, BlockToProtoBlock(h))
+	for i, h := range blocks {
+		blocksData[i] = BlockToProtoBlock(h)
 	}
 
 	blockResponseData := &protobuf.BlocksResponse{
@@ -179,7 +175,7 @@ func (rpc *RPCProtocol) onBlocksRequest(s network.Stream){
 	}
 
 	id, _ := peer.Decode(data.MessageData.SenderID)
-	log.Println("Sending RPCBlockssResponse to Peer", data.MessageData.SenderID)
+	log.Println("Sending RPCBlocksResponse to Peer", data.MessageData.SenderID)
 	rpc.Host.sendProtoMessage(id, RPCBlocksResponse, blockResponseData)
 }
 func (rpc *RPCProtocol) onBlocksResponse(s network.Stream){
@@ -221,14 +217,14 @@ func ProtoInstructionToInstruction(protoInstr *protobuf.InstructionData) blockch
 }
 
 func TransactionToProtoTransaction(tx blockchain.Transaction) *protobuf.TransactionData {
-	var callInstructions []*protobuf.InstructionData
-	for _, instr := range tx.Instructions {
-		callInstructions = append(callInstructions, InstructionToProtoInstruction(instr))
+	callInstructions := make([]*protobuf.InstructionData, len(tx.Instructions))
+	for i, instr := range tx.Instructions {
+		callInstructions[i] = InstructionToProtoInstruction(instr)
 	}
 
-	var initInstructions []*protobuf.InstructionData
-	for _, instr := range tx.InitInstructions {
-		initInstructions = append(initInstructions, InstructionToProtoInstruction(instr))
+	initInstructions := make([]*protobuf.InstructionData, len(tx.InitInstructions))
+	for i, instr := range tx.InitInstructions {
+		initInstructions[i] = InstructionToProtoInstruction(instr)
 	}
 
 	return &protobuf.TransactionData{
@@ -254,14 +250,14 @@ func ProtoTransactionToTransaction(protoTx *protobuf.TransactionData) blockchain
 	copy(to[:], protoTx.Topk)
 	copy(sig[:], protoTx.Signature)
 
-	var callInstructions []blockchain.Instruction
-	for _, protoInstr := range protoTx.CallInstructions {
-		callInstructions = append(callInstructions, ProtoInstructionToInstruction(protoInstr))
+	callInstructions := make([]blockchain.Instruction, len(protoTx.CallInstructions))
+	for i, protoInstr := range protoTx.CallInstructions {
+		callInstructions[i] = ProtoInstructionToInstruction(protoInstr)
 	}
 
-	var initInstructions []blockchain.Instruction
-	for _, protoInstr := range protoTx.InitInstructions {
-		initInstructions = append(initInstructions, ProtoInstructionToInstruction(protoInstr))
+	initInstructions := make([]blockchain.Instruction, len(protoTx.InitInstructions))
+	for i, protoInstr := range protoTx.InitInstructions {
+		initInstructions[i] = ProtoInstructionToInstruction(protoInstr)
 	}
 
 	return blockchain.Transaction{
@@ -321,9 +317,9 @@ func ProtoHeaderToBlockHeader(h *protobuf.HeaderData) *blockchain.BlockHeader {
 }
 
 func BlockToProtoBlock(block *blockchain.Block) *protobuf.BlockData {
-	var transactions []*protobuf.TransactionData
-	for _, tx := range block.Transactions {
-		transactions = append(transactions, TransactionToProtoTransaction(tx))
+	transactions := make([]*protobuf.TransactionData, len(block.Transactions))
+	for i, tx := range block.Transactions {
+		transactions[i] = TransactionToProtoTransaction(tx)
 	}
 
 	return &protobuf.BlockData{
@@ -333,9 +329,9 @@ func BlockToProtoBlock(block *blockchain.Block) *protobuf.BlockData {
 }
 
 func ProtoBlockToBlock(protoBlock *protobuf.BlockData) *blockchain.Block {
-	var transactions []blockchain.Transaction
-	for _, protoTx := range protoBlock.Transactions {
-		transactions = append(transactions, ProtoTransactionToTransaction(protoTx))
+	transactions := make([]blockchain.Transaction, len(protoBlock.Transactions))
+	for i, protoTx := range protoBlock.Transactions {
+		transactions[i] = ProtoTransactionToTransaction(protoTx)
 	}
 
 	return &blockchain.Block{

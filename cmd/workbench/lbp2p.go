@@ -56,7 +56,7 @@ func main() {
 		panic(err)
 	}
 
-	// Request some dummy hashes
+	// Setup some dummy request data
 	var hashes []blockchain.Hash32
 	for range 5 {
 		var h blockchain.Hash32
@@ -66,13 +66,13 @@ func main() {
 		}
 		hashes = append(hashes, h)
 	}
-	s, _ := networking.StringToHash32("0000c8cca9d9f92d927f1c628f799ff68a5ac83317d00a803b579ff44f4351f6")
+	s, _ := networking.StringToHash32("0000c8cca9d9f92d927f1c628f799ff68a5ac83317d00a803b579ff44f4351f6") // Genesis Hash
 	hashes = append(hashes, s)
 
+	// Request some Headers
 	messageID := uuid.New().String()
 	ch := h2.AddMessageToPending(messageID)
 	h2.Rpcprotocol.RequestHeaders(messageID, hashes)
-
 	<-ch
 	data := h2.GetDataFromMessage(messageID)
 	for _, msg := range data {
@@ -96,6 +96,5 @@ func main() {
 			log.Print(block.Header.PreviousHash.String())
 		}
 	}
-	
-}
 
+}
