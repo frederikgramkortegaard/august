@@ -284,7 +284,6 @@ func sendMoneyWithData(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount 
 	return nil
 }
 
-
 func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string, initFile, bodyFile string) error {
 	// Get current balance and nonce
 	keyAsHex := hex.EncodeToString(*pub)
@@ -357,7 +356,7 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 		Timestamp:        uint64(time.Now().Unix()),
 		Instructions:     runtimeInstructions, // Runtime code
 		InitInstructions: initInstructions,    // Initialization code
-		Data:             nil,                  // No data for deployment
+		Data:             nil,                 // No data for deployment
 	}
 
 	tsx.Signature = tsx.GetSignature(*priv)

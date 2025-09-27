@@ -11,7 +11,7 @@ func TestParserErrorHandling(t *testing.T) {
 		input string
 	}{
 		{
-			name: "missing function body",
+			name:  "missing function body",
 			input: `define test() : int`,
 		},
 		{

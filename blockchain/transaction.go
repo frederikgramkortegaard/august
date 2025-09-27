@@ -7,18 +7,18 @@ import (
 )
 
 type Transaction struct {
-	From             PublicKey         `json:"from"`
-	To               PublicKey         `json:"to"`
-	Amount           uint64            `json:"amount"`
-	Signature        Signature         `json:"signature"`
-	Nonce            uint64            `json:"nonce"`
-	Timestamp        uint64            `json:"timestamp"`         // Unix timestamp when transaction was created
-	ChainID          uint64            `json:"chain_id"`          // Chain identifier for replay protection
+	From             PublicKey     `json:"from"`
+	To               PublicKey     `json:"to"`
+	Amount           uint64        `json:"amount"`
+	Signature        Signature     `json:"signature"`
+	Nonce            uint64        `json:"nonce"`
+	Timestamp        uint64        `json:"timestamp"`         // Unix timestamp when transaction was created
+	ChainID          uint64        `json:"chain_id"`          // Chain identifier for replay protection
 	Instructions     []Instruction `json:"instructions"`      // Contract runtime code (empty for regular transfers)
 	InitInstructions []Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
-	GasLimit         uint64            `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
-	GasPrice         uint64            `json:"gas_price"`         // Price per unit of gas in leaf units
-	Data             []byte            `json:"data"`              // Custom data for contract calls
+	GasLimit         uint64        `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
+	GasPrice         uint64        `json:"gas_price"`         // Price per unit of gas in leaf units
+	Data             []byte        `json:"data"`              // Custom data for contract calls
 }
 
 // GetHash returns the hash of this transaction
@@ -29,7 +29,7 @@ func (t *Transaction) GetHash() Hash32 {
 	h.Write(utils.Uint64ToBytes(t.Amount))
 	h.Write(utils.Uint64ToBytes(t.Nonce))
 	h.Write(utils.Uint64ToBytes(t.Timestamp))
-	h.Write(utils.Uint64ToBytes(t.ChainID)) // Include ChainID for replay protection
+	h.Write(utils.Uint64ToBytes(t.ChainID))  // Include ChainID for replay protection
 	h.Write(utils.Uint64ToBytes(t.GasLimit)) // Include gas limit
 	h.Write(utils.Uint64ToBytes(t.GasPrice)) // Include gas price
 

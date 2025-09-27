@@ -15,17 +15,17 @@ func init() {
 	// Hardcoded genesis block - pre-computed to avoid any runtime calculation
 	// Genesis coinbase transaction gives 10M coins to config.FirstUser
 	genesisCoinbase := Transaction{
-		From:             PublicKey{}, // Coinbase (empty)
-		To:               config.FirstUser,   // Send to config.FirstUser
-		Amount:           10 * config.AUG,    // 10 AUG initial coins
-		Nonce:            0,           // Coinbase doesn't need nonce
-		Signature:        Signature{}, // Coinbase doesn't need signature
-		Timestamp:        1704067200,  // Fixed timestamp for genesis (Jan 1, 2024)
-		ChainID:          1,           // Main network chain ID
-		Instructions:     nil,         // No contract code
-		InitInstructions: nil,         // No init code
-		GasLimit:         0,           // Coinbase doesn't consume gas
-		GasPrice:         0,           // Coinbase doesn't pay gas
+		From:             PublicKey{},      // Coinbase (empty)
+		To:               config.FirstUser, // Send to config.FirstUser
+		Amount:           10 * config.AUG,  // 10 AUG initial coins
+		Nonce:            0,                // Coinbase doesn't need nonce
+		Signature:        Signature{},      // Coinbase doesn't need signature
+		Timestamp:        1704067200,       // Fixed timestamp for genesis (Jan 1, 2024)
+		ChainID:          1,                // Main network chain ID
+		Instructions:     nil,              // No contract code
+		InitInstructions: nil,              // No init code
+		GasLimit:         0,                // Coinbase doesn't consume gas
+		GasPrice:         0,                // Coinbase doesn't pay gas
 	}
 
 	// Compute merkle root for the genesis transaction at runtime
@@ -37,18 +37,18 @@ func init() {
 	// Create genesis block header template
 	header := BlockHeader{
 		Version:      1,
-		PreviousHash: Hash32{},          // All zeros for genesis
-		Height:       0,                 // Genesis is height 0
-		Timestamp:    1609459200,        // Fixed timestamp (Jan 1, 2021)
-		Nonce:        0,                 // Will be set by mining
-		MerkleRoot:   merkleRoot,        // Computed from genesis transaction
-		StateRoot:    Hash32{},          // Empty state root for genesis
-		ReceiptRoot:  Hash32{},          // No receipts in genesis
+		PreviousHash: Hash32{},                  // All zeros for genesis
+		Height:       0,                         // Genesis is height 0
+		Timestamp:    1609459200,                // Fixed timestamp (Jan 1, 2021)
+		Nonce:        0,                         // Will be set by mining
+		MerkleRoot:   merkleRoot,                // Computed from genesis transaction
+		StateRoot:    Hash32{},                  // Empty state root for genesis
+		ReceiptRoot:  Hash32{},                  // No receipts in genesis
 		Bits:         config.GetTargetCompact(), // Use appropriate target for environment
-		TotalWork:    "1",               // Work for test difficulty
-		GasLimit:     8000000,           // 8M gas limit
-		GasUsed:      0,                 // No gas used in genesis
-		Beneficiary:  PublicKey{},       // No beneficiary for genesis
+		TotalWork:    "1",                       // Work for test difficulty
+		GasLimit:     8000000,                   // 8M gas limit
+		GasUsed:      0,                         // No gas used in genesis
+		Beneficiary:  PublicKey{},               // No beneficiary for genesis
 	}
 
 	// Mine the genesis block (find valid nonce) - start from a deterministic seed

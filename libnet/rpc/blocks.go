@@ -1,4 +1,3 @@
-
 package rpc
 
 import (
@@ -13,7 +12,6 @@ import (
 
 const RPCBlocksRequest = "/august/rpc/blocksreq/1.0.0"
 const RPCBlocksResponse = "/august/rpc/blocksresp/1.0.0"
-
 
 func (rpc *RPCProtocol) RequestBlocks(messageID string, hashes []blockchain.Hash32) {
 
@@ -40,7 +38,7 @@ func (rpc *RPCProtocol) RequestBlocks(messageID string, hashes []blockchain.Hash
 		rpc.Host.SendProtoMessage(peer, RPCBlocksRequest, blockRequestData)
 	}
 }
-func (rpc *RPCProtocol) onBlocksRequest(s network.Stream){
+func (rpc *RPCProtocol) onBlocksRequest(s network.Stream) {
 
 	defer s.Close()
 
@@ -71,14 +69,14 @@ func (rpc *RPCProtocol) onBlocksRequest(s network.Stream){
 
 	blockResponseData := &protobuf.BlocksResponse{
 		MessageData: rpc.Host.NewMessageData(data.MessageData.MessageID),
-		BlockData:  blocksData,
+		BlockData:   blocksData,
 	}
 
 	id, _ := peer.Decode(data.MessageData.SenderID)
 	log.Println("Sending RPCBlocksResponse to Peer", data.MessageData.SenderID)
 	rpc.Host.SendProtoMessage(id, RPCBlocksResponse, blockResponseData)
 }
-func (rpc *RPCProtocol) onBlocksResponse(s network.Stream){
+func (rpc *RPCProtocol) onBlocksResponse(s network.Stream) {
 	defer s.Close()
 
 	data := &protobuf.BlocksResponse{}
@@ -92,4 +90,3 @@ func (rpc *RPCProtocol) onBlocksResponse(s network.Stream){
 	rpc.Host.PendingRequestsMu.Unlock()
 	rpc.Host.NotifyMessageWaiters(data.MessageData.MessageID)
 }
-

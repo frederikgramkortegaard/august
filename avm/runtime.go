@@ -1,8 +1,8 @@
 package avm
 
 import (
-	"august/types"
 	"august/config"
+	"august/types"
 	"errors"
 	"fmt"
 	"math/big"
@@ -110,14 +110,14 @@ func signedCmp(a, b *big.Int) int {
 
 // BlockchainContext contains immutable blockchain data needed for AVM execution
 type BlockchainContext struct {
-	BlockNumber     uint64                                      // Current block height
-	BlockHash       Hash32                                      // Current block hash (block being built)
-	LastBlockHash   Hash32                                      // Previous block hash (tip/last confirmed)
-	Timestamp       uint64                                      // Current block timestamp
-	Difficulty      uint64                                      // Current block difficulty
-	GasLimit        uint64                                      // Current block gas limit
-	Coinbase        types.PublicKey                             // Current block miner/validator address
-	ChainID         uint64                                      // Chain identifier
+	BlockNumber   uint64          // Current block height
+	BlockHash     Hash32          // Current block hash (block being built)
+	LastBlockHash Hash32          // Previous block hash (tip/last confirmed)
+	Timestamp     uint64          // Current block timestamp
+	Difficulty    uint64          // Current block difficulty
+	GasLimit      uint64          // Current block gas limit
+	Coinbase      types.PublicKey // Current block miner/validator address
+	ChainID       uint64          // Chain identifier
 
 	// Transaction context
 	Caller          types.PublicKey // Address of message sender (from CallTsx.From)
@@ -291,10 +291,9 @@ var MockBlockchainContext = BlockchainContext{
 	CallValue:       0,
 	ContractAddress: types.PublicKey{}, // Zero address
 	Deployer:        types.PublicKey{}, // Zero address
-	DeploymentTime:  1640995200,  // Same as genesis block timestamp
+	DeploymentTime:  1640995200,        // Same as genesis block timestamp
 	DeploymentGas:   1,
 }
-
 
 func (r *Runtime) StartExecution() (uint64, error) {
 	// Validate that the stack is clean

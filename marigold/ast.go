@@ -37,16 +37,16 @@ type Function struct {
 }
 
 type Expression struct {
-	Type         ExpressionType `json:"type"`
-	Operator     TokenType      `json:"operator,omitempty"`   // For binary/unary ops
-	Lhs          *Expression    `json:"lhs,omitempty"`        // For binary ops, array base for indexing/slicing
-	Rhs          *Expression    `json:"rhs,omitempty"`        // For binary/unary ops, index for array indexing
-	Value        interface{}    `json:"value,omitempty"`      // For literals/identifiers
-	ValueType    TokenType      `json:"value_type,omitempty"` // IntLiteral, FloatLiteral, StringLiteral, etc
-	Args         []*Expression  `json:"args,omitempty"`       // For function calls, array literal elements
-	SliceStart   *Expression    `json:"slice_start,omitempty"` // For slice expressions: start index (can be nil)
-	SliceEnd     *Expression    `json:"slice_end,omitempty"`   // For slice expressions: end index (can be nil)
-	Token        *Token         `json:"token,omitempty"`      // Position information
+	Type       ExpressionType `json:"type"`
+	Operator   TokenType      `json:"operator,omitempty"`    // For binary/unary ops
+	Lhs        *Expression    `json:"lhs,omitempty"`         // For binary ops, array base for indexing/slicing
+	Rhs        *Expression    `json:"rhs,omitempty"`         // For binary/unary ops, index for array indexing
+	Value      interface{}    `json:"value,omitempty"`       // For literals/identifiers
+	ValueType  TokenType      `json:"value_type,omitempty"`  // IntLiteral, FloatLiteral, StringLiteral, etc
+	Args       []*Expression  `json:"args,omitempty"`        // For function calls, array literal elements
+	SliceStart *Expression    `json:"slice_start,omitempty"` // For slice expressions: start index (can be nil)
+	SliceEnd   *Expression    `json:"slice_end,omitempty"`   // For slice expressions: end index (can be nil)
+	Token      *Token         `json:"token,omitempty"`       // Position information
 }
 
 type Block struct {
@@ -55,14 +55,14 @@ type Block struct {
 }
 
 type Statement struct {
-	Type         StatementType `json:"type"`
-	VarType      Type          `json:"var_type,omitempty"` // For assignments: the complete type
-	Lhs          *Expression   `json:"lhs,omitempty"`
-	Rhs          *Expression   `json:"rhs,omitempty"`
-	Conditional  *Expression   `json:"conditional,omitempty"`
-	Block        *Block        `json:"block,omitempty"`
-	ElseBlock    *Block        `json:"elseblock,omitempty"`
-	Token        *Token        `json:"token,omitempty"`    // Position information
+	Type        StatementType `json:"type"`
+	VarType     Type          `json:"var_type,omitempty"` // For assignments: the complete type
+	Lhs         *Expression   `json:"lhs,omitempty"`
+	Rhs         *Expression   `json:"rhs,omitempty"`
+	Conditional *Expression   `json:"conditional,omitempty"`
+	Block       *Block        `json:"block,omitempty"`
+	ElseBlock   *Block        `json:"elseblock,omitempty"`
+	Token       *Token        `json:"token,omitempty"` // Position information
 }
 
 type Scope struct {

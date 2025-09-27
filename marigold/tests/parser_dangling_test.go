@@ -7,8 +7,8 @@ import (
 
 func TestDanglingExpressions(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
+		name       string
+		input      string
 		shouldFail bool
 	}{
 		{

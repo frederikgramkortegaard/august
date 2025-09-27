@@ -75,7 +75,7 @@ func calculateGasUsed(txs []*blockchain.Transaction) uint64 {
 		if tx.From == (blockchain.PublicKey{}) {
 			continue
 		}
-		total += config.GasTransfer // Base gas for each transaction
+		total += config.GasTransfer                           // Base gas for each transaction
 		total += uint64(len(tx.Data)) * config.GasDataPerByte // Gas for data
 	}
 	return total
@@ -139,10 +139,10 @@ func CreateTestHeader(parent *blockchain.BlockHeader, txs []*blockchain.Transact
 		PreviousHash: parentHash,
 		Height:       height,
 		Timestamp:    timestamp,
-		Nonce:        0, // Will be set by mining
+		Nonce:        0,                                              // Will be set by mining
 		MerkleRoot:   blockchain.MerkleTransactions(txsToValue(txs)), // ACTUAL merkle root
-		StateRoot:    blockchain.Hash32{}, // TODO: Calculate from account states in tests
-		ReceiptRoot:  blockchain.Hash32{}, // Empty for simple tests
+		StateRoot:    blockchain.Hash32{},                            // TODO: Calculate from account states in tests
+		ReceiptRoot:  blockchain.Hash32{},                            // Empty for simple tests
 		Bits:         targetBits,
 		TotalWork:    "0", // Will be calculated after mining
 		GasLimit:     1000000,

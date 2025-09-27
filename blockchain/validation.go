@@ -711,5 +711,3 @@ func ValidateHeaderChainWithWork(headers []BlockHeader, startingTotalWork string
 
 	return true
 }
-
-

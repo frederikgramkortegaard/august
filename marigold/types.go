@@ -48,7 +48,7 @@ func (t *SimpleType) IsAssignableTo(other Type) bool {
 
 // ArrayType represents array types: [5]int, []string
 type ArrayType struct {
-	Size        int  // -1 for dynamic/inferred size
+	Size        int // -1 for dynamic/inferred size
 	ElementType Type
 }
 
@@ -112,7 +112,7 @@ var (
 	FloatType  = &SimpleType{Kind: "float"}
 	StringType = &SimpleType{Kind: "string"}
 	BoolType   = &SimpleType{Kind: "bool"}
-	AnyType    = &SimpleType{Kind: "any"}  // Internal use only
+	AnyType    = &SimpleType{Kind: "any"} // Internal use only
 )
 
 // NewArrayType creates an array type

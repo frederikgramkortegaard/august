@@ -177,7 +177,7 @@ func Lex(text string) ([]*Token, error) {
 			buffer := string(text[start:cursor])
 
 			// Check if this is a type keyword followed by '(' (function call)
-			if (buffer == "string" || buffer == "int" || buffer == "float") {
+			if buffer == "string" || buffer == "int" || buffer == "float" {
 				// Look ahead to see if there's a '(' after optional whitespace
 				lookahead := cursor
 				for lookahead < len(text) && (text[lookahead] == ' ' || text[lookahead] == '\t') {

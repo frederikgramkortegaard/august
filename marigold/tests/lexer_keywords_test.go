@@ -139,7 +139,6 @@ func TestLexComplexExpression(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-
 	// Just verify we get the expected number of tokens for major parts
 	if len(tokens) < 10 {
 		t.Fatalf("Expected at least 10 tokens, got %d", len(tokens))

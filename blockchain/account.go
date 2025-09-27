@@ -6,15 +6,15 @@ import (
 )
 
 type AccountState struct {
-	Address           PublicKey         `json:"address"`
-	Balance           uint64            `json:"balance"`
-	Nonce             uint64            `json:"nonce"`
-	Instructions      []Instruction `json:"instructions"`
-	Persistent        map[string]string `json:"persistent"`
-	StorageRoot       Hash32            `json:"storage_root"`       // Merkle Patricia trie root of contract storage
-	CodeHash          Hash32            `json:"code_hash"`          // Hash of the contract code (Instructions)
-	DeploymentTsxHash Hash32            `json:"deployment_tsx_hash"` // Hash of transaction that deployed this contract
-	DeploymentBlockHash Hash32          `json:"deployment_block_hash"` // Hash of block containing deployment transaction
+	Address             PublicKey         `json:"address"`
+	Balance             uint64            `json:"balance"`
+	Nonce               uint64            `json:"nonce"`
+	Instructions        []Instruction     `json:"instructions"`
+	Persistent          map[string]string `json:"persistent"`
+	StorageRoot         Hash32            `json:"storage_root"`          // Merkle Patricia trie root of contract storage
+	CodeHash            Hash32            `json:"code_hash"`             // Hash of the contract code (Instructions)
+	DeploymentTsxHash   Hash32            `json:"deployment_tsx_hash"`   // Hash of transaction that deployed this contract
+	DeploymentBlockHash Hash32            `json:"deployment_block_hash"` // Hash of block containing deployment transaction
 }
 
 // GetHash computes the hash of this account state

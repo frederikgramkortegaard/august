@@ -53,7 +53,7 @@ type BlockResponse struct {
 
 // MempoolResponse represents the response from the mempool API
 type MempoolResponse struct {
-	Count        int                       `json:"count"`
+	Count        int                      `json:"count"`
 	Transactions []blockchain.Transaction `json:"transactions"`
 }
 
@@ -74,7 +74,7 @@ type ContractResponse struct {
 // ChainStateResponse represents the response from the chain state API
 type ChainStateResponse struct {
 	AccountStates map[string]*blockchain.AccountState `json:"account_states"`
-	AccountCount  int                                  `json:"account_count"`
+	AccountCount  int                                 `json:"account_count"`
 }
 
 // API Implementation

@@ -168,7 +168,6 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			return IntType
 		}
 
-
 		if funcName == "string" {
 			if len(expr.Args) != 1 {
 				ctx.logFatalWithToken(fmt.Sprintf("string() expects 1 argument, got %d", len(expr.Args)), expr.Token)
@@ -226,12 +225,12 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			argType := typecheckExpression(ctx, expr.Args[0])
 
 			if !argType.Equals(IntType) && !argType.Equals(FloatType) &&
-			   !argType.Equals(StringType) && !argType.Equals(BoolType) {
+				!argType.Equals(StringType) && !argType.Equals(BoolType) {
 				ctx.logFatalWithToken(fmt.Sprintf("emit() can only print simple types (int, float, string, bool), got '%s'", argType.String()), expr.Token)
 			}
 
 			// emit() doesn't return a value (void function)
-			return AnyType  // Use AnyType as placeholder for void
+			return AnyType // Use AnyType as placeholder for void
 		}
 
 		if funcName == "stop" {
@@ -240,7 +239,7 @@ func typecheckExpression(ctx *TypeCheckContext, expr *Expression) Type {
 			}
 
 			// stop() doesn't return a value (exits program)
-			return AnyType  // Use AnyType as placeholder for void
+			return AnyType // Use AnyType as placeholder for void
 		}
 
 		if funcName == "assert" {
@@ -558,10 +557,10 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 				previousScope := ctx.currentScope
 				previousLoop := ctx.inLoop
 				ctx.currentScope = stmt.Block.Scope
-				ctx.inLoop = true  // Set loop context
+				ctx.inLoop = true // Set loop context
 				typecheckBlock(ctx, stmt.Block)
 				ctx.currentScope = previousScope
-				ctx.inLoop = previousLoop  // Restore previous loop context
+				ctx.inLoop = previousLoop // Restore previous loop context
 			}
 
 		case BreakStmt:
@@ -577,7 +576,6 @@ func typecheckBlock(ctx *TypeCheckContext, block *Block) {
 		case ExpressionStmt:
 			// Type check the expression (could be function call, etc.)
 			typecheckExpression(ctx, stmt.Rhs)
-
 
 		default:
 			ctx.logFatal(fmt.Sprintf("Unknown statement type '%s'", stmt.Type))

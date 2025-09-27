@@ -18,7 +18,7 @@ type BlockCreationParams struct {
 	Coinbase      Transaction
 	Transactions  []Transaction
 	Timestamp     uint64
-	TargetBits    uint32 // Target in compact format
+	TargetBits    uint32                      // Target in compact format
 	CurrentStates map[PublicKey]*AccountState // Current blockchain state for execution
 }
 

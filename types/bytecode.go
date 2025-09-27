@@ -57,19 +57,19 @@ const (
 	EMIT
 
 	// Blockchain Context
-	CALLER     // address of message sender
-	ADDRESS    // address of contract currently executing
-	BALANCE    // balance of an account (takes address from stack pop)
-	ORIGIN     // transaction originator
-	GASPRICE   // price per gas in this transaction
-	CALLVALUE  // amount of AUG sent in this transaction
-	TIMESTAMP  // current block timestamp
-	DIFFICULTY // current block difficulty
-	BLOCKHASH  // current block hash
+	CALLER        // address of message sender
+	ADDRESS       // address of contract currently executing
+	BALANCE       // balance of an account (takes address from stack pop)
+	ORIGIN        // transaction originator
+	GASPRICE      // price per gas in this transaction
+	CALLVALUE     // amount of AUG sent in this transaction
+	TIMESTAMP     // current block timestamp
+	DIFFICULTY    // current block difficulty
+	BLOCKHASH     // current block hash
 	LASTBLOCKHASH // previous block hash (tip)
-	COINBASE   // current block's beneficiary address
-	HEIGHT     // current block number
-	GASLIMIT   // current block gas limit
+	COINBASE      // current block's beneficiary address
+	HEIGHT        // current block number
+	GASLIMIT      // current block gas limit
 
 	// COUNTER
 	LAST
@@ -126,42 +126,42 @@ func (op OPCODE) String() string {
 }
 
 var opcodeGasPrices = [...]uint16{
-	NOOP:         1,
-	PUSH:         3,
-	POP:          2,
-	DUP:          3,
-	SWAP:         3,
-	ADD:          3,
-	SUB:          3,
-	MUL:          5,
-	DIV:          5,
-	AND:          3,
-	OR:           3,
-	EQ:           3,
-	LT:           3,
-	GT:           3,
-	ISZERO:       3,
-	JUMP:         8,
-	JUMPC:        10,
-	MSTORE:       20,
-	MLOAD:        15,
-	PSTORE:       1000,
-	PLOAD:        1000,
-	STOP:         0,
-	EMIT:         100,
-	CALLER:       2,
-	ADDRESS:      2,
-	BALANCE:      400,
-	ORIGIN:       2,
-	GASPRICE:     2,
-	CALLVALUE:    2,
-	TIMESTAMP:    2,
-	DIFFICULTY:   2,
-	BLOCKHASH:    20,
+	NOOP:          1,
+	PUSH:          3,
+	POP:           2,
+	DUP:           3,
+	SWAP:          3,
+	ADD:           3,
+	SUB:           3,
+	MUL:           5,
+	DIV:           5,
+	AND:           3,
+	OR:            3,
+	EQ:            3,
+	LT:            3,
+	GT:            3,
+	ISZERO:        3,
+	JUMP:          8,
+	JUMPC:         10,
+	MSTORE:        20,
+	MLOAD:         15,
+	PSTORE:        1000,
+	PLOAD:         1000,
+	STOP:          0,
+	EMIT:          100,
+	CALLER:        2,
+	ADDRESS:       2,
+	BALANCE:       400,
+	ORIGIN:        2,
+	GASPRICE:      2,
+	CALLVALUE:     2,
+	TIMESTAMP:     2,
+	DIFFICULTY:    2,
+	BLOCKHASH:     20,
 	LASTBLOCKHASH: 20,
-	COINBASE:     2,
-	HEIGHT:       2,
-	GASLIMIT:     2,
+	COINBASE:      2,
+	HEIGHT:        2,
+	GASLIMIT:      2,
 }
 
 func (op OPCODE) Price() uint16 {

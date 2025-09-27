@@ -1,8 +1,8 @@
 package main
 
 import (
-	"august/node"
 	_ "august/execution" // Import for side effects (registers executor)
+	"august/node"
 	"flag"
 	"fmt"
 	"log"

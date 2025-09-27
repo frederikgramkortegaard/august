@@ -6,8 +6,8 @@ import (
 )
 
 type RPCProtocol struct {
-	Host                         *libnet.PeerService
-	onHeaderAnnouncementCallback func(*blockchain.BlockHeader)
+	Host                              *libnet.PeerService
+	onHeaderAnnouncementCallback      func(*blockchain.BlockHeader)
 	onTransactionAnnouncementCallback func(*blockchain.Transaction)
 }
 

@@ -45,7 +45,6 @@ func (pq *GasPriceQueue) Pop() interface{} {
 	return item
 }
 
-
 // Mempool manages pending transactions with gas price-based prioritization
 type Mempool struct {
 	mu           sync.RWMutex

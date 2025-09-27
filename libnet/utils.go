@@ -2,14 +2,14 @@ package libnet
 
 import (
 	"august/config"
-	"time"
-	"context"
 	pb "august/libnet/protobuf"
-	"github.com/libp2p/go-libp2p/core/protocol"
-	"math/rand"
+	"context"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"google.golang.org/protobuf/proto"
 	"log"
+	"math/rand"
+	"time"
 )
 
 func (n *PeerService) NotifyMessageWaiters(messageID string) {
@@ -65,7 +65,7 @@ func SamplePeers(peers []peer.ID, maxSample int) []peer.ID {
 	}
 	subsample := make([]peer.ID, maxSample)
 	indices := rand.Perm(len(peers))
-	for i := 0; 0 <  maxSample; i++ {
+	for i := 0; 0 < maxSample; i++ {
 		subsample[i] = peers[indices[i]]
 	}
 	return subsample
@@ -91,4 +91,3 @@ func (n *PeerService) SendProtoMessage(id peer.ID, p protocol.ID, data proto.Mes
 	WriteProtoMsgStream(s, data)
 	return true
 }
-

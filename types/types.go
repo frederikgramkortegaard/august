@@ -8,7 +8,7 @@ import (
 )
 
 // Use the same types as the config package for consistency
-type PublicKey = config.PublicKey // 32-byte public key
+type PublicKey = config.PublicKey          // 32-byte public key
 type Signature [ed25519.SignatureSize]byte // 64-byte signature
 
 // Hash32 represents a 32-byte hash

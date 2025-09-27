@@ -230,7 +230,7 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Transactions:  mempoolTxs, // Include mempool transactions
 		Timestamp:     uint64(time.Now().Unix()),
 		TargetBits:    config.TestTargetCompact, // Use easy difficulty for testing
-		CurrentStates: currentStates,                // Include current account states for validation
+		CurrentStates: currentStates,            // Include current account states for validation
 	}
 
 	// Mine the block (this will take some time!)

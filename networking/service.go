@@ -484,7 +484,6 @@ func RequestHeadersByHash(server *Server, blockHashes []string) ([]blockchain.Bl
 	return successfulResponses[0].headers, nil
 }
 
-
 // RequestBlocksByHash requests specific blocks by their hashes using Bitcoin-style peer selection
 func (s *Server) RequestBlocksByHash(blockHashes []string) <-chan []*blockchain.Block {
 	resultChan := make(chan []*blockchain.Block, 1)
@@ -495,7 +494,7 @@ func (s *Server) RequestBlocksByHash(blockHashes []string) <-chan []*blockchain.
 		// Use smart peer selection (handles getting connected peers internally)
 		selectedPeers := selectPeersForRequest(s)
 		if len(selectedPeers) == 0 {
-			log.Printf(s.config.NodeID+"\t"+"No suitable peers available for block request")
+			log.Printf(s.config.NodeID + "\t" + "No suitable peers available for block request")
 			resultChan <- nil
 			return
 		}
@@ -524,44 +523,44 @@ func (s *Server) RequestBlocksByHash(blockHashes []string) <-chan []*blockchain.
 					return
 				}
 
-			responseMsg := response
-			if responseMsg.Type != MessageTypeBlocks {
-				responses <- peerResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
-				return
-			}
-
-			var blocksPayload BlocksPayload
-			if err := responseMsg.ParsePayload(&blocksPayload); err != nil {
-				responses <- peerResponse{nil, fmt.Errorf("failed to parse blocks response: %w", err), p.Address}
-				return
-			}
-
-			// Validate each block structure
-			for i, block := range blocksPayload.Blocks {
-				if err := blockchain.ValidateBlockStructure(block); err != nil {
-					responses <- peerResponse{nil, fmt.Errorf("invalid block %d from peer: %w", i, err), p.Address}
+				responseMsg := response
+				if responseMsg.Type != MessageTypeBlocks {
+					responses <- peerResponse{nil, fmt.Errorf("unexpected response type: %s", responseMsg.Type), p.Address}
 					return
 				}
-			}
 
-			log.Printf(s.config.NodeID+"\t"+"Received %d valid blocks from %s", len(blocksPayload.Blocks), p.Address)
-			responses <- peerResponse{blocksPayload.Blocks, nil, p.Address}
-		}(peer)
-	}
+				var blocksPayload BlocksPayload
+				if err := responseMsg.ParsePayload(&blocksPayload); err != nil {
+					responses <- peerResponse{nil, fmt.Errorf("failed to parse blocks response: %w", err), p.Address}
+					return
+				}
 
-	// Collect responses
-	var successfulResponses []peerResponse
-	for i := 0; i < len(selectedPeers); i++ {
-		resp := <-responses
-		if resp.err == nil {
-			successfulResponses = append(successfulResponses, resp)
-		} else {
-			log.Printf(s.config.NodeID+"\t"+"Failed to get blocks from %s: %v", resp.peer, resp.err)
+				// Validate each block structure
+				for i, block := range blocksPayload.Blocks {
+					if err := blockchain.ValidateBlockStructure(block); err != nil {
+						responses <- peerResponse{nil, fmt.Errorf("invalid block %d from peer: %w", i, err), p.Address}
+						return
+					}
+				}
+
+				log.Printf(s.config.NodeID+"\t"+"Received %d valid blocks from %s", len(blocksPayload.Blocks), p.Address)
+				responses <- peerResponse{blocksPayload.Blocks, nil, p.Address}
+			}(peer)
 		}
-	}
+
+		// Collect responses
+		var successfulResponses []peerResponse
+		for i := 0; i < len(selectedPeers); i++ {
+			resp := <-responses
+			if resp.err == nil {
+				successfulResponses = append(successfulResponses, resp)
+			} else {
+				log.Printf(s.config.NodeID+"\t"+"Failed to get blocks from %s: %v", resp.peer, resp.err)
+			}
+		}
 
 		if len(successfulResponses) == 0 {
-			log.Printf(s.config.NodeID+"\t"+"All peers failed to provide blocks")
+			log.Printf(s.config.NodeID + "\t" + "All peers failed to provide blocks")
 			resultChan <- nil
 			return
 		}
@@ -890,9 +889,6 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 	go func() { <-RelayBlockHeader(s, header, peer.Address) }()
 }
 
-
-
-
 // ProcessPong handles pong responses
 func (s *Server) ProcessPong(peer *Peer) {
 	log.Printf(s.config.NodeID+"\t"+"Received pong from peer %s", peer.Address)
@@ -909,7 +905,6 @@ func (s *Server) ProcessSharedPeers(msg *Message, peer *Peer) {
 	log.Printf(s.config.NodeID+"\t"+"Received %d peers from %s", len(sharePayload.Peers), peer.Address)
 	// The discovery component handles adding these peers
 }
-
 
 // ProcessNewTransaction handles incoming transaction announcements
 func (s *Server) ProcessNewTransaction(msg *Message, peer *Peer) {

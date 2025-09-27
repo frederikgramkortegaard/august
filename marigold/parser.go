@@ -256,7 +256,7 @@ func parseArrayType(ctx *ParserContext) (Type, error) {
 }
 
 func parseMapType(ctx *ParserContext) (Type, error) {
-	_ = ctx.consumeAssert(Map) // consume "map"
+	_ = ctx.consumeAssert(Map)     // consume "map"
 	_ = ctx.consumeAssert(LSquare) // consume "["
 
 	// Get key type (must be string for now)
@@ -836,7 +836,6 @@ func parseAtom(ctx *ParserContext) *Expression {
 			return nil
 		}
 
-
 	case LParen:
 		ctx.consume()
 		expr := parseExpression(ctx)
@@ -943,9 +942,9 @@ func parseIndexOrSlice(ctx *ParserContext, arrayExpr *Expression) *Expression {
 
 		return &Expression{
 			Type:       SliceExpr,
-			Lhs:        arrayExpr,   // The string being sliced
-			SliceStart: nil,         // Start index is nil for [:end]
-			SliceEnd:   endExpr,     // End index
+			Lhs:        arrayExpr, // The string being sliced
+			SliceStart: nil,       // Start index is nil for [:end]
+			SliceEnd:   endExpr,   // End index
 			Token:      openBracket,
 		}
 	}
@@ -975,9 +974,9 @@ func parseIndexOrSlice(ctx *ParserContext, arrayExpr *Expression) *Expression {
 
 		return &Expression{
 			Type:       SliceExpr,
-			Lhs:        arrayExpr,   // The string being sliced
-			SliceStart: firstExpr,   // Start index
-			SliceEnd:   endExpr,     // End index (can be nil for [start:])
+			Lhs:        arrayExpr, // The string being sliced
+			SliceStart: firstExpr, // Start index
+			SliceEnd:   endExpr,   // End index (can be nil for [start:])
 			Token:      openBracket,
 		}
 	} else {
@@ -992,7 +991,6 @@ func parseIndexOrSlice(ctx *ParserContext, arrayExpr *Expression) *Expression {
 		}
 	}
 }
-
 
 func isRelationalOp(t TokenType) bool {
 	return t == Equal || t == NotEqual ||

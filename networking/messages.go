@@ -1,8 +1,8 @@
 package networking
 
 import (
-	"encoding/json"
 	"august/blockchain"
+	"encoding/json"
 )
 
 // MessageType defines the type of network message
@@ -101,9 +101,9 @@ type ChainHeadPayload struct {
 // RequestHeadersPayload requests block headers in a range or by specific hashes
 type RequestHeadersPayload struct {
 	StartHeight uint64   `json:"start_height,omitempty"`
-	Count       uint64   `json:"count,omitempty"`        // Max number of headers to return
-	StartHash   string   `json:"start_hash,omitempty"`   // Alternative: start from hash (base64)
-	Hashes      []string `json:"hashes,omitempty"`       // Alternative: specific header hashes (base64)
+	Count       uint64   `json:"count,omitempty"`      // Max number of headers to return
+	StartHash   string   `json:"start_hash,omitempty"` // Alternative: start from hash (base64)
+	Hashes      []string `json:"hashes,omitempty"`     // Alternative: specific header hashes (base64)
 }
 
 // HeadersPayload contains a batch of block headers

@@ -1,8 +1,9 @@
 package libnet
+
 import (
 	"august/blockchain"
-	"august/types"
 	"august/libnet/protobuf"
+	"august/types"
 )
 
 func InstructionToProtoInstruction(instr blockchain.Instruction) *protobuf.InstructionData {

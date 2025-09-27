@@ -9,4 +9,3 @@ type PublicKey = types.PublicKey
 type Hash32 = types.Hash32
 type Signature = types.Signature
 type Instruction = types.Instruction
-

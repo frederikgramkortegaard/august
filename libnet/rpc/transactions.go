@@ -1,6 +1,5 @@
 package rpc
 
-
 import (
 	"august/blockchain"
 	"august/libnet"
@@ -42,4 +41,3 @@ func (rpc *RPCProtocol) AnnounceTransaction(tsx *blockchain.Transaction, exclude
 		rpc.Host.SendProtoMessage(peer, RPCTransactionAnnouncement, h)
 	}
 }
-
