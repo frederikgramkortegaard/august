@@ -9,7 +9,7 @@ import (
 	"log"
 )
 
-const RPCTransactionAnnouncement = "/august/rpc/headerannounce/1.0.0"
+const RPCTransactionAnnouncement = "/august/rpc/transactionannounce/1.0.0"
 
 func (rpc *RPCProtocol) onTransactionAnnouncement(s network.Stream) {
 	defer s.Close()
