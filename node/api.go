@@ -82,7 +82,7 @@ type ChainStateResponse struct {
 // NodeAPI interface represents the minimal interface needed by the query API
 type NodeAPI interface {
 	GetChainHead() blockchain.ChainHead
-	ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error
+	ProcessHeader(header *blockchain.BlockHeader) error
 	ProcessTransaction(tx *blockchain.Transaction) error
 	GetChain() (*blockchain.Chain, error)
 	GetMempool() *Mempool
@@ -183,7 +183,7 @@ func handleSubmitBlock(node NodeAPI) http.HandlerFunc {
 			}
 
 			// Now process the header
-			err = node.ProcessHeader(&block.Header, "api")
+			err = node.ProcessHeader(&block.Header)
 			if err != nil {
 				log.Printf("Failed to process header from API: %v", err)
 				return

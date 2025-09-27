@@ -11,16 +11,7 @@ import (
 	"log"
 	"sort"
 	"sync"
-	"time"
 )
-
-// OrphanBlock represents a block waiting for its parent
-type OrphanBlock struct {
-	Block        *blockchain.Block
-	Source       string
-	ReceivedAt   time.Time
-	ParentNeeded blockchain.Hash32
-}
 
 // NodeConfig holds all configuration for a full node
 type NodeConfig struct {
@@ -55,11 +46,8 @@ type Node struct {
 	blocksMap   map[blockchain.Hash32]*blockchain.Block
 	blocksMapMu sync.RWMutex
 
-	// Orphan block management
-	orphanBlocks   map[blockchain.Hash32]*OrphanBlock
-	orphanBlocksMu sync.RWMutex
-
-	orphanHeaders   map[blockchain.Hash32][]*blockchain.BlockHeader // keyed by PreviousHash
+	// Orphan header management (keyed by PreviousHash - the parent they're waiting for)
+	orphanHeaders   map[blockchain.Hash32][]*blockchain.BlockHeader
 	orphanHeadersMu sync.RWMutex
 
 	// Header processing synchronization to prevent race conditions
@@ -123,13 +111,13 @@ func (n *Node) ProcessTransaction(tx *blockchain.Transaction) error {
 }
 
 // ProcessHeader validates and processes a block header
-func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error {
+func (n *Node) ProcessHeader(header *blockchain.BlockHeader) error {
 	// Serialize header processing to prevent race conditions with current chain updates
 	n.headerProcessingMu.Lock()
 	defer n.headerProcessingMu.Unlock()
 
 	blockHash := header.GetHash()
-	log.Printf("%s\tProcessing header %s (height %d) from peer %s", n.Config.NodeID, blockHash.String()[:8], header.Height, sourcePeer)
+	log.Printf("%s\tProcessing header %s (height %d)", n.Config.NodeID, blockHash.String()[:8], header.Height)
 
 	// Validate the header first (no locks needed)
 	if err := blockchain.ValidateHeaderStructure(header); err != nil {
@@ -251,7 +239,7 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 					n.chainsMu.Unlock()
 
 					// Now retry processing this header (it should succeed now since we have all blocks)
-					n.ProcessHeader(header, sourcePeer)
+					n.ProcessHeader(header)
 				}()
 
 				return nil // Don't process now, wait for async completion
@@ -307,44 +295,40 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 			n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
 			n.orphanHeadersMu.Unlock()
 
-			// Only request parent headers if this header didn't come from orphan processing
-			// This prevents infinite loops where orphan processing triggers more orphan processing
-			if sourcePeer != "orphan-connection" {
-				// Request parent header to find common ancestor, but only if we don't already have it
-				parentHeader := n.GetHeader(header.PreviousHash)
-				if parentHeader == nil {
-					log.Printf("%s\tOrphan header at height %d, requesting parent header and block to find common ancestor",
-						n.Config.NodeID, header.Height)
+			// Request parent header to find common ancestor, but only if we don't already have it
+			parentHeader := n.GetHeader(header.PreviousHash)
+			if parentHeader == nil {
+				log.Printf("%s\tOrphan header at height %d, requesting parent header and block to find common ancestor",
+					n.Config.NodeID, header.Height)
 
-					// Request parent header and block recursively
-					go func() {
-						parentHashStr := base64.StdEncoding.EncodeToString(header.PreviousHash[:])
+				// Request parent header and block recursively
+				go func() {
+					parentHashStr := base64.StdEncoding.EncodeToString(header.PreviousHash[:])
 
-						// First get the header
-						headers, err := networking.RequestHeadersByHash(n.NetworkServer, []string{parentHashStr})
-						if err == nil && len(headers) > 0 {
-							// Process the parent header first - this will recursively handle any missing ancestors
-							n.ProcessHeader(&headers[0], sourcePeer)
+					// First get the header
+					headers, err := networking.RequestHeadersByHash(n.NetworkServer, []string{parentHashStr})
+					if err == nil && len(headers) > 0 {
+						// Process the parent header first - this will recursively handle any missing ancestors
+						n.ProcessHeader(&headers[0])
 
-							// Then get the corresponding block and add it to candidate chains
-							blocksChan := n.NetworkServer.RequestBlocksByHash([]string{parentHashStr})
-							blocks := <-blocksChan
-							if blocks != nil && len(blocks) > 0 {
-								// Add the block to any candidate chain that has this header
-								n.chainsMu.Lock()
-								for _, chain := range n.chains {
-									if chain.GetHeader(header.PreviousHash) != nil {
-										chain.AddBlock(blocks[0])
-									}
+						// Then get the corresponding block and add it to candidate chains
+						blocksChan := n.NetworkServer.RequestBlocksByHash([]string{parentHashStr})
+						blocks := <-blocksChan
+						if blocks != nil && len(blocks) > 0 {
+							// Add the block to any candidate chain that has this header
+							n.chainsMu.Lock()
+							for _, chain := range n.chains {
+								if chain.GetHeader(header.PreviousHash) != nil {
+									chain.AddBlock(blocks[0])
 								}
-								n.chainsMu.Unlock()
 							}
+							n.chainsMu.Unlock()
 						}
-					}()
-				} else {
-					log.Printf("%s\tOrphan header at height %d, parent exists (height %d), not requesting",
-						n.Config.NodeID, header.Height, parentHeader.Height)
-				}
+					}
+				}()
+			} else {
+				log.Printf("%s\tOrphan header at height %d, parent exists (height %d), not requesting",
+					n.Config.NodeID, header.Height, parentHeader.Height)
 			}
 
 			return nil

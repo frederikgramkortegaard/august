@@ -26,7 +26,6 @@ func NewNode(config NodeConfig) *Node {
 		chains:          make(map[blockchain.Hash32]*blockchain.Chain),
 		headersMap:      make(map[blockchain.Hash32]*blockchain.BlockHeader),
 		blocksMap:       make(map[blockchain.Hash32]*blockchain.Block),
-		orphanBlocks:    make(map[blockchain.Hash32]*OrphanBlock),
 		orphanHeaders:   make(map[blockchain.Hash32][]*blockchain.BlockHeader),
 		submittedBlocks: make(map[blockchain.Hash32]*blockchain.Block),
 		ctx:             ctx,
@@ -68,7 +67,20 @@ func NewNode(config NodeConfig) *Node {
 	}
 	ps.Node = node
 	node.PeerService = ps
-	// @TODO : set callbacks for announcements
+
+	// Set up RPC callbacks for announcements
+	// RPC is set during the initProtocols callback above, so we can use it now
+	if ps.RPC != nil {
+		ps.RPC.SetOnHeaderAnnouncementCallback(func(header *blockchain.BlockHeader) {
+			// Handle incoming header announcements
+			node.ProcessHeader(header)
+		})
+
+		ps.RPC.SetOnTransactionAnnouncementCallback(func(tx *blockchain.Transaction) {
+			// Handle incoming transaction announcements
+			node.ProcessTransaction(tx)
+		})
+	}
 
 	// Initialize with genesis chain
 	genesisChain := blockchain.NewChain()

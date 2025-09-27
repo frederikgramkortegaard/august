@@ -16,7 +16,7 @@ import (
 // Forward declaration to avoid circular import
 type Node interface {
 	ProcessTransaction(tx *blockchain.Transaction) error
-	ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) error
+	ProcessHeader(header *blockchain.BlockHeader) error
 	GetCurrentChain() *blockchain.Block
 	GetBlock(hash blockchain.Hash32) *blockchain.Block
 	GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader

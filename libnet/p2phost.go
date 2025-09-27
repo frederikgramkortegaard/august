@@ -17,9 +17,20 @@ import (
 )
 
 
-type NodeInterface interface{
+type NodeInterface interface {
 	GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block
-GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader 
+	GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader
+}
+
+// RPCProtocol defines the interface for RPC protocol operations
+// This avoids import cycles by defining the interface in libnet
+type RPCProtocol interface {
+	RequestHeaders(messageID string, hashes []blockchain.Hash32)
+	RequestBlocks(messageID string, hashes []blockchain.Hash32)
+	AnnounceHeader(header *blockchain.BlockHeader, exclude peer.ID)
+	AnnounceTransaction(tx *blockchain.Transaction, exclude peer.ID)
+	SetOnHeaderAnnouncementCallback(f func(*blockchain.BlockHeader))
+	SetOnTransactionAnnouncementCallback(f func(*blockchain.Transaction))
 }
 
 type PeerService struct {
@@ -27,6 +38,9 @@ type PeerService struct {
 	Host      host.Host
 	DHT       *dht.IpfsDHT
 	Discovery discovery.Discovery
+
+	// RPC protocol handler (set via callback to avoid import cycles)
+	RPC RPCProtocol
 
 	// ReqResp
 	PendingRequestsMu      sync.Mutex

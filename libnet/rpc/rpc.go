@@ -11,11 +11,11 @@ type RPCProtocol struct {
 	onTransactionAnnouncementCallback func(*blockchain.Transaction)
 }
 
-func (rpc *RPCProtocol) setOnHeaderAnnouncementCallback(f func(*blockchain.BlockHeader)) {
+func (rpc *RPCProtocol) SetOnHeaderAnnouncementCallback(f func(*blockchain.BlockHeader)) {
 	rpc.onHeaderAnnouncementCallback = f
 }
 
-func (rpc *RPCProtocol) setOnTransactionAnnouncementCallback(f func(*blockchain.Transaction)) {
+func (rpc *RPCProtocol) SetOnTransactionAnnouncementCallback(f func(*blockchain.Transaction)) {
 	rpc.onTransactionAnnouncementCallback = f
 }
 
@@ -26,5 +26,9 @@ func NewRPCProtocol(h *libnet.PeerService) *RPCProtocol {
 	h.Host.SetStreamHandler(RPCHeaderAnnouncement, rpc.onHeaderAnnouncement)
 	h.Host.SetStreamHandler(RPCBlocksRequest, rpc.onBlocksRequest)
 	h.Host.SetStreamHandler(RPCBlocksResponse, rpc.onBlocksResponse)
+
+	// Set the RPC interface on PeerService so it can be accessed
+	h.RPC = &rpc
+
 	return &rpc
 }

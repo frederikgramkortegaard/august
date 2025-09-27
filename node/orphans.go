@@ -3,22 +3,7 @@ package node
 import (
 	"august/blockchain"
 	"log"
-	"time"
 )
-
-// AddOrphanBlock stores an orphan block waiting for its parent
-func (n *Node) AddOrphanBlock(block *blockchain.Block, source string, parentHash blockchain.Hash32) {
-	n.orphanBlocksMu.Lock()
-	defer n.orphanBlocksMu.Unlock()
-
-	blockHash := block.Header.GetHash()
-	n.orphanBlocks[blockHash] = &OrphanBlock{
-		Block:        block,
-		Source:       source,
-		ReceivedAt:   time.Now(),
-		ParentNeeded: parentHash,
-	}
-}
 
 // tryConnectOrphanChildren attempts to connect orphan headers that are children of the given header
 func (n *Node) tryConnectOrphanChildren(parentHash blockchain.Hash32) {
@@ -39,7 +24,7 @@ func (n *Node) tryConnectOrphanChildren(parentHash blockchain.Hash32) {
 	for _, orphanHeader := range childrenToProcess {
 		// ProcessHeader will remove from orphans if successful
 		go func(header *blockchain.BlockHeader) {
-			n.ProcessHeader(header, "orphan-connection")
+			n.ProcessHeader(header)
 		}(orphanHeader)
 	}
 }
@@ -55,7 +40,7 @@ func (n *Node) processOrphanHeaders() {
 
 	// Process each orphan header (ProcessHeader will remove from orphans if successful)
 	for _, header := range orphansToProcess {
-		n.ProcessHeader(header, "orphan-processing")
+		n.ProcessHeader(header)
 	}
 }
 

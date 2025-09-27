@@ -577,7 +577,7 @@ func (s *Server) RequestBlocksByHash(blockHashes []string) <-chan []*blockchain.
 // EvaluateChainHead forwards peer chain head to node for evaluation
 func EvaluateChainHead(server *Server, peer *Peer, peerChainHead *ChainHeadPayload) error {
 	// Forward the header to the node for consensus evaluation
-	return server.node.ProcessHeader(&peerChainHead.Header, peer.Address)
+	return server.node.ProcessHeader(&peerChainHead.Header)
 }
 
 // SendPongResponse sends a pong response to a ping
@@ -849,7 +849,7 @@ func (s *Server) ProcessChainHead(msg *Message, peer *Peer) {
 		return
 	}
 	// Forward to node for consensus evaluation
-	if err := s.node.ProcessHeader(&headPayload.Header, peer.Address); err != nil {
+	if err := s.node.ProcessHeader(&headPayload.Header); err != nil {
 		log.Printf(s.config.NodeID+"\t"+"Node rejected chain head from %s: %v", peer.Address, err)
 	}
 }
@@ -881,7 +881,7 @@ func (s *Server) ProcessNewBlockHeader(msg *Message, peer *Peer) {
 		blockHash.String(), header.Height, peer.Address)
 
 	// Forward to node for processing (all business logic handled there)
-	if err := s.node.ProcessHeader(header, peer.Address); err != nil {
+	if err := s.node.ProcessHeader(header); err != nil {
 		log.Printf(s.config.NodeID+"\t"+"Failed to process header %s: %v", blockHash.String(), err)
 	}
 

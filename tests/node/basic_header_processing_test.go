@@ -50,7 +50,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 		t.Logf("Processing block %d (height %d)", i+1, block.Header.Height)
 
 		// Send only the header to node2 (simulating header-first sync)
-		err := node2.ProcessHeader(&block.Header, "peer")
+		err := node2.ProcessHeader(&block.Header)
 		if err != nil {
 			t.Fatalf("Failed to process header %d: %v", i+1, err)
 		}
