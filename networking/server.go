@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"strconv"
 	"august/blockchain"
 	"august/config"
 	"encoding/json"
@@ -24,7 +25,7 @@ type Node interface {
 
 // NetworkConfig holds network server configuration
 type NetworkConfig struct {
-	Port      string
+	Port      int
 	NodeID    string
 	SeedPeers []string
 	Node      Node
@@ -102,7 +103,7 @@ func NewServer(config NetworkConfig) *Server {
 
 // StartListener begins listening for network connections (TCP only)
 func (s *Server) StartListener() error {
-	listener, err := net.Listen("tcp", ":"+s.config.Port)
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(s.config.Port))
 	if err != nil {
 		return err
 	}

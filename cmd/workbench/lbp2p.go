@@ -2,8 +2,8 @@ package main
 
 import (
 	"august/blockchain"
-	"august/libnet"
 	"august/libnet/protobuf"
+	"august/libnet"
 	"august/libnet/rpc"
 	"august/networking"
 	"august/node"
@@ -18,7 +18,7 @@ import (
 
 func MakeNode(id int, seeds ...peerstore.AddrInfo) (*libnet.PeerService, *node.Node, *rpc.RPCProtocol, peerstore.AddrInfo) {
 	n := node.NewNode(node.NodeConfig{
-		Port:      strconv.Itoa(9990 + id),
+		Port:      9990 + id,
 		NodeID:    "node" + strconv.Itoa(id),
 		SeedPeers: []string{},
 		QueryPort: strconv.Itoa(10000 + id),

@@ -12,7 +12,7 @@ import (
 
 func main() {
 	// Command line flags for seed node
-	port := flag.String("port", "9372", "Network port")
+	port := flag.Int("port", 9372, "Network port")
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
 	minerport := flag.String("minerport", "8080", "HTTP port for miners")
 	seeds := flag.String("seeds", "", "Comma-separated list of seed nodes (e.g., localhost:9371,192.168.1.100:9372)")
@@ -52,7 +52,7 @@ func main() {
 	} else {
 		log.Printf("%s\tStarting as primary seed (no peers)", *nodeID)
 	}
-	log.Printf("%s\tOther nodes should connect to localhost:%s", *nodeID, *port)
+	log.Printf("%s\tOther nodes should connect to localhost:%d", *nodeID, *port)
 
 	// Start the node and wait for it to be ready
 	ready := seedNode.Start()

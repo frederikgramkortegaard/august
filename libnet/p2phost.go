@@ -2,7 +2,6 @@
 package libnet
 
 import (
-	"august/node"
 	"context"
 	"fmt"
 	"github.com/libp2p/go-libp2p"
@@ -12,12 +11,19 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"google.golang.org/protobuf/proto"
+	"august/blockchain"
 	"log"
 	"sync"
 )
 
+
+type NodeInterface interface{
+	GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block
+GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader 
+}
+
 type PeerService struct {
-	Node      *node.Node
+	Node      NodeInterface
 	Host      host.Host
 	DHT       *dht.IpfsDHT
 	Discovery discovery.Discovery

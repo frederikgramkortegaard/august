@@ -3,13 +3,13 @@ package node
 import (
 	"august/blockchain"
 	"august/config"
+	"august/libnet"
 	"august/networking"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -24,7 +24,7 @@ type OrphanBlock struct {
 
 // NodeConfig holds all configuration for a full node
 type NodeConfig struct {
-	Port      string
+	Port      int
 	NodeID    string
 	SeedPeers []string
 	QueryPort string // HTTP port for query API and miners (optional)
@@ -38,8 +38,9 @@ type Node struct {
 	Config NodeConfig
 
 	// Components (each package handles its own concern)
-	NetworkServer *networking.Server // Network message handling
-	Mempool       *Mempool           // Transaction pool
+	NetworkServer *networking.Server  // Network message handling
+	PeerService   *libnet.PeerService // Handles P2P Networking //@NOTE : Replaces NetworkServer
+	Mempool       *Mempool            // Transaction pool
 
 	// Chain Management
 	chains          map[blockchain.Hash32]*blockchain.Chain // keyed by tip hash
@@ -68,235 +69,6 @@ type Node struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-}
-
-func (n *Node) GetCurrentChain() *blockchain.Block {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	if n.currentChainTip == (blockchain.Hash32{}) {
-		return nil
-	}
-
-	chain := n.chains[n.currentChainTip]
-	if chain == nil {
-		return nil
-	}
-
-	return chain.GetTip()
-}
-
-func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
-	// First check submitted blocks (from API)
-	n.submittedBlocksMu.RLock()
-	if block := n.submittedBlocks[hash]; block != nil {
-		n.submittedBlocksMu.RUnlock()
-		return block
-	}
-	n.submittedBlocksMu.RUnlock()
-
-	// Then search through all chains for the block
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	for _, chain := range n.chains {
-		if block := chain.GetBlock(hash); block != nil {
-			return block
-		}
-	}
-	return nil
-}
-func (n *Node) GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	var blocks []*blockchain.Block
-
-	for _, hash := range hashes {
-		if block := n.GetBlock(hash); block != nil {
-			blocks = append(blocks, block)
-			continue
-		}
-	}
-	return blocks
-}
-
-func (n *Node) GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	// Search through all chains for the header
-	for _, chain := range n.chains {
-		if header := chain.GetHeader(hash); header != nil {
-			return header
-		}
-	}
-	return nil
-}
-func (n *Node) GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	var headers []*blockchain.BlockHeader
-
-	for _, hash := range hashes {
-		// Search through all chains for the header
-		for _, chain := range n.chains {
-			if header := chain.GetHeader(hash); header != nil {
-				headers = append(headers, header)
-				continue
-			}
-		}
-	}
-	return headers
-}
-
-func (n *Node) GetBlockAtHeight(height uint64) *blockchain.Block {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	if n.currentChainTip == (blockchain.Hash32{}) {
-		return nil
-	}
-
-	chain := n.chains[n.currentChainTip]
-	if chain == nil {
-		return nil
-	}
-
-	return chain.GetBlockAtHeight(height)
-}
-
-// NewNode creates a node that runs all services
-func NewNode(config NodeConfig) *Node {
-	// Create shared store
-
-	// Create mempool
-	nodeMempool := NewMempool()
-
-	// Create context for goroutine management
-	ctx, cancel := context.WithCancel(context.Background())
-
-	node := &Node{
-		Config:          config,
-		Mempool:         nodeMempool,
-		chains:          make(map[blockchain.Hash32]*blockchain.Chain),
-		headersMap:      make(map[blockchain.Hash32]*blockchain.BlockHeader),
-		orphanBlocks:    make(map[blockchain.Hash32]*OrphanBlock),
-		orphanHeaders:   make(map[blockchain.Hash32][]*blockchain.BlockHeader),
-		submittedBlocks: make(map[blockchain.Hash32]*blockchain.Block),
-		ctx:             ctx,
-		cancel:          cancel,
-		// Components will be initialized in Start()
-	}
-
-	// Initialize with genesis chain
-	genesisChain := blockchain.NewChain()
-	genesisChain.AddHeader(&blockchain.GenesisBlock.Header)
-	genesisChain.AddBlock(blockchain.GenesisBlock) // Add the full genesis block
-	genesisHash := blockchain.GenesisBlock.Header.GetHash()
-	node.chains[genesisHash] = genesisChain
-	node.currentChainTip = genesisHash
-
-	// Add genesis header to global headers map
-	node.headersMap[genesisHash] = &blockchain.GenesisBlock.Header
-
-	return node
-}
-
-// Start initializes and starts all components
-func (n *Node) Start() <-chan bool {
-	ready := make(chan bool, 1)
-
-	go func() {
-		// 1. Start networking
-		log.Printf("%s\tStarting network server on port %s", n.Config.NodeID, n.Config.Port)
-
-		networkConfig := networking.NetworkConfig{
-			Port:      n.Config.Port,
-			NodeID:    n.Config.NodeID,
-			SeedPeers: n.Config.SeedPeers,
-			Node:      n,
-		}
-		n.NetworkServer = networking.NewServer(networkConfig)
-
-		err := n.NetworkServer.StartListener()
-		if err != nil {
-			log.Printf("%s\tFailed to start network server: %v", n.Config.NodeID, err)
-			ready <- false
-			return
-		}
-
-		// 2. Start discovery
-		if !<-n.NetworkServer.StartDiscovery() {
-			log.Printf("%s\tFailed to start discovery", n.Config.NodeID)
-			ready <- false
-			return
-		}
-
-		// 3. Start sync
-		err = n.NetworkServer.StartPeriodicProcesses()
-		if err != nil {
-			log.Printf("%s\tFailed to start periodic processes: %v", n.Config.NodeID, err)
-			ready <- false
-			return
-		}
-		log.Printf("%s\tChain synchronization active", n.Config.NodeID)
-
-		// 4. Start HTTP API for miners and queries if configured
-		if n.Config.QueryPort != "" {
-			go func() {
-				port, _ := strconv.Atoi(n.Config.QueryPort)
-				if err := StartQueryAPI(n, port); err != nil {
-					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
-				}
-			}()
-		}
-
-		log.Printf("%s\tFull node started: Network on :%s", n.Config.NodeID, n.Config.Port)
-
-		// Signal ready
-		ready <- true
-
-		// Block forever
-		select {}
-	}()
-
-	return ready
-}
-
-// Stop gracefully shuts down the Node
-func (n *Node) Stop() error {
-	log.Printf("%s\tStopping Node...", n.Config.NodeID)
-
-	// Signal all goroutines to stop
-	if n.cancel != nil {
-		n.cancel()
-	}
-
-	// Stop network server
-	if n.NetworkServer != nil {
-		if err := n.NetworkServer.Stop(); err != nil {
-			log.Printf("%s\tError stopping network server: %v", n.Config.NodeID, err)
-		}
-	}
-
-	// Wait for all goroutines to finish with timeout
-	done := make(chan struct{})
-	go func() {
-		n.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Printf("%s\tAll goroutines stopped gracefully", n.Config.NodeID)
-	case <-time.After(5 * time.Second):
-		log.Printf("%s\tTimeout waiting for goroutines to stop", n.Config.NodeID)
-	}
-
-	log.Println("Node stopped successfully")
-	return nil
 }
 
 // ProcessTransaction validates and processes a transaction (adding to mempool and relaying)
@@ -850,45 +622,6 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 	return nil
 }
 
-// tryConnectOrphanChildren attempts to connect orphan headers that are children of the given header
-func (n *Node) tryConnectOrphanChildren(parentHash blockchain.Hash32) {
-	// Get orphan headers that have this header as their parent
-	n.orphanHeadersMu.RLock()
-	orphanChildren, exists := n.orphanHeaders[parentHash]
-	if !exists || len(orphanChildren) == 0 {
-		n.orphanHeadersMu.RUnlock()
-		return
-	}
-
-	// Make a copy of the orphan list to avoid holding the lock while processing
-	childrenToProcess := make([]*blockchain.BlockHeader, len(orphanChildren))
-	copy(childrenToProcess, orphanChildren)
-	n.orphanHeadersMu.RUnlock()
-
-	// Try to process each orphan child header
-	for _, orphanHeader := range childrenToProcess {
-		// ProcessHeader will remove from orphans if successful
-		go func(header *blockchain.BlockHeader) {
-			n.ProcessHeader(header, "orphan-connection")
-		}(orphanHeader)
-	}
-}
-
-// processOrphanHeaders attempts to connect orphan headers to existing chains
-func (n *Node) processOrphanHeaders() {
-	n.orphanHeadersMu.RLock()
-	var orphansToProcess []*blockchain.BlockHeader
-	for _, headerList := range n.orphanHeaders {
-		orphansToProcess = append(orphansToProcess, headerList...)
-	}
-	n.orphanHeadersMu.RUnlock()
-
-	// Process each orphan header (ProcessHeader will remove from orphans if successful)
-	for _, header := range orphansToProcess {
-		n.ProcessHeader(header, "orphan-processing")
-	}
-}
-
 // cleanupCandidateChains removes candidate chains that are too far behind current chain
 func (n *Node) cleanupCandidateChains() {
 	// Get current chain height
@@ -937,165 +670,6 @@ func (n *Node) cleanupCandidateChains() {
 
 	// Also cleanup orphan headers that are lower than any candidate chain
 	n.cleanupStaleOrphans()
-}
-
-// cleanupStaleOrphans removes orphan headers that are lower than any candidate chain
-func (n *Node) cleanupStaleOrphans() {
-	n.orphanHeadersMu.Lock()
-	defer n.orphanHeadersMu.Unlock()
-
-	// Find minimum height across all candidate chains
-	minChainHeight := uint64(^uint64(0)) // Start with max uint64
-	for _, chain := range n.chains {
-		if chain.Tip != nil && chain.Tip.Header.Height < minChainHeight {
-			minChainHeight = chain.Tip.Header.Height
-		}
-	}
-
-	// If no chains have tips, don't remove any orphans
-	if minChainHeight == uint64(^uint64(0)) {
-		return
-	}
-
-	// Remove orphans that are lower than the minimum chain height
-	var toRemove []blockchain.Hash32
-	for parentHash, headerList := range n.orphanHeaders {
-		// Filter out headers that are too old
-		var filteredHeaders []*blockchain.BlockHeader
-		for _, header := range headerList {
-			if header.Height >= minChainHeight {
-				filteredHeaders = append(filteredHeaders, header)
-			}
-		}
-
-		// Update the list or remove it entirely
-		if len(filteredHeaders) == 0 {
-			toRemove = append(toRemove, parentHash)
-		} else {
-			n.orphanHeaders[parentHash] = filteredHeaders
-		}
-	}
-
-	// Remove empty orphan lists
-	for _, hash := range toRemove {
-		delete(n.orphanHeaders, hash)
-	}
-
-	if len(toRemove) > 0 {
-		log.Printf("%s\tCleaned up %d stale orphan headers (below minimum chain height %d)",
-			n.Config.NodeID, len(toRemove), minChainHeight)
-	}
-}
-
-// cleanupFailedHeader removes a header from parent chain when validation/application fails
-func (n *Node) cleanupFailedHeader(header *blockchain.BlockHeader, blockHash blockchain.Hash32, parentChain *blockchain.Chain, parentChainTip blockchain.Hash32, restoreToOrphans bool) {
-	n.chainsMu.Lock()
-	defer n.chainsMu.Unlock()
-
-	// Remove header from parent chain
-	delete(parentChain.Headers, blockHash)
-
-	// Remove from global headers map since it's invalid
-	n.headersMapMu.Lock()
-	delete(n.headersMap, blockHash)
-	n.headersMapMu.Unlock()
-
-	// Restore original chain mapping (revert the tip update)
-	delete(n.chains, blockHash)
-	n.chains[parentChainTip] = parentChain
-
-	// Only re-add to orphans if it's a real validation failure (not a chain switch)
-	if restoreToOrphans {
-		n.orphanHeadersMu.Lock()
-		n.orphanHeaders[header.PreviousHash] = append(n.orphanHeaders[header.PreviousHash], header)
-		n.orphanHeadersMu.Unlock()
-		log.Printf("%s\tCleaned up failed header %s, restored to orphans", n.Config.NodeID, blockHash.String())
-	} else {
-		log.Printf("%s\tCleaned up failed header %s, not restored to orphans (chain switch)", n.Config.NodeID, blockHash.String())
-	}
-}
-
-// GetChainHead returns information about the current chain head
-func (n *Node) GetChainHead() blockchain.ChainHead {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	if n.currentChainTip == (blockchain.Hash32{}) {
-		return blockchain.ChainHead{
-			Height:    0,
-			Hash:      blockchain.Hash32{},
-			TotalWork: "0",
-		}
-	}
-
-	currentChain := n.chains[n.currentChainTip]
-	if currentChain == nil || currentChain.Tip == nil {
-		return blockchain.ChainHead{
-			Height:    0,
-			Hash:      blockchain.Hash32{},
-			TotalWork: "0",
-		}
-	}
-
-	return blockchain.ChainHead{
-		Height:    currentChain.Tip.Header.Height,
-		Hash:      currentChain.Tip.Header.GetHash(),
-		TotalWork: currentChain.Tip.Header.TotalWork,
-	}
-}
-
-// GetChain returns the current blockchain state (required by NodeAPI interface)
-func (n *Node) GetChain() (*blockchain.Chain, error) {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	if n.currentChainTip == (blockchain.Hash32{}) {
-		// Return empty chain
-		return blockchain.NewChain(), nil
-	}
-
-	currentChain := n.chains[n.currentChainTip]
-	if currentChain == nil {
-		return blockchain.NewChain(), nil
-	}
-
-	// Return a copy of the current chain
-	chainCopy := &blockchain.Chain{
-		Blocks:        make([]*blockchain.Block, len(currentChain.Blocks)),
-		BlockIndex:    make(map[blockchain.Hash32]*blockchain.Block),
-		Headers:       make(map[blockchain.Hash32]*blockchain.BlockHeader),
-		AccountStates: currentChain.GetAccountStates(),
-		Tip:           currentChain.Tip,
-	}
-
-	copy(chainCopy.Blocks, currentChain.Blocks)
-	for k, v := range currentChain.BlockIndex {
-		chainCopy.BlockIndex[k] = v
-	}
-	for k, v := range currentChain.Headers {
-		chainCopy.Headers[k] = v
-	}
-
-	return chainCopy, nil
-}
-
-// GetMempool returns the mempool instance (required by NodeAPI interface)
-func (n *Node) GetMempool() *Mempool {
-	return n.Mempool
-}
-
-// AddOrphanBlock stores an orphan block waiting for its parent
-func (n *Node) AddOrphanBlock(block *blockchain.Block, source string, parentHash blockchain.Hash32) {
-	n.orphanBlocksMu.Lock()
-	defer n.orphanBlocksMu.Unlock()
-
-	blockHash := block.Header.GetHash()
-	n.orphanBlocks[blockHash] = &OrphanBlock{
-		Block:        block,
-		Source:       source,
-		ReceivedAt:   time.Now(),
-		ParentNeeded: parentHash,
-	}
 }
 
 // AddBlockDirectly adds a block directly to the node's blockchain (for testing)
@@ -1153,16 +727,4 @@ func (n *Node) StoreBlock(block *blockchain.Block) error {
 	n.submittedBlocks[blockHash] = block
 
 	return nil
-}
-
-// GetCandidateChains returns a map of all candidate chains (keyed by tip hash)
-func (n *Node) GetCandidateChains() map[blockchain.Hash32]*blockchain.Chain {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	result := make(map[blockchain.Hash32]*blockchain.Chain)
-	for tipHash, chain := range n.chains {
-		result[tipHash] = chain
-	}
-	return result
 }

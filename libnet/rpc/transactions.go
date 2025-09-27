@@ -30,6 +30,7 @@ func (rpc *RPCProtocol) onTransactionAnnouncement(s network.Stream) {
 	rpc.onTransactionAnnouncementCallback(&h)
 
 }
+
 func (rpc *RPCProtocol) AnnounceTransaction(tsx *blockchain.Transaction, exclude peer.ID) {
 	peers := rpc.Host.Host.Network().Peers()
 	h := libnet.TransactionToProtoTransaction(*tsx)

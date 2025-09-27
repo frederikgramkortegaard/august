@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"strconv"
 	"august/config"
 	"august/utils"
 	"encoding/json"
@@ -146,7 +147,7 @@ func (s *Server) sendHandshake(peerAddr string) {
 		NodeID:      s.config.NodeID,
 		ChainHeight: int(height),
 		Version:     "1.0",
-		ListenPort:  s.config.Port,
+		ListenPort:  strconv.Itoa(s.config.Port),
 	}
 
 	msg, err := NewMessage(MessageTypeHandshake, handshake)
