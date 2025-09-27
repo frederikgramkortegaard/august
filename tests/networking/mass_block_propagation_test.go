@@ -38,7 +38,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 			Port:      strconv.Itoa(_BASE_PORT + i),
 			NodeID:    "Node-" + strconv.Itoa(i),
 			SeedPeers: seedPeers,
-			QueryPort: strconv.Itoa(_BASE_QUERY_PORT + i),
+			QueryPort: _BASE_QUERY_PORT + i,
 		}))
 
 		wg.Add(1)
@@ -69,7 +69,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 	}
 	time.Sleep(5 * time.Second)
 
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/submit-block", nodes[0].Config.QueryPort), "application/json", bytes.NewBuffer(blockJSON))
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/submit-block", nodes[0].Config.QueryPort), "application/json", bytes.NewBuffer(blockJSON))
 	if err != nil {
 		t.Fatalf("Failed to submit block via API: %v", err)
 	}

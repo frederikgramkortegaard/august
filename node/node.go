@@ -18,7 +18,7 @@ type NodeConfig struct {
 	Port      int
 	NodeID    string
 	SeedPeers []string
-	QueryPort string // HTTP port for query API and miners (optional)
+	QueryPort int // HTTP port for query API and miners (optional, 0 means disabled)
 
 }
 

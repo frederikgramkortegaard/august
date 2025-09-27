@@ -28,7 +28,7 @@ func TestSimpleForkDetection(t *testing.T) {
 		Port:      "8882",
 		NodeID:    "Node-A-Long-Chain",
 		SeedPeers: []string{},
-		QueryPort: "9992",
+		QueryPort: 9992,
 	})
 
 	<-nodeA.Start()
@@ -46,7 +46,7 @@ func TestSimpleForkDetection(t *testing.T) {
 		Port:      "8883",
 		NodeID:    "Node-B-Short-Chain",
 		SeedPeers: []string{"localhost:8882"}, // Connect to node A
-		QueryPort: "9993",
+		QueryPort: 9993,
 	})
 
 	<-nodeB.Start()

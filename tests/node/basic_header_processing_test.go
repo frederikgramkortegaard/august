@@ -19,7 +19,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 		Port:      "8880",
 		NodeID:    "Peer-Node",
 		SeedPeers: []string{},
-		QueryPort: "9990",
+		QueryPort: 9990,
 	})
 
 	<-node1.Start()
@@ -37,7 +37,7 @@ func TestBasicHeaderProcessing(t *testing.T) {
 		Port:      "8881",
 		NodeID:    "Test-Node",
 		SeedPeers: []string{"localhost:8880"}, // Connect to node1
-		QueryPort: "9991",
+		QueryPort: 9991,
 	})
 
 	<-node2.Start()

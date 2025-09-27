@@ -8,7 +8,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"log"
-	"strconv"
 	"time"
 )
 
@@ -104,16 +103,15 @@ func (n *Node) Start() <-chan bool {
 	go func() {
 
 		// Start HTTP API for miners and queries if configured
-		if n.Config.QueryPort != "" {
+		if n.Config.QueryPort != 0 {
 			go func() {
-				port, _ := strconv.Atoi(n.Config.QueryPort)
-				if err := StartQueryAPI(n, port); err != nil {
+				if err := StartQueryAPI(n, n.Config.QueryPort); err != nil {
 					log.Printf("%s\tQuery API server failed: %v", n.Config.NodeID, err)
 				}
 			}()
 		}
 
-		log.Printf("%s\tFull node started: Network on :%s", n.Config.NodeID, n.Config.Port)
+		log.Printf("%s\tFull node started: Network on :%d", n.Config.NodeID, n.Config.Port)
 
 		// Signal ready
 		ready <- true

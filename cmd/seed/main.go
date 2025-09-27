@@ -14,7 +14,7 @@ func main() {
 	// Command line flags for seed node
 	port := flag.Int("port", 9372, "Network port")
 	nodeID := flag.String("id", "", "Node ID (auto-generated if not provided)")
-	minerport := flag.String("minerport", "8080", "HTTP port for miners")
+	minerport := flag.Int("minerport", 8080, "HTTP port for miners")
 	seeds := flag.String("seeds", "", "Comma-separated list of seed nodes (e.g., localhost:9371,192.168.1.100:9372)")
 	flag.Parse()
 

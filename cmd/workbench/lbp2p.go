@@ -21,7 +21,7 @@ func MakeNode(id int, seeds ...peerstore.AddrInfo) (*libnet.PeerService, *node.N
 		Port:      9990 + id,
 		NodeID:    "node" + strconv.Itoa(id),
 		SeedPeers: []string{},
-		QueryPort: strconv.Itoa(10000 + id),
+		QueryPort: 10000 + id,
 	})
 
 	var rpcProto *rpc.RPCProtocol
