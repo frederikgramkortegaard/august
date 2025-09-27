@@ -22,16 +22,11 @@ type P2PHost struct {
 	DHT       *dht.IpfsDHT
 	Discovery discovery.Discovery
 
-	// Protocols
-	Rpcprotocol *RPCProtocol
-
 	// ReqResp
 	PendingRequestsMu      sync.Mutex
 	PendingRequests        map[string][]proto.Message
 	PendingRequestsWaiters map[string][]chan struct{}
 }
-
-
 
 
 // NewP2PHost returns a pointer to a new P2PHost structure
@@ -77,8 +72,6 @@ func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...p
 		PendingRequests:        make(map[string][]proto.Message, 0),
 		PendingRequestsWaiters: make(map[string][]chan struct{}, 0),
 	}
-
-	pn.Rpcprotocol = NewRPCProtocol(pn)
 
 	return pn, nil
 

@@ -3,6 +3,7 @@ package main
 import (
 	"august/blockchain"
 	"august/libnet"
+	"august/libnet/rpc"
 	"august/libnet/protobuf"
 	"august/networking"
 	"august/node"
@@ -38,6 +39,7 @@ func main() {
 
 	h1, peerInfo := setupSeedNode()
 	h1.Node = n1
+	rpc1 := rpc.NewRPCProtocol(h1)
 	addrs, _ := peerstore.AddrInfoToP2pAddrs(&peerInfo)
 
 	fmt.Println("libp2p node address:", addrs[0])
@@ -51,6 +53,7 @@ func main() {
 		QueryPort: "10002",
 	})
 	h2.Node = n2
+	rpc2 := rpc.NewRPCProtocol(h2)
 
 	if err := h2.Host.Connect(context.Background(), peerInfo); err != nil {
 		panic(err)
@@ -72,7 +75,7 @@ func main() {
 	// Request some Headers
 	messageID := uuid.New().String()
 	ch := h2.AddMessageToPending(messageID)
-	h2.Rpcprotocol.RequestHeaders(messageID, hashes)
+	rpc2.RequestHeaders(messageID, hashes)
 	<-ch
 	data := h2.GetDataFromMessage(messageID)
 	for _, msg := range data {
@@ -86,7 +89,7 @@ func main() {
 	// Request a block
 	messageID = uuid.New().String()
 	ch = h2.AddMessageToPending(messageID)
-	h2.Rpcprotocol.RequestBlocks(messageID, hashes)
+	rpc2.RequestBlocks(messageID, hashes)
 	<-ch
 	data = h2.GetDataFromMessage(messageID)
 	for _, msg := range data {
@@ -96,5 +99,7 @@ func main() {
 			log.Print(block.Header.PreviousHash.String())
 		}
 	}
+
+	_ = rpc1 // silence unused warning
 
 }

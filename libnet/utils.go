@@ -59,7 +59,7 @@ func (n *P2PHost) AddMessageToPending(messageID string) <-chan struct{} {
 	return ch
 }
 
-func samplePeers(peers []peer.ID, maxSample int) []peer.ID {
+func SamplePeers(peers []peer.ID, maxSample int) []peer.ID {
 	if len(peers) <= maxSample {
 		return peers
 	}
@@ -80,7 +80,7 @@ func (n *P2PHost) NewMessageData(messageID string) *pb.MessageData {
 	}
 }
 
-func (n *P2PHost) sendProtoMessage(id peer.ID, p protocol.ID, data proto.Message) bool {
+func (n *P2PHost) SendProtoMessage(id peer.ID, p protocol.ID, data proto.Message) bool {
 	s, err := n.Host.NewStream(context.Background(), id, p)
 	if err != nil {
 		log.Println("Failed to open stream:", err)
