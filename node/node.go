@@ -51,6 +51,10 @@ type Node struct {
 	headersMap   map[blockchain.Hash32]*blockchain.BlockHeader
 	headersMapMu sync.RWMutex
 
+	// Global block index for efficient block lookup across chains
+	blocksMap   map[blockchain.Hash32]*blockchain.Block
+	blocksMapMu sync.RWMutex
+
 	// Orphan block management
 	orphanBlocks   map[blockchain.Hash32]*OrphanBlock
 	orphanBlocksMu sync.RWMutex
@@ -444,6 +448,11 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 			return err
 		}
 
+		// Add validated block to global blocks map
+		n.blocksMapMu.Lock()
+		n.blocksMap[blockHash] = block
+		n.blocksMapMu.Unlock()
+
 		// Update current chain tip
 		n.chainsMu.Lock()
 		oldTip := n.currentChainTip
@@ -577,15 +586,21 @@ func (n *Node) ProcessHeader(header *blockchain.BlockHeader, sourcePeer string) 
 		}
 
 		// Always update candidate chain with validated blocks (don't waste validation work)
-		// Add headers to candidate chain
+		// Add headers to candidate chain and global headers map
+		n.headersMapMu.Lock()
 		for _, block := range blocks {
 			parentChain.AddHeader(&block.Header)
+			n.headersMap[block.Header.GetHash()] = &block.Header
 		}
+		n.headersMapMu.Unlock()
 
-		// Add full blocks to candidate chain
+		// Add full blocks to candidate chain and global blocks map
+		n.blocksMapMu.Lock()
 		for _, block := range blocks {
 			parentChain.AddBlock(block)
+			n.blocksMap[block.Header.GetHash()] = block
 		}
+		n.blocksMapMu.Unlock()
 
 		// Try to connect orphans for each newly added block
 		for _, block := range blocks {
@@ -696,10 +711,14 @@ func (n *Node) AddBlockDirectly(block *blockchain.Block) error {
 	targetChain.AddHeader(&block.Header)
 	targetChain.AddBlock(block)
 
-	// Add to global headers map
+	// Add to global headers and blocks maps
 	n.headersMapMu.Lock()
 	n.headersMap[blockHash] = &block.Header
 	n.headersMapMu.Unlock()
+
+	n.blocksMapMu.Lock()
+	n.blocksMap[blockHash] = block
+	n.blocksMapMu.Unlock()
 
 	// Update chain tip mapping
 	delete(n.chains, block.Header.PreviousHash)

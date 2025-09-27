@@ -25,6 +25,7 @@ func NewNode(config NodeConfig) *Node {
 		Mempool:         nodeMempool,
 		chains:          make(map[blockchain.Hash32]*blockchain.Chain),
 		headersMap:      make(map[blockchain.Hash32]*blockchain.BlockHeader),
+		blocksMap:       make(map[blockchain.Hash32]*blockchain.Block),
 		orphanBlocks:    make(map[blockchain.Hash32]*OrphanBlock),
 		orphanHeaders:   make(map[blockchain.Hash32][]*blockchain.BlockHeader),
 		submittedBlocks: make(map[blockchain.Hash32]*blockchain.Block),
@@ -77,8 +78,9 @@ func NewNode(config NodeConfig) *Node {
 	node.chains[genesisHash] = genesisChain
 	node.currentChainTip = genesisHash
 
-	// Add genesis header to global headers map
+	// Add genesis header and block to global maps
 	node.headersMap[genesisHash] = &blockchain.GenesisBlock.Header
+	node.blocksMap[genesisHash] = blockchain.GenesisBlock
 
 	return node
 }

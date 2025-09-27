@@ -19,7 +19,7 @@ func (n *Node) GetCurrentChain() *blockchain.Block {
 	return chain.GetTip()
 }
 
-// GetBlock retrieves a block by its hash, checking submitted blocks first then all chains
+// GetBlock retrieves a block by its hash, checking submitted blocks first then global block map
 func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
 	// First check submitted blocks (from API)
 	n.submittedBlocksMu.RLock()
@@ -29,29 +29,18 @@ func (n *Node) GetBlock(hash blockchain.Hash32) *blockchain.Block {
 	}
 	n.submittedBlocksMu.RUnlock()
 
-	// Then search through all chains for the block
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	for _, chain := range n.chains {
-		if block := chain.GetBlock(hash); block != nil {
-			return block
-		}
-	}
-	return nil
+	// Then check global blocks map
+	n.blocksMapMu.RLock()
+	defer n.blocksMapMu.RUnlock()
+	return n.blocksMap[hash]
 }
 
 // GetBlocks retrieves multiple blocks by their hashes
 func (n *Node) GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
-
-	var blocks []*blockchain.Block
-
+	blocks := make([]*blockchain.Block, 0, len(hashes))
 	for _, hash := range hashes {
 		if block := n.GetBlock(hash); block != nil {
 			blocks = append(blocks, block)
-			continue
 		}
 	}
 	return blocks
@@ -59,32 +48,21 @@ func (n *Node) GetBlocks(hashes []blockchain.Hash32) []*blockchain.Block {
 
 // GetHeader retrieves a block header by its hash
 func (n *Node) GetHeader(hash blockchain.Hash32) *blockchain.BlockHeader {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
+	n.headersMapMu.RLock()
+	defer n.headersMapMu.RUnlock()
 
-	// Search through all chains for the header
-	for _, chain := range n.chains {
-		if header := chain.GetHeader(hash); header != nil {
-			return header
-		}
-	}
-	return nil
+	return n.headersMap[hash]
 }
 
 // GetHeaders retrieves multiple headers by their hashes
 func (n *Node) GetHeaders(hashes []blockchain.Hash32) []*blockchain.BlockHeader {
-	n.chainsMu.RLock()
-	defer n.chainsMu.RUnlock()
+	n.headersMapMu.RLock()
+	defer n.headersMapMu.RUnlock()
 
-	var headers []*blockchain.BlockHeader
-
+	headers := make([]*blockchain.BlockHeader, 0, len(hashes))
 	for _, hash := range hashes {
-		// Search through all chains for the header
-		for _, chain := range n.chains {
-			if header := chain.GetHeader(hash); header != nil {
-				headers = append(headers, header)
-				continue
-			}
+		if header := n.headersMap[hash]; header != nil {
+			headers = append(headers, header)
 		}
 	}
 	return headers
