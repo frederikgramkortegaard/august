@@ -1,24 +1,25 @@
 package rpc
 
 import (
+	"august/blockchain"
 	"august/libnet"
 )
 
-const RPCBlocksRequest = "/august/rpc/blocksreq/1.0.0"
-const RPCBlocksResponse = "/august/rpc/blocksresp/1.0.0"
-
 type RPCProtocol struct {
-	Host *libnet.P2PHost
+	Host                         *libnet.PeerService
+	onHeaderAnnouncementCallback func(*blockchain.BlockHeader)
 }
 
-func NewRPCProtocol(h *libnet.P2PHost) *RPCProtocol {
-	rpc := RPCProtocol{h}
+func (rpc *RPCProtocol) setOnHeaderAnnouncementCallback(f func(*blockchain.BlockHeader)) {
+	rpc.onHeaderAnnouncementCallback = f
+}
+
+func NewRPCProtocol(h *libnet.PeerService) *RPCProtocol {
+	rpc := RPCProtocol{h, nil}
 	h.Host.SetStreamHandler(RPCHeadersRequest, rpc.onHeadersRequest)
 	h.Host.SetStreamHandler(RPCHeadersResponse, rpc.onHeadersResponse)
-
+	h.Host.SetStreamHandler(RPCHeaderAnnouncement, rpc.onHeaderAnnouncement)
 	h.Host.SetStreamHandler(RPCBlocksRequest, rpc.onBlocksRequest)
 	h.Host.SetStreamHandler(RPCBlocksResponse, rpc.onBlocksResponse)
 	return &rpc
 }
-
-/* CONVERSION FUNCTIONS */

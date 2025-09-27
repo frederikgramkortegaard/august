@@ -12,7 +12,7 @@ import (
 	"log"
 )
 
-func (n *P2PHost) NotifyMessageWaiters(messageID string) {
+func (n *PeerService) NotifyMessageWaiters(messageID string) {
 	log.Println("Notifying Waiters of message: ", messageID)
 	n.PendingRequestsMu.Lock()
 	defer n.PendingRequestsMu.Unlock()
@@ -30,14 +30,14 @@ func (n *P2PHost) NotifyMessageWaiters(messageID string) {
 	n.PendingRequestsWaiters[messageID] = nil
 }
 
-func (n *P2PHost) GetDataFromMessage(messageID string) []proto.Message {
+func (n *PeerService) GetDataFromMessage(messageID string) []proto.Message {
 	n.PendingRequestsMu.Lock()
 	defer n.PendingRequestsMu.Unlock()
 	return n.PendingRequests[messageID]
 
 }
 
-func (n *P2PHost) AddMessageToPending(messageID string) <-chan struct{} {
+func (n *PeerService) AddMessageToPending(messageID string) <-chan struct{} {
 	log.Println("Adding message to pending: ", messageID)
 	n.PendingRequestsMu.Lock()
 	defer n.PendingRequestsMu.Unlock()
@@ -72,7 +72,7 @@ func SamplePeers(peers []peer.ID, maxSample int) []peer.ID {
 
 }
 
-func (n *P2PHost) NewMessageData(messageID string) *pb.MessageData {
+func (n *PeerService) NewMessageData(messageID string) *pb.MessageData {
 	return &pb.MessageData{ClientVersion: config.RPCClientVersion,
 		Timestamp: uint64(time.Now().Unix()),
 		MessageID: messageID,
@@ -80,7 +80,7 @@ func (n *P2PHost) NewMessageData(messageID string) *pb.MessageData {
 	}
 }
 
-func (n *P2PHost) SendProtoMessage(id peer.ID, p protocol.ID, data proto.Message) bool {
+func (n *PeerService) SendProtoMessage(id peer.ID, p protocol.ID, data proto.Message) bool {
 	s, err := n.Host.NewStream(context.Background(), id, p)
 	if err != nil {
 		log.Println("Failed to open stream:", err)

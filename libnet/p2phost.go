@@ -16,7 +16,7 @@ import (
 	"sync"
 )
 
-type P2PHost struct {
+type PeerService struct {
 	Node      *node.Node
 	Host      host.Host
 	DHT       *dht.IpfsDHT
@@ -28,11 +28,13 @@ type P2PHost struct {
 	PendingRequestsWaiters map[string][]chan struct{}
 }
 
+type ProtocolInitializer func(*PeerService)
 
-// NewP2PHost returns a pointer to a new P2PHost structure
+// NewPeerService returns a pointer to a new PeerService structure
 // It also initializes a Kademlia DHT and builds a RoutingDiscovery,
 // on which it bootstraps by attempting to connect to 'seeds'
-func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...peer.AddrInfo) (*P2PHost, error) {
+// The initProtocols callback is called after setup to allow registering protocol handlers
+func NewPeerService(listenIP string, listenPort int, ctx context.Context, initProtocols ProtocolInitializer, seeds ...peer.AddrInfo) (*PeerService, error) {
 
 	var opt = libp2p.ListenAddrStrings(
 		fmt.Sprintf("/ip4/%s/tcp/%d", listenIP, listenPort),
@@ -65,7 +67,7 @@ func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...p
 
 	routedDiscovery := routing.NewRoutingDiscovery(kad)
 
-	pn := &P2PHost{
+	pn := &PeerService{
 		Host:                   h,
 		DHT:                    kad,
 		Discovery:              routedDiscovery,
@@ -73,11 +75,16 @@ func NewP2PHost(listenIP string, listenPort int, ctx context.Context, seeds ...p
 		PendingRequestsWaiters: make(map[string][]chan struct{}, 0),
 	}
 
+	// Initialize protocols if callback provided
+	if initProtocols != nil {
+		initProtocols(pn)
+	}
+
 	return pn, nil
 
 }
 
-func (n *P2PHost) Close() error {
+func (n *PeerService) Close() error {
 	if err := n.DHT.Close(); err != nil {
 		return err
 	}

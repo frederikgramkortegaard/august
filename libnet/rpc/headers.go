@@ -12,8 +12,38 @@ import (
 
 const RPCHeadersRequest = "/august/rpc/headersreq/1.0.0"
 const RPCHeadersResponse = "/august/rpc/headersresp/1.0.0"
+const RPCHeaderAnnouncement = "/august/rpc/headerannounce/1.0.0"
 
-/* HEADERS */
+func (rpc *RPCProtocol) onHeaderAnnouncement(s network.Stream) {
+	defer s.Close()
+
+	if rpc.onHeaderAnnouncementCallback == nil {
+		return
+	}
+
+	data := &protobuf.HeaderData{}
+	if err := libnet.ReadProtoMsgStream(s, data); err != nil {
+		log.Print(err)
+	}
+
+	log.Printf("Received Header Announcement from %s",
+		s.Conn().RemotePeer())
+
+	h := libnet.ProtoHeaderToBlockHeader(data)
+	rpc.onHeaderAnnouncementCallback(h)
+
+}
+func (rpc *RPCProtocol) AnnounceHeader(header *blockchain.BlockHeader, exclude peer.ID) {
+	peers := rpc.Host.Host.Network().Peers()
+	h := libnet.BlockHeaderToProtoHeader(header)
+	for _, peer := range peers {
+		if peer == exclude {
+			continue
+		}
+		log.Println("Sending RPCHeaderAnnouncement to Peer", peer)
+		rpc.Host.SendProtoMessage(peer, RPCHeaderAnnouncement, h)
+	}
+}
 
 func (rpc *RPCProtocol) onHeadersRequest(s network.Stream) {
 	defer s.Close()
@@ -73,7 +103,6 @@ func (rpc *RPCProtocol) RequestHeaders(messageID string, hashes []blockchain.Has
 	// and request headers for them all.
 	maxPeers := config.MaxPeersForRequest
 	subsample := libnet.SamplePeers(peers, maxPeers)
-	 
 
 	for _, peer := range subsample {
 		log.Println("Sending RPCHeadersRequest to Peer", peer)
@@ -97,4 +126,3 @@ func (rpc *RPCProtocol) onHeadersResponse(s network.Stream) {
 	rpc.Host.NotifyMessageWaiters(data.MessageData.MessageID)
 
 }
-

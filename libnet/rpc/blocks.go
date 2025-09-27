@@ -11,7 +11,9 @@ import (
 	"log"
 )
 
-/* BLOCKS */
+const RPCBlocksRequest = "/august/rpc/blocksreq/1.0.0"
+const RPCBlocksResponse = "/august/rpc/blocksresp/1.0.0"
+
 
 func (rpc *RPCProtocol) RequestBlocks(messageID string, hashes []blockchain.Hash32) {
 
