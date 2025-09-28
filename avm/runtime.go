@@ -233,18 +233,19 @@ func (m *memory) Load(address uint64) (*big.Int, error) {
 }
 
 type Runtime struct {
-	Stack        *stack
-	Memory       *memory
-	FramePointer int // Points to base of current call frame on stack
-	IC           int // Instruction Counter
-	StartIC      int // Initial instruction counter for validation
-	GasAvailable uint64
-	GasUsed      uint64
-	Instructions []types.Instruction
-	Persistent   map[string]string
-	Context      *BlockchainContext // Immutable blockchain context data
-	ReturnStack  []int // Stack of return addresses for function calls
-	FrameStack   []int // Stack of frame pointers for function calls
+	Stack          *stack
+	Memory         *memory
+	FramePointer   int // Points to base of current call frame on stack
+	IC             int // Instruction Counter
+	StartIC        int // Initial instruction counter for validation
+	GasAvailable   uint64
+	GasUsed        uint64
+	Instructions   []types.Instruction
+	Persistent     map[string]string
+	Context        *BlockchainContext // Immutable blockchain context data
+	ReturnStack    []int // Stack of return addresses for function calls
+	FrameStack     []int // Stack of frame pointers for function calls
+	NextMemoryAddr uint64 // Next available memory address for dynamic allocation
 }
 
 // NewTestRuntime creates a Runtime with minimal blockchain context for testing
@@ -272,18 +273,19 @@ func NewRuntime(gasAvailable uint64, instructions []types.Instruction, context *
 
 func NewRuntimeWithIC(gasAvailable uint64, instructions []types.Instruction, context *BlockchainContext, startIC int) *Runtime {
 	return &Runtime{
-		Stack:        NewStack(config.AVMMaxStackSize),
-		Memory:       NewMemory(config.AVMMaxMemorySize),
-		FramePointer: 0,
-		IC:           startIC,
-		StartIC:      startIC,
-		GasAvailable: gasAvailable,
-		GasUsed:      0,
-		Instructions: instructions,
-		Persistent:   make(map[string]string),
-		Context:      context,
-		ReturnStack:  make([]int, 0),
-		FrameStack:   make([]int, 0),
+		Stack:          NewStack(config.AVMMaxStackSize),
+		Memory:         NewMemory(config.AVMMaxMemorySize),
+		FramePointer:   0,
+		IC:             startIC,
+		StartIC:        startIC,
+		GasAvailable:   gasAvailable,
+		GasUsed:        0,
+		Instructions:   instructions,
+		Persistent:     make(map[string]string),
+		Context:        context,
+		ReturnStack:    make([]int, 0),
+		FrameStack:     make([]int, 0),
+		NextMemoryAddr: 0,
 	}
 }
 
@@ -521,7 +523,7 @@ func (r *Runtime) ExecuteInstruction() error {
 		}
 
 	case MSTORE:
-		value, address, popErr := r.Stack.Pop2()
+		address, value, popErr := r.Stack.Pop2()
 		if popErr != nil {
 			err = popErr
 		} else {
@@ -583,9 +585,13 @@ func (r *Runtime) ExecuteInstruction() error {
 		} else {
 			offset := int(offsetBig.Uint64())
 			stackIndex := r.FramePointer + offset
-			if stackIndex >= len(r.Stack.s) || stackIndex < 0 {
+			if stackIndex < 0 {
 				err = errors.New("LOAD_LOCAL: invalid offset")
 			} else {
+				// Expand stack if necessary (like STORE_LOCAL)
+				for len(r.Stack.s) <= stackIndex {
+					r.Stack.s = append(r.Stack.s, big.NewInt(0))
+				}
 				value := r.Stack.s[stackIndex]
 				err = r.Stack.Push(value)
 			}
@@ -684,6 +690,159 @@ func (r *Runtime) ExecuteInstruction() error {
 			var b [32]byte
 			val.FillBytes(b[:])
 			fmt.Printf("AVM EMIT: %x\n", b)
+		}
+
+	case types.STRCONCAT:
+		ptr2, err2 := r.Stack.Pop()
+		if err2 != nil {
+			err = err2
+			break
+		}
+		ptr1, err1 := r.Stack.Pop()
+		if err1 != nil {
+			err = err1
+			break
+		}
+
+		addr1 := ptr1.Uint64()
+		addr2 := ptr2.Uint64()
+
+		len1Val, err := r.Memory.Load(addr1)
+		if err != nil {
+			err = errors.New("invalid string pointer 1")
+			break
+		}
+		len1 := len1Val.Uint64()
+
+		len2Val, err := r.Memory.Load(addr2)
+		if err != nil {
+			err = errors.New("invalid string pointer 2")
+			break
+		}
+		len2 := len2Val.Uint64()
+
+		chunks1 := (len1 + 31) / 32
+		chunks2 := (len2 + 31) / 32
+
+		str1Bytes := make([]byte, 0, len1)
+		for i := uint64(0); i < chunks1; i++ {
+			chunkVal, loadErr := r.Memory.Load(addr1 + 1 + i)
+			if loadErr != nil {
+				err = fmt.Errorf("missing string chunk at address %d", addr1+1+i)
+				break
+			}
+			chunk := make([]byte, 32)
+			chunkVal.FillBytes(chunk)
+			remaining := len1 - uint64(len(str1Bytes))
+			if remaining > 32 {
+				str1Bytes = append(str1Bytes, chunk...)
+			} else {
+				str1Bytes = append(str1Bytes, chunk[:remaining]...)
+			}
+		}
+
+		str2Bytes := make([]byte, 0, len2)
+		for i := uint64(0); i < chunks2; i++ {
+			chunkVal, loadErr := r.Memory.Load(addr2 + 1 + i)
+			if loadErr != nil {
+				err = fmt.Errorf("missing string chunk at address %d", addr2+1+i)
+				break
+			}
+			chunk := make([]byte, 32)
+			chunkVal.FillBytes(chunk)
+			remaining := len2 - uint64(len(str2Bytes))
+			if remaining > 32 {
+				str2Bytes = append(str2Bytes, chunk...)
+			} else {
+				str2Bytes = append(str2Bytes, chunk[:remaining]...)
+			}
+		}
+
+		if err != nil {
+			break
+		}
+
+		resultBytes := append(str1Bytes, str2Bytes...)
+		resultLen := uint64(len(resultBytes))
+		resultChunks := (resultLen + 31) / 32
+
+		resultAddr := r.NextMemoryAddr
+		err = r.Memory.Store(resultAddr, big.NewInt(int64(resultLen)))
+		if err != nil {
+			break
+		}
+
+		for i := uint64(0); i < resultChunks; i++ {
+			chunkStart := i * 32
+			chunkEnd := chunkStart + 32
+			if chunkEnd > resultLen {
+				chunkEnd = resultLen
+			}
+			chunk := make([]byte, 32)
+			copy(chunk, resultBytes[chunkStart:chunkEnd])
+			storeErr := r.Memory.Store(resultAddr+1+i, new(big.Int).SetBytes(chunk))
+			if storeErr != nil {
+				err = storeErr
+				break
+			}
+		}
+
+		if err != nil {
+			break
+		}
+
+		r.NextMemoryAddr += 1 + resultChunks
+		err = r.Stack.Push(big.NewInt(int64(resultAddr)))
+
+	case types.STRLEN:
+		ptr, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+			break
+		}
+		addr := ptr.Uint64()
+		lenVal, loadErr := r.Memory.Load(addr)
+		if loadErr != nil {
+			err = errors.New("invalid string pointer")
+			break
+		}
+		err = r.Stack.Push(lenVal)
+
+	case types.EMITSTR:
+		ptr, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+			break
+		}
+		addr := ptr.Uint64()
+
+		lenVal, loadErr := r.Memory.Load(addr)
+		if loadErr != nil {
+			err = errors.New("invalid string pointer for emit")
+			break
+		}
+		strLen := lenVal.Uint64()
+		chunks := (strLen + 31) / 32
+
+		strBytes := make([]byte, 0, strLen)
+		for i := uint64(0); i < chunks; i++ {
+			chunkVal, loadErr := r.Memory.Load(addr + 1 + i)
+			if loadErr != nil {
+				err = fmt.Errorf("missing string chunk at address %d", addr+1+i)
+				break
+			}
+			chunk := make([]byte, 32)
+			chunkVal.FillBytes(chunk)
+			remaining := strLen - uint64(len(strBytes))
+			if remaining > 32 {
+				strBytes = append(strBytes, chunk...)
+			} else {
+				strBytes = append(strBytes, chunk[:remaining]...)
+			}
+		}
+
+		if err == nil {
+			fmt.Printf("AVM EMITSTR: %s (len=%d, hex=%x)\n", string(strBytes), len(strBytes), strBytes)
 		}
 
 	// BLOCKCHAIN CONTEXTS

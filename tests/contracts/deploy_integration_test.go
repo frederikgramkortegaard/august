@@ -47,32 +47,80 @@ func TestContractDeploymentIntegration(t *testing.T) {
 
 	code := `
 	define init() : int {
+		// Store numeric values
 		persistent[string(45)] = string(75)
 		persistent[string(99)] = string(1)
+
+		// Store string literals
+		name: string = "TestContract"
+		persistent["contract_name"] = name
+
+		version: string = "v1.0.0"
+		persistent["version"] = version
+
+		// Concatenate and store (2-operand only due to type tracking limitations)
+		space: string = " "
+		nameWithSpace: string = name + space
+		fullName: string = nameWithSpace + version
+		persistent["full_name"] = fullName
+
+		emit(fullName)
 		emit(42)
 		return 1
 	}
 
 	define add(a: int, b: int) : int {
-		result = a + b
+		result: int = a + b
 		persistent[string(200)] = string(result)
 		return result
 	}
 
 	define call() : int {
-		// Test function with parameters
-		sum = add(25, 50)
+		// Test function calls with integers
+		sum: int = add(25, 50)
+		emit(sum)
+
+		// Test string operations with concatenation
+		greeting: string = "Hello"
+		world: string = " World"
+		message: string = greeting + world
+		persistent["message"] = message
+		emit(message)
+
+		// Test string concatenation with user name (2-operand steps)
+		prefix: string = "Welcome, "
+		userName: string = "Alice"
+		prefixName: string = prefix + userName
+		suffix: string = "!"
+		personalGreeting: string = prefixName + suffix
+		emit(personalGreeting)
+		persistent["last_greeting"] = personalGreeting
+
+		// Test string length
+		msgLen: int = len(message)
+		emit(msgLen)
+		persistent["message_length"] = string(msgLen)
+
+		// Test multiple string operations (2-operand steps)
+		status: string = "OK"
+		colon: string = ":"
+		statusColon: string = status + colon
+		code: string = "200"
+		response: string = statusColon + code
+		emit(response)
+		persistent["response"] = response
 
 		// Test control flow with the result
 		if sum == 75 {
 			persistent[string(100)] = string(200)
-			emit(200)
+			success: string = "Success"
+			emit(success)
 		} else {
 			persistent[string(100)] = string(300)
-			emit(300)
+			fail: string = "Failed"
+			emit(fail)
 		}
 
-		emit(sum)
 		return sum
 	}
 	`
@@ -86,6 +134,8 @@ func TestContractDeploymentIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse contract: %v", err)
 	}
+
+	marigold.Typecheck(ast)
 
 	ctx := marigold.CodegenWithContext(ast)
 	t.Logf("Generated %d instructions", len(ctx.Instructions))

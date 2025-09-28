@@ -63,6 +63,11 @@ const (
 	// Debug
 	EMIT
 
+	// String Operations
+	STRCONCAT
+	STRLEN
+	EMITSTR
+
 	// Blockchain Context
 	CALLER        // address of message sender
 	ADDRESS       // address of contract currently executing
@@ -111,6 +116,9 @@ var opcodeNames = [...]string{
 	RETURN:        "RETURN",
 	STOP:          "STOP",
 	EMIT:          "EMIT",
+	STRCONCAT:     "STRCONCAT",
+	STRLEN:        "STRLEN",
+	EMITSTR:       "EMITSTR",
 	CALLER:        "CALLER",
 	ADDRESS:       "ADDRESS",
 	BALANCE:       "BALANCE",
@@ -166,6 +174,9 @@ var opcodeGasPrices = [...]uint16{
 	RETURN:        8,
 	STOP:          0,
 	EMIT:          100,
+	STRCONCAT:     50,
+	STRLEN:        10,
+	EMITSTR:       150,
 	CALLER:        2,
 	ADDRESS:       2,
 	BALANCE:       400,
@@ -217,6 +228,9 @@ var OpcodeMap = map[string]OPCODE{
 	"RETURN":        RETURN,
 	"STOP":          STOP,
 	"EMIT":          EMIT,
+	"STRCONCAT":     STRCONCAT,
+	"STRLEN":        STRLEN,
+	"EMITSTR":       EMITSTR,
 	"CALLER":        CALLER,
 	"ADDRESS":       ADDRESS,
 	"BALANCE":       BALANCE,

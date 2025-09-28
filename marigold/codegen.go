@@ -20,6 +20,12 @@ type CodegenContext struct {
 	// Loop context (for break/continue)
 	LoopStack        []LoopContext       // Stack of nested loops
 
+	// Memory allocation for string literals and other heap data
+	NextMemoryAddr   uint64              // Next available memory address
+
+	// String table for efficient string literal handling
+	StringTable      map[string]uint64   // Maps string content to memory address
+	StringLiterals   []string            // Ordered list of unique string literals
 }
 
 type LoopContext struct {
@@ -44,6 +50,151 @@ func (ctx *CodegenContext) logFatalWithToken(message string, token *Token) {
 		}
 	} else {
 		ctx.logFatal(message)
+	}
+}
+
+// RegisterStringLiteral adds a string literal to the string table if not already present
+// Returns the memory address where the string will be stored
+func (ctx *CodegenContext) RegisterStringLiteral(stringValue string) uint64 {
+	// Check if string is already in table
+	if addr, exists := ctx.StringTable[stringValue]; exists {
+		return addr
+	}
+
+	// Calculate memory needed for this string
+	stringBytes := []byte(stringValue)
+	byteLength := uint64(len(stringBytes))
+	chunksNeeded := (byteLength + 31) / 32 // ceil(byteLength / 32)
+
+	// Allocate memory address for this string
+	stringAddr := ctx.NextMemoryAddr
+	ctx.NextMemoryAddr += 1 + chunksNeeded // length + chunks
+
+	// Add to string table
+	ctx.StringTable[stringValue] = stringAddr
+	ctx.StringLiterals = append(ctx.StringLiterals, stringValue)
+
+	return stringAddr
+}
+
+// CollectStringLiterals walks through an AST and registers all string literals without generating code
+func (ctx *CodegenContext) CollectStringLiterals(ast *Ast) {
+	for _, function := range ast.Functions {
+		ctx.collectStringLiteralsFromFunction(function)
+	}
+}
+
+func (ctx *CodegenContext) collectStringLiteralsFromFunction(function *Function) {
+	if function.Block != nil {
+		ctx.collectStringLiteralsFromBlock(function.Block)
+	}
+}
+
+func (ctx *CodegenContext) collectStringLiteralsFromBlock(block *Block) {
+	for _, stmt := range block.Statements {
+		ctx.collectStringLiteralsFromStatement(stmt)
+	}
+}
+
+func (ctx *CodegenContext) collectStringLiteralsFromStatement(stmt *Statement) {
+	switch stmt.Type {
+	case ExpressionStmt:
+		if stmt.Rhs != nil {
+			ctx.collectStringLiteralsFromExpression(stmt.Rhs)
+		}
+	case AssignmentStmt:
+		if stmt.Rhs != nil {
+			ctx.collectStringLiteralsFromExpression(stmt.Rhs)
+		}
+	case ReturnStmt:
+		if stmt.Rhs != nil {
+			ctx.collectStringLiteralsFromExpression(stmt.Rhs)
+		}
+	case IfStmt:
+		if stmt.Conditional != nil {
+			ctx.collectStringLiteralsFromExpression(stmt.Conditional)
+		}
+		if stmt.Block != nil {
+			ctx.collectStringLiteralsFromBlock(stmt.Block)
+		}
+		if stmt.ElseBlock != nil {
+			ctx.collectStringLiteralsFromBlock(stmt.ElseBlock)
+		}
+	case WhileStmt:
+		if stmt.Conditional != nil {
+			ctx.collectStringLiteralsFromExpression(stmt.Conditional)
+		}
+		if stmt.Block != nil {
+			ctx.collectStringLiteralsFromBlock(stmt.Block)
+		}
+	}
+}
+
+func (ctx *CodegenContext) collectStringLiteralsFromExpression(expr *Expression) {
+	if expr == nil {
+		return
+	}
+
+	switch expr.Type {
+	case LiteralExpr:
+		if expr.ValueType == String {
+			stringValue := expr.Value.(string)
+			ctx.RegisterStringLiteral(stringValue)
+		}
+	case BinaryExpr:
+		ctx.collectStringLiteralsFromExpression(expr.Lhs)
+		ctx.collectStringLiteralsFromExpression(expr.Rhs)
+	case UnaryExpr:
+		ctx.collectStringLiteralsFromExpression(expr.Rhs)
+	case CallExpr:
+		for _, arg := range expr.Args {
+			ctx.collectStringLiteralsFromExpression(arg)
+		}
+	case ArrayLiteral:
+		for _, element := range expr.Args {
+			ctx.collectStringLiteralsFromExpression(element)
+		}
+	case IndexExpr:
+		ctx.collectStringLiteralsFromExpression(expr.Lhs)
+		ctx.collectStringLiteralsFromExpression(expr.Rhs)
+	}
+}
+
+// GenerateStringInitialization generates bytecode to initialize all string literals in memory
+func (ctx *CodegenContext) GenerateStringInitialization() {
+	for _, stringValue := range ctx.StringLiterals {
+		stringAddr := ctx.StringTable[stringValue]
+		stringBytes := []byte(stringValue)
+		byteLength := uint64(len(stringBytes))
+
+		// Calculate number of 32-byte chunks needed
+		chunksNeeded := (byteLength + 31) / 32 // ceil(byteLength / 32)
+
+		// Store byte length at first position
+		ctx.EmitPush(byteLength)
+		ctx.EmitPush(stringAddr)
+		ctx.Emit(types.MSTORE)
+
+		// Store string data in 32-byte chunks
+		for i := uint64(0); i < chunksNeeded; i++ {
+			chunkStart := i * 32
+			chunkEnd := chunkStart + 32
+			if chunkEnd > byteLength {
+				chunkEnd = byteLength
+			}
+
+			// Extract chunk and pad to 32 bytes
+			chunk := make([]byte, 32)
+			copy(chunk, stringBytes[chunkStart:chunkEnd])
+
+			// Convert chunk to big integer (treating as big-endian bytes)
+			chunkValue := fmt.Sprintf("0x%x", chunk)
+
+			// Store chunk at memory address
+			ctx.EmitPush(chunkValue)
+			ctx.EmitPush(stringAddr + 1 + i)
+			ctx.Emit(types.MSTORE)
+		}
 	}
 }
 
@@ -93,9 +244,12 @@ func generateLiteral(ctx *CodegenContext, expr *Expression) {
 			ctx.EmitPush(0)
 		}
 	case String:
-		// TODO: String literals need special handling (heap allocation, etc)
-		// For now, just push 0 as placeholder
-		ctx.logFatalWithToken("String literals not yet supported", expr.Token)
+		// Register string literal in string table and get its address
+		stringValue := expr.Value.(string)
+		stringAddr := ctx.RegisterStringLiteral(stringValue)
+
+		// Push pointer to string (the starting address)
+		ctx.EmitPush(stringAddr)
 	case Float:
 		// TODO: Float literals need special handling (AVM uses 256-bit integers)
 		// For now, just push 0 as placeholder
@@ -128,13 +282,66 @@ func generateCall(ctx *CodegenContext, expr *Expression) {
 
 	// Check for builtin functions
 	if funcName == "emit" {
-		// emit(value) - pushes value and calls EMIT opcode
+		// emit(value) - automatically use EMITSTR for strings, EMIT for others
 		if len(expr.Args) != 1 {
 			ctx.logFatalWithToken("emit() expects exactly 1 argument", expr.Token)
 			return
 		}
 		GenerateExpression(ctx, expr.Args[0])
-		ctx.Emit(types.EMIT)
+		// Check if argument is a string
+		if isStringExpression(ctx, expr.Args[0]) {
+			ctx.Emit(types.EMITSTR)
+		} else {
+			ctx.Emit(types.EMIT)
+		}
+		return
+	}
+
+	if funcName == "len" {
+		// len(value) - automatically use STRLEN for strings
+		if len(expr.Args) != 1 {
+			ctx.logFatalWithToken("len() expects exactly 1 argument", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		// Check if argument is a string
+		if isStringExpression(ctx, expr.Args[0]) {
+			ctx.Emit(types.STRLEN)
+		} else {
+			ctx.logFatalWithToken("len() currently only supports strings", expr.Token)
+		}
+		return
+	}
+
+	// String operations
+	if funcName == "emit_str" {
+		if len(expr.Args) != 1 {
+			ctx.logFatalWithToken("emit_str() expects exactly 1 argument", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		ctx.Emit(types.EMITSTR)
+		return
+	}
+
+	if funcName == "str_concat" {
+		if len(expr.Args) != 2 {
+			ctx.logFatalWithToken("str_concat() expects exactly 2 arguments", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		GenerateExpression(ctx, expr.Args[1])
+		ctx.Emit(types.STRCONCAT)
+		return
+	}
+
+	if funcName == "str_len" {
+		if len(expr.Args) != 1 {
+			ctx.logFatalWithToken("str_len() expects exactly 1 argument", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		ctx.Emit(types.STRLEN)
 		return
 	}
 
@@ -209,6 +416,32 @@ func generateSliceExpr(ctx *CodegenContext, expr *Expression) {
 	ctx.logFatalWithToken("Slice expressions not yet supported", expr.Token)
 }
 
+func isStringExpression(ctx *CodegenContext, expr *Expression) bool {
+	// Check if it's a string literal
+	if expr.Type == LiteralExpr && expr.ValueType == String {
+		return true
+	}
+
+	// Check if it's a variable with string type
+	if expr.Type == IdentifierExpr {
+		varName := expr.Value.(string)
+		// Look up in current scope and parent scopes
+		scope := ctx.CurrentScope
+		for scope != nil {
+			if variable, exists := scope.Variables[varName]; exists {
+				// Check if the type is StringType
+				if variable.Type.Equals(StringType) {
+					return true
+				}
+				break
+			}
+			scope = scope.Parent
+		}
+	}
+
+	return false
+}
+
 func generateBinaryExpression(ctx *CodegenContext, expr *Expression) {
 	// Generate left operand (pushes result onto stack)
 	GenerateExpression(ctx, expr.Lhs)
@@ -216,10 +449,23 @@ func generateBinaryExpression(ctx *CodegenContext, expr *Expression) {
 	// Generate right operand (pushes result onto stack)
 	GenerateExpression(ctx, expr.Rhs)
 
+	// Check if we're doing string concatenation
+	isStringConcat := false
+	if expr.Operator == Plus {
+		// Check if both operands are strings (literals or variables)
+		if isStringExpression(ctx, expr.Lhs) && isStringExpression(ctx, expr.Rhs) {
+			isStringConcat = true
+		}
+	}
+
 	// Emit the operation (pops two values, pushes result)
 	switch expr.Operator {
 	case Plus:
-		ctx.Emit(types.ADD)
+		if isStringConcat {
+			ctx.Emit(types.STRCONCAT)
+		} else {
+			ctx.Emit(types.ADD)
+		}
 	case Minus:
 		ctx.Emit(types.SUB)
 	case Multiply:
@@ -538,32 +784,77 @@ func CodegenWithContext(ast *Ast) *CodegenContext {
 		LocalOffsets:    make(map[string]int),
 		NextLocalOffset: 0,
 		LoopStack:       make([]LoopContext, 0),
+		NextMemoryAddr:  0, // Start memory allocation at address 0
+		StringTable:     make(map[string]uint64),
+		StringLiterals:  make([]string, 0),
 	}
 
-	// Reserve space for entry point jumps (IC=0 and IC=1)
-	// IC=0: JUMP to init
-	// IC=1: JUMP to call
-	ctx.EmitPush(0) // Placeholder for init address
-	ctx.Emit(types.JUMP)
-	ctx.EmitPush(0) // Placeholder for call address
+	// First pass: Collect all string literals without generating code
+	ctx.CollectStringLiterals(ast)
+
+	// IC=0: Jump to init path (string_init + init_function)
+	ctx.EmitPush(0) // Placeholder for init path address
 	ctx.Emit(types.JUMP)
 
-	// Generate all function definitions
-	for _, function := range ast.Functions {
-		GenerateFunctionDefinition(ctx, function)
+	// IC=1: Jump to call path (string_init + call_function)
+	ctx.EmitPush(0) // Placeholder for call path address
+	ctx.Emit(types.JUMP)
+
+	// Init path: String initialization + jump to init function
+	initPathStart := len(ctx.Instructions)
+	ctx.GenerateStringInitialization()
+	// Add jump to init function (will be patched later)
+	initJumpPlaceholder := len(ctx.Instructions)
+	ctx.EmitPush(0) // Placeholder for init function address
+	ctx.Emit(types.JUMP)
+
+	// Call path: String initialization + jump to call function
+	callPathStart := len(ctx.Instructions)
+	ctx.GenerateStringInitialization()
+	// Add jump to call function (will be patched later)
+	callJumpPlaceholder := len(ctx.Instructions)
+	ctx.EmitPush(0) // Placeholder for call function address
+	ctx.Emit(types.JUMP)
+
+	// Generate all function definitions in correct order (init first, then others, then call)
+	// This ensures functions are defined before they're referenced
+	if initFunc, ok := ast.Functions["init"]; ok {
+		GenerateFunctionDefinition(ctx, initFunc)
 	}
 
-	// Patch the entry point jumps with actual addresses
+	// Generate other functions (not init or call)
+	for name, function := range ast.Functions {
+		if name != "init" && name != "call" {
+			GenerateFunctionDefinition(ctx, function)
+		}
+	}
+
+	// Generate call function last (so it can reference other functions)
+	if callFunc, ok := ast.Functions["call"]; ok {
+		GenerateFunctionDefinition(ctx, callFunc)
+	}
+
+	// Patch all entry points and function jumps
 	if initAddr, ok := ctx.FunctionIndex["init"]; ok {
-		hexValue := fmt.Sprintf("0x%x", initAddr)
-		ctx.Instructions[0].Value = &hexValue
+		// IC=0 jumps to init path (string init before init function)
+		initPathHex := fmt.Sprintf("0x%x", initPathStart)
+		ctx.Instructions[0].Value = &initPathHex
+
+		// Init path jumps to actual init function
+		initFuncHex := fmt.Sprintf("0x%x", initAddr)
+		ctx.Instructions[initJumpPlaceholder].Value = &initFuncHex
 	} else {
 		ctx.logFatal("init function not found - required for contracts")
 	}
 
 	if callAddr, ok := ctx.FunctionIndex["call"]; ok {
-		hexValue := fmt.Sprintf("0x%x", callAddr)
-		ctx.Instructions[2].Value = &hexValue
+		// IC=1 jumps to call path (string init before call function)
+		callPathHex := fmt.Sprintf("0x%x", callPathStart)
+		ctx.Instructions[2].Value = &callPathHex
+
+		// Call path jumps to actual call function
+		callFuncHex := fmt.Sprintf("0x%x", callAddr)
+		ctx.Instructions[callJumpPlaceholder].Value = &callFuncHex
 	} else {
 		ctx.logFatal("call function not found - required for contracts")
 	}

@@ -66,8 +66,8 @@ const (
 	GasDataPerByte       = uint64(68)      // Gas cost per byte of transaction data
 
 	// AVM runtime limits
-	AVMMaxStackSize  = 1024 // Maximum stack depth (0 = unlimited)
-	AVMMaxMemorySize = 1024 // Maximum memory slots (0 = unlimited)
+	AVMMaxStackSize  = 10000 // Maximum stack depth (0 = unlimited)
+	AVMMaxMemorySize = 10000 // Maximum memory slots (0 = unlimited)
 
 	// Network request-response constants
 	RequestTimeout        = 10 * time.Second // How long to wait for responses
