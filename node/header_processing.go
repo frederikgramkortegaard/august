@@ -98,7 +98,7 @@ func (n *Node) fetchMissingBlocksForFork(header *blockchain.BlockHeader, missing
 
 		select {
 		case <-ch:
-		case <-time.After(2 * time.Minute):
+		case <-time.After(config.BlockFetchTimeout):
 			log.Printf("%s\tTimeout waiting for blocks response", n.Config.NodeID)
 			return
 		}
@@ -204,7 +204,7 @@ func (n *Node) fetchParentForOrphan(header *blockchain.BlockHeader) {
 
 		select {
 		case <-headerCh:
-		case <-time.After(2 * time.Minute):
+		case <-time.After(config.HeaderFetchTimeout):
 			log.Printf("%s\tTimeout waiting for parent header", n.Config.NodeID)
 			return
 		}
@@ -227,7 +227,7 @@ func (n *Node) fetchParentForOrphan(header *blockchain.BlockHeader) {
 
 			select {
 			case <-blockCh:
-			case <-time.After(2 * time.Minute):
+			case <-time.After(config.BlockFetchTimeout):
 				log.Printf("%s\tTimeout waiting for parent block", n.Config.NodeID)
 				return
 			}
@@ -311,7 +311,7 @@ func (n *Node) handleCurrentChainExtension(header *blockchain.BlockHeader, block
 
 		select {
 		case <-ch:
-		case <-time.After(2 * time.Minute):
+		case <-time.After(config.BlockFetchTimeout):
 			log.Printf("%s\tTimeout waiting for block %s", n.Config.NodeID, blockHash.String()[:8])
 			return nil
 		}
@@ -426,7 +426,7 @@ func (n *Node) handleCandidateChainExtension(header *blockchain.BlockHeader, blo
 
 		select {
 		case <-ch:
-		case <-time.After(2 * time.Minute):
+		case <-time.After(config.BlockFetchTimeout):
 			log.Printf("%s\tTimeout waiting for blocks for reorg", n.Config.NodeID)
 			return nil
 		}

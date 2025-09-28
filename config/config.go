@@ -70,8 +70,10 @@ const (
 	AVMMaxMemorySize = 1024 // Maximum memory slots (0 = unlimited)
 
 	// Network request-response constants
-	RequestTimeout     = 10 * time.Second // How long to wait for responses
-	MaxPendingRequests = 100              // Maximum number of pending requests
+	RequestTimeout        = 10 * time.Second // How long to wait for responses
+	HeaderFetchTimeout    = 2 * time.Minute  // How long to wait for header fetching operations
+	BlockFetchTimeout     = 2 * time.Minute  // How long to wait for block fetching operations
+	MaxPendingRequests    = 100              // Maximum number of pending requests
 
 	// Network peer constants
 	MaxPeers = 128 // Maximum number of peers
