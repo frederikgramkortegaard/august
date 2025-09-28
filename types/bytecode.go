@@ -67,6 +67,10 @@ const (
 	STRCONCAT
 	STRLEN
 	EMITSTR
+	STRINDEX   // String character access str[index]
+	STRSLICE   // String slicing str[start:end]
+	STRTOINT   // Convert string to integer
+	INTTOSTR   // Convert integer to string
 
 	// Blockchain Context
 	CALLER        // address of message sender
@@ -82,6 +86,7 @@ const (
 	COINBASE      // current block's beneficiary address
 	HEIGHT        // current block number
 	GASLIMIT      // current block gas limit
+	TSXDATA       // transaction data
 
 	// COUNTER
 	LAST
@@ -119,6 +124,10 @@ var opcodeNames = [...]string{
 	STRCONCAT:     "STRCONCAT",
 	STRLEN:        "STRLEN",
 	EMITSTR:       "EMITSTR",
+	STRINDEX:      "STRINDEX",
+	STRSLICE:      "STRSLICE",
+	STRTOINT:      "STRTOINT",
+	INTTOSTR:      "INTTOSTR",
 	CALLER:        "CALLER",
 	ADDRESS:       "ADDRESS",
 	BALANCE:       "BALANCE",
@@ -132,6 +141,7 @@ var opcodeNames = [...]string{
 	COINBASE:      "COINBASE",
 	HEIGHT:        "HEIGHT",
 	GASLIMIT:      "GASLIMIT",
+	TSXDATA:       "TSXDATA",
 }
 
 func (op OPCODE) Valid() bool {
@@ -177,6 +187,10 @@ var opcodeGasPrices = [...]uint16{
 	STRCONCAT:     50,
 	STRLEN:        10,
 	EMITSTR:       150,
+	STRINDEX:      20,
+	STRSLICE:      30,
+	STRTOINT:      25,
+	INTTOSTR:      25,
 	CALLER:        2,
 	ADDRESS:       2,
 	BALANCE:       400,
@@ -190,6 +204,7 @@ var opcodeGasPrices = [...]uint16{
 	COINBASE:      2,
 	HEIGHT:        2,
 	GASLIMIT:      2,
+	TSXDATA:       2,
 }
 
 func (op OPCODE) Price() uint16 {
@@ -231,6 +246,10 @@ var OpcodeMap = map[string]OPCODE{
 	"STRCONCAT":     STRCONCAT,
 	"STRLEN":        STRLEN,
 	"EMITSTR":       EMITSTR,
+	"STRINDEX":      STRINDEX,
+	"STRSLICE":      STRSLICE,
+	"STRTOINT":      STRTOINT,
+	"INTTOSTR":      INTTOSTR,
 	"CALLER":        CALLER,
 	"ADDRESS":       ADDRESS,
 	"BALANCE":       BALANCE,
@@ -244,6 +263,7 @@ var OpcodeMap = map[string]OPCODE{
 	"COINBASE":      COINBASE,
 	"HEIGHT":        HEIGHT,
 	"GASLIMIT":      GASLIMIT,
+	"TSXDATA":       TSXDATA,
 }
 
 func (ins Instruction) ValidateInstruction() error {

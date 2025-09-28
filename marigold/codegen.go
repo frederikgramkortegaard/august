@@ -262,6 +262,39 @@ func generateLiteral(ctx *CodegenContext, expr *Expression) {
 func generateIdentifier(ctx *CodegenContext, expr *Expression) {
 	varName := expr.Value.(string)
 
+	// Check if it's a blockchain context variable
+	if blockchainVar := GetBlockchainContextVariable(varName); blockchainVar != nil {
+		switch varName {
+		case "@caller":
+			ctx.Emit(types.CALLER)
+		case "@address":
+			ctx.Emit(types.ADDRESS)
+		case "@balance":
+			ctx.Emit(types.BALANCE)
+		case "@origin":
+			ctx.Emit(types.ORIGIN)
+		case "@gasprice":
+			ctx.Emit(types.GASPRICE)
+		case "@callvalue":
+			ctx.Emit(types.CALLVALUE)
+		case "@timestamp":
+			ctx.Emit(types.TIMESTAMP)
+		case "@difficulty":
+			ctx.Emit(types.DIFFICULTY)
+		case "@coinbase":
+			ctx.Emit(types.COINBASE)
+		case "@height":
+			ctx.Emit(types.HEIGHT)
+		case "@gaslimit":
+			ctx.Emit(types.GASLIMIT)
+		case "@tsxdata":
+			ctx.Emit(types.TSXDATA)
+		default:
+			ctx.logFatalWithToken(fmt.Sprintf("Unknown blockchain context variable: %s", varName), expr.Token)
+		}
+		return
+	}
+
 	// Check if it's a local variable (in current function)
 	if ctx.CurrentFunction != nil {
 		if offset, exists := ctx.LocalOffsets[varName]; exists {
@@ -309,6 +342,38 @@ func generateCall(ctx *CodegenContext, expr *Expression) {
 			ctx.Emit(types.STRLEN)
 		} else {
 			ctx.logFatalWithToken("len() currently only supports strings", expr.Token)
+		}
+		return
+	}
+
+	if funcName == "int" {
+		// int(value) - convert string to integer
+		if len(expr.Args) != 1 {
+			ctx.logFatalWithToken("int() expects exactly 1 argument", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		// Check if argument is a string
+		if isStringExpression(ctx, expr.Args[0]) {
+			ctx.Emit(types.STRTOINT)
+		} else {
+			ctx.logFatalWithToken("int() currently only supports string arguments", expr.Token)
+		}
+		return
+	}
+
+	if funcName == "string" {
+		// string(value) - convert integer to string
+		if len(expr.Args) != 1 {
+			ctx.logFatalWithToken("string() expects exactly 1 argument", expr.Token)
+			return
+		}
+		GenerateExpression(ctx, expr.Args[0])
+		// Check if argument is an integer
+		if !isStringExpression(ctx, expr.Args[0]) {
+			ctx.Emit(types.INTTOSTR)
+		} else {
+			ctx.logFatalWithToken("string() currently only supports integer arguments", expr.Token)
 		}
 		return
 	}
@@ -406,14 +471,50 @@ func generateIndexExpr(ctx *CodegenContext, expr *Expression) {
 		return
 	}
 
+	// Check if this is string indexing
+	if isStringExpression(ctx, expr.Lhs) {
+		// Generate the string expression (pushes string address)
+		GenerateExpression(ctx, expr.Lhs)
+		// Generate the index expression (pushes index)
+		GenerateExpression(ctx, expr.Rhs)
+		// Emit STRINDEX to get character
+		ctx.Emit(types.STRINDEX)
+		return
+	}
+
 	// Other indexing not yet supported
-	ctx.logFatalWithToken("Index expressions only supported for persistent[] and memory[]", expr.Token)
+	ctx.logFatalWithToken("Index expressions only supported for persistent[], memory[], and strings", expr.Token)
 }
 
 func generateSliceExpr(ctx *CodegenContext, expr *Expression) {
-	// TODO: Array slicing needs runtime support
-	// For now, not supported
-	ctx.logFatalWithToken("Slice expressions not yet supported", expr.Token)
+	// Check if this is string slicing
+	if isStringExpression(ctx, expr.Lhs) {
+		// STRSLICE expects: [string_addr, start, end] on stack
+
+		// Generate the string expression (pushes string address)
+		GenerateExpression(ctx, expr.Lhs)
+
+		// Generate start index (or 0 if nil)
+		if expr.SliceStart != nil {
+			GenerateExpression(ctx, expr.SliceStart)
+		} else {
+			ctx.EmitPush(0) // Default start = 0
+		}
+
+		// Generate end index (or use 999999 to indicate "use string length")
+		if expr.SliceEnd != nil {
+			GenerateExpression(ctx, expr.SliceEnd)
+		} else {
+			ctx.EmitPush(999999) // Special value: 999999 means "use string length"
+		}
+
+		// Emit STRSLICE: expects [string_addr, start, end]
+		ctx.Emit(types.STRSLICE)
+		return
+	}
+
+	// Array slicing not yet supported
+	ctx.logFatalWithToken("Slice expressions only supported for strings", expr.Token)
 }
 
 func isStringExpression(ctx *CodegenContext, expr *Expression) bool {
@@ -607,8 +708,24 @@ func generateAssignment(ctx *CodegenContext, stmt *Statement) {
 	if stmt.Lhs.Type == IndexExpr {
 		// Check if this is persistent storage assignment
 		if stmt.Lhs.Lhs.Type == IdentifierExpr && stmt.Lhs.Lhs.Value.(string) == "persistent" {
-			// Generate the key expression (pushes key onto stack)
-			GenerateExpression(ctx, stmt.Lhs.Rhs)
+			// For persistent storage, we need to convert string keys to numeric addresses
+			// Check if the key is a string literal
+			if stmt.Lhs.Rhs.Type == LiteralExpr && stmt.Lhs.Rhs.ValueType == String {
+				// Convert string literal to a hash-like numeric key
+				stringKey := stmt.Lhs.Rhs.Value.(string)
+				// Simple hash: use absolute value to avoid negatives
+				var hash uint64 = 0
+				for _, char := range stringKey {
+					hash = (hash*31 + uint64(char)) & 0x7FFFFFFFFFFFFFFF // Ensure positive
+				}
+				if hash == 0 {
+					hash = 1 // Avoid zero keys
+				}
+				ctx.EmitPush(hash)
+			} else {
+				// For non-literal keys, generate the expression normally
+				GenerateExpression(ctx, stmt.Lhs.Rhs)
+			}
 			// Stack now has: [value, key]
 			// Emit PSTORE to store value with key
 			ctx.Emit(types.PSTORE)

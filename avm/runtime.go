@@ -547,9 +547,30 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			// Store value at address in persistent storage
-			key := fmt.Sprintf("%d", address.Uint64())
-			valueStr := value.String()
+			// Check if address points to a string in memory
+			var key string
+			addressUint := address.Uint64()
+
+			// Try to read string from memory at this address
+			if stringContent := r.readStringFromMemory(addressUint); stringContent != "" {
+				// Use actual string content as key
+				key = stringContent
+			} else {
+				// Fallback to numeric key for non-string addresses
+				key = fmt.Sprintf("%d", addressUint)
+			}
+
+			// Check if value points to a string in memory
+			var valueStr string
+			valueUint := value.Uint64()
+			// Try to read string from memory at this address
+			if stringContent := r.readStringFromMemory(valueUint); stringContent != "" {
+				// Store actual string content, not memory address
+				valueStr = stringContent
+			} else {
+				// Fallback to numeric value for non-string values
+				valueStr = value.String()
+			}
 			r.Persistent[key] = valueStr
 			fmt.Printf("PSTORE: storing key='%s' value='%s'\n", key, valueStr)
 		}
@@ -569,13 +590,13 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 
 			if !ok {
-				// Return 0 if key doesn't exist (like Ethereum)
-				err = r.Stack.Push(big.NewInt(0))
+				// Return empty string address if key doesn't exist
+				emptyStringAddr := r.storeStringInMemory("")
+				err = r.Stack.Push(big.NewInt(int64(emptyStringAddr)))
 			} else {
-				// Convert string back to big.Int
-				value := new(big.Int)
-				value.SetString(valueStr, 10)
-				err = r.Stack.Push(value)
+				// Store the retrieved string in memory and return its address
+				stringAddr := r.storeStringInMemory(valueStr)
+				err = r.Stack.Push(big.NewInt(int64(stringAddr)))
 			}
 		}
 	case LOAD_LOCAL:
@@ -845,6 +866,160 @@ func (r *Runtime) ExecuteInstruction() error {
 			fmt.Printf("AVM EMITSTR: %s (len=%d, hex=%x)\n", string(strBytes), len(strBytes), strBytes)
 		}
 
+	case types.STRINDEX:
+		// String character access: str[index]
+		// Stack: [string_addr, index] -> [char_string_addr]
+		index, err1 := r.Stack.Pop()
+		if err1 != nil {
+			err = err1
+			break
+		}
+		stringAddr, err2 := r.Stack.Pop()
+		if err2 != nil {
+			err = err2
+			break
+		}
+
+		stringContent := r.readStringFromMemory(stringAddr.Uint64())
+		indexInt := int(index.Int64())
+
+		fmt.Printf("AVM STRINDEX: addr=%d index=%d string=\"%s\" (len=%d)\n",
+			stringAddr.Uint64(), indexInt, stringContent, len(stringContent))
+
+		if indexInt < 0 || indexInt >= len(stringContent) {
+			fmt.Printf("AVM STRINDEX ERROR: index %d out of range for string length %d\n", indexInt, len(stringContent))
+			err = fmt.Errorf("string index %d out of range for string of length %d", indexInt, len(stringContent))
+			break
+		}
+
+		// Extract single character as string
+		charStr := string(stringContent[indexInt])
+		charAddr := r.storeStringInMemory(charStr)
+		fmt.Printf("AVM STRINDEX RESULT: char=\"%s\" stored_at_addr=%d\n", charStr, charAddr)
+		err = r.Stack.Push(big.NewInt(int64(charAddr)))
+
+	case types.STRSLICE:
+		// String slicing: str[start:end]
+		// Stack: [string_addr, start, end] -> [slice_string_addr]
+		endIndex, err1 := r.Stack.Pop()
+		if err1 != nil {
+			err = err1
+			break
+		}
+		startIndex, err2 := r.Stack.Pop()
+		if err2 != nil {
+			err = err2
+			break
+		}
+		stringAddr, err3 := r.Stack.Pop()
+		if err3 != nil {
+			err = err3
+			break
+		}
+
+		stringContent := r.readStringFromMemory(stringAddr.Uint64())
+		startInt := int(startIndex.Int64())
+		endInt := int(endIndex.Int64())
+
+		fmt.Printf("AVM STRSLICE: addr=%d start=%d end=%d string=\"%s\" (len=%d)\n",
+			stringAddr.Uint64(), startInt, endInt, stringContent, len(stringContent))
+
+		// Handle 999999 as "use string length"
+		if endInt == 999999 {
+			endInt = len(stringContent)
+			fmt.Printf("AVM STRSLICE: converted end=999999 to len=%d\n", endInt)
+		}
+
+		// Validate slice bounds
+		if startInt < 0 || startInt > len(stringContent) {
+			fmt.Printf("AVM STRSLICE ERROR: start index %d out of range for string length %d\n", startInt, len(stringContent))
+			err = fmt.Errorf("slice start index %d out of range for string of length %d", startInt, len(stringContent))
+			break
+		}
+		if endInt < startInt || endInt > len(stringContent) {
+			fmt.Printf("AVM STRSLICE ERROR: end index %d out of range (start=%d, len=%d)\n", endInt, startInt, len(stringContent))
+			err = fmt.Errorf("slice end index %d out of range (start=%d, len=%d)", endInt, startInt, len(stringContent))
+			break
+		}
+
+		// Extract slice as new string
+		sliceStr := stringContent[startInt:endInt]
+		sliceAddr := r.storeStringInMemory(sliceStr)
+		fmt.Printf("AVM STRSLICE RESULT: slice=\"%s\" (len=%d) stored_at_addr=%d\n", sliceStr, len(sliceStr), sliceAddr)
+		err = r.Stack.Push(big.NewInt(int64(sliceAddr)))
+
+	case types.STRTOINT:
+		// Convert string to integer
+		// Stack: [string_addr] -> [integer_value]
+		stringAddr, err1 := r.Stack.Pop()
+		if err1 != nil {
+			err = err1
+			break
+		}
+		stringContent := r.readStringFromMemory(stringAddr.Uint64())
+		fmt.Printf("AVM STRTOINT: addr=%d string=\"%s\"\n", stringAddr.Uint64(), stringContent)
+
+		// Parse string to integer
+		var result int64
+		var negative bool
+
+		if len(stringContent) == 0 {
+			fmt.Printf("AVM STRTOINT ERROR: empty string\n")
+			err = fmt.Errorf("cannot convert empty string to integer")
+			break
+		}
+
+		// Check for negative sign
+		startIdx := 0
+		if stringContent[0] == '-' {
+			negative = true
+			startIdx = 1
+			if len(stringContent) == 1 {
+				fmt.Printf("AVM STRTOINT ERROR: invalid string \"-\"\n")
+				err = fmt.Errorf("cannot convert \"-\" to integer")
+				break
+			}
+		}
+
+		// Parse digits
+		result = 0
+		for i := startIdx; i < len(stringContent); i++ {
+			char := stringContent[i]
+			if char < '0' || char > '9' {
+				fmt.Printf("AVM STRTOINT ERROR: invalid character '%c' at position %d\n", char, i)
+				err = fmt.Errorf("invalid character '%c' in string \"%s\"", char, stringContent)
+				break
+			}
+			result = result*10 + int64(char-'0')
+		}
+
+		if err != nil {
+			break
+		}
+
+		if negative {
+			result = -result
+		}
+
+		fmt.Printf("AVM STRTOINT RESULT: \"%s\" -> %d\n", stringContent, result)
+		err = r.Stack.Push(big.NewInt(result))
+
+	case types.INTTOSTR:
+		// Convert integer to string
+		// Stack: [integer_value] -> [string_addr]
+		intValue, err1 := r.Stack.Pop()
+		if err1 != nil {
+			err = err1
+			break
+		}
+
+		intVal := intValue.Int64()
+		stringRepr := fmt.Sprintf("%d", intVal)
+		stringAddr := r.storeStringInMemory(stringRepr)
+
+		fmt.Printf("AVM INTTOSTR: %d -> \"%s\" stored_at_addr=%d\n", intVal, stringRepr, stringAddr)
+		err = r.Stack.Push(big.NewInt(int64(stringAddr)))
+
 	// BLOCKCHAIN CONTEXTS
 	case CALLER:
 		// Push caller address as bytes32
@@ -903,6 +1078,11 @@ func (r *Runtime) ExecuteInstruction() error {
 	case GASLIMIT:
 		// Push block gas limit
 		err = r.Stack.Push(big.NewInt(int64(r.Context.GasLimit)))
+	case TSXDATA:
+		// Push transaction data as string to memory and return address
+		tsxDataStr := string(r.Context.TsxData)
+		stringAddr := r.storeStringInMemory(tsxDataStr)
+		err = r.Stack.Push(big.NewInt(int64(stringAddr)))
 	default:
 		err = ErrInvalidOpcode
 	}
@@ -916,4 +1096,81 @@ func (r *Runtime) ExecuteInstruction() error {
 	}
 
 	return err
+}
+
+// readStringFromMemory reads a string from memory at the given address
+// String format: [length, chunk1, chunk2, ...]
+// Returns empty string if address doesn't contain a valid string
+func (r *Runtime) readStringFromMemory(addr uint64) string {
+	// Try to read the length from the first slot
+	lenVal, err := r.Memory.Load(addr)
+	if err != nil {
+		return ""
+	}
+
+	length := lenVal.Uint64()
+	if length == 0 {
+		return ""
+	}
+
+	// Calculate number of 32-byte chunks needed
+	chunks := (length + 31) / 32
+
+	// Read string bytes from chunks
+	stringBytes := make([]byte, 0, length)
+	for i := uint64(0); i < chunks; i++ {
+		chunkVal, loadErr := r.Memory.Load(addr + 1 + i)
+		if loadErr != nil {
+			return "" // Invalid string format
+		}
+
+		chunk := make([]byte, 32)
+		chunkVal.FillBytes(chunk)
+
+		// Only take the bytes we need from this chunk
+		remaining := length - uint64(len(stringBytes))
+		if remaining > 32 {
+			stringBytes = append(stringBytes, chunk...)
+		} else {
+			stringBytes = append(stringBytes, chunk[:remaining]...)
+		}
+	}
+
+	return string(stringBytes)
+}
+
+// storeStringInMemory stores a string in memory and returns the address
+// String format: [length, chunk1, chunk2, ...]
+func (r *Runtime) storeStringInMemory(s string) uint64 {
+	stringBytes := []byte(s)
+	byteLength := uint64(len(stringBytes))
+	chunksNeeded := (byteLength + 31) / 32
+
+	// Get the starting address
+	addr := r.NextMemoryAddr
+
+	// Store the length in the first slot
+	r.Memory.Store(addr, big.NewInt(int64(byteLength)))
+
+	// Store string data in chunks
+	for i := uint64(0); i < chunksNeeded; i++ {
+		start := i * 32
+		end := start + 32
+		if end > byteLength {
+			end = byteLength
+		}
+
+		// Create a 32-byte chunk (padded with zeros if needed)
+		chunk := make([]byte, 32)
+		copy(chunk, stringBytes[start:end])
+
+		// Convert to big.Int and store
+		chunkBig := new(big.Int).SetBytes(chunk)
+		r.Memory.Store(addr+1+i, chunkBig)
+	}
+
+	// Update next available address
+	r.NextMemoryAddr = addr + 1 + chunksNeeded
+
+	return addr
 }

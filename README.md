@@ -7,7 +7,7 @@ A blockchain platform built from scratch in Go, featuring proof-of-work consensu
 
 August is a blockchain platform implementing the technology stack from consensus protocols to high-level programming languages. The system combines Bitcoin's proof-of-work consensus model with Ethereum-style smart contracts, featuring a custom virtual machine (AVM) and the Marigold programming language.
 
-The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a compiler pipeline with lexer, parser, type checker, and code generator (code generator is WIP, for now use AVMBC instead).
+The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a complete compiler pipeline with lexer, parser, type checker, and code generator.
 
 The P2P network implements decentralized peer discovery and headers-first synchronization without hardcoded seed nodes. The toolchain includes wallet, miner, compiler, and HTTP API for development and interaction.
 
@@ -36,15 +36,17 @@ The P2P network implements decentralized peer discovery and headers-first synchr
 
 ### Virtual Machine Design
 - **Stack Architecture**: 256-bit arithmetic using Go's `big.Int` with configurable stack and memory limits
-- **Instruction Set**: 35+ opcodes including arithmetic, memory, storage, control flow, and blockchain context operations
+- **Instruction Set**: Opcodes including arithmetic, memory, storage, control flow, string operations, and blockchain context operations
+- **String Table Optimization**: Efficient string literal management eliminating bytecode bloat for long strings
 - **Gas System**: Per-instruction gas accounting with overflow protection and execution limits
 - **Persistent Storage**: Contract state management with PSTORE/PLOAD instructions for key-value storage
 
 ### Programming Language (Marigold)
 - **Type System**: Static typing with int, float, string, bool, arrays, and maps with full type checking
+- **String Operations**: String manipulation with concatenation, length operations, and efficient memory management
 - **Control Structures**: High-level syntax with if/else, while loops, break/continue statements, and function definitions
 - **Blockchain Integration**: Built-in access to blockchain context via @-prefixed variables (@caller, @balance, @timestamp, etc.)
-- **Compiler Pipeline**: Complete lexer->parser->typechecker->codegen pipeline with comprehensive error reporting
+- **Compiler Pipeline**: Complete lexer->parser->typechecker->codegen pipeline
 
 ### Networking & Distribution
 - **Peer Discovery**: Decentralized bootstrap mechanism without hardcoded seed nodes
@@ -108,46 +110,69 @@ go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
 
 ### Marigold Syntax
 ```go
-// Write a simple fungible token contract in Marigold
+// Basic contract with string operations and function calls
 define init() : int {
-  // Initial supply minted to deployer based on AUG sent
-  persistent[@caller] = string(@callvalue)
-  return 0
+  // Store numeric values in persistent storage
+  persistent[string(45)] = string(75)
+  persistent[string(99)] = string(1)
+
+  // String operations with blockchain variables
+  persistent["deployer"] = @caller
+  persistent["deploy_value"] = string(@callvalue)
+  persistent["deploy_height"] = string(@height)
+
+  // String concatenation (2-operand steps)
+  name: string = "TestContract"
+  space: string = " "
+  nameWithSpace: string = name + space
+  fullName: string = nameWithSpace + version
+  persistent["full_name"] = fullName
+
+  // Emit strings and numbers
+  emit(fullName)
+  emit(@callvalue)
+  return 1
+}
+
+define add(a: int, b: int) : int {
+  result: int = a + b
+  persistent[string(200)] = string(result)
+  return result
 }
 
 define call() : int {
-  // Buy tokens with AUG
-  if len(@tsxdata) == 3 && @tsxdata[:3] == "buy" {
-    persistent[@caller] = string(int(persistent[@caller]) + @callvalue)
-    return 0
+  // Function calls with parameters
+  sum: int = add(25, 50)
+  emit(sum)
+
+  // String concatenation and length operations
+  greeting: string = "Hello"
+  world: string = " World"
+  message: string = greeting + world
+  persistent["message"] = message
+  emit(message)
+
+  msgLen: int = len(message)
+  emit(msgLen)
+  persistent["message_length"] = string(msgLen)
+
+  // Control flow with computed values
+  if sum == 75 {
+    persistent[string(100)] = string(200)
+    success: string = "Success"
+    emit(success)
+  } else {
+    persistent[string(100)] = string(300)
+    fail: string = "Failed"
+    emit(fail)
   }
 
-  // Transfer tokens to another address
-  // Format: "transfer" + 64-char hex address + amount
-  if len(@tsxdata) >= 73 && @tsxdata[:8] == "transfer" {
-    recipient: string = @tsxdata[8:72]
-    amount: int = int(@tsxdata[72:])
-
-    // Validate positive amount
-    if amount <= 0 {
-      return 1
-    }
-
-    // Check sufficient balance
-    if int(persistent[@caller]) < amount {
-      return 1
-    }
-
-    // Transfer tokens
-    persistent[@caller] = string(int(persistent[@caller]) - amount)
-    persistent[recipient] = string(int(persistent[recipient]) + amount)
-  }
-
-  return 0
+  return sum
 }
 ```
 
 ### Blockchain Context Variables
+The language provides blockchain context variables for contract interaction:
 - `@caller` - Message sender address
 - `@address` - Current contract address
 - `@balance` - Contract's AUG balance
@@ -159,6 +184,7 @@ define call() : int {
 - `@difficulty` - Current mining difficulty
 - `@coinbase` - Block miner address
 - `@gaslimit` - Block gas limit
+- `@tsxdata` - Transaction data (partial implementation)
 
 ## AVM Instruction Set
 
@@ -170,6 +196,7 @@ Comparison: EQ, LT, GT, ISZERO
 Memory:     MSTORE, MLOAD (temporary)
 Storage:    PSTORE, PLOAD (persistent)
 Control:    JUMP, JUMPC, STOP
+Strings:    STRCONCAT, STRLEN, EMITSTR
 ```
 
 ### Blockchain Context Instructions

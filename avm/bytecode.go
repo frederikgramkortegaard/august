@@ -34,6 +34,8 @@ const (
 	RETURN        = types.RETURN
 	STOP          = types.STOP
 	EMIT          = types.EMIT
+	STRINDEX      = types.STRINDEX
+	STRSLICE      = types.STRSLICE
 	CALLER        = types.CALLER
 	ADDRESS       = types.ADDRESS
 	BALANCE       = types.BALANCE
@@ -47,6 +49,7 @@ const (
 	COINBASE      = types.COINBASE
 	HEIGHT        = types.HEIGHT
 	GASLIMIT      = types.GASLIMIT
+	TSXDATA       = types.TSXDATA
 	LAST          = types.LAST
 )
 

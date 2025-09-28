@@ -44,6 +44,14 @@ func parseFile(filename string) {
 		fmt.Printf("  - %s(%v) : %s\n", fn.Name, fn.Parameters, fn.ReturnType)
 	}
 
+	// Test codegen
+	fmt.Printf("\n=== Generating Bytecode ===\n")
+	ctx := marigold.CodegenWithContext(ast)
+	fmt.Printf("Generated %d instructions\n", len(ctx.Instructions))
+	for i, instr := range ctx.Instructions {
+		fmt.Printf("  %d: %s %v\n", i, instr.Opcode, instr.Value)
+	}
+
 	// Optional: Output JSON for detailed inspection
 	for _, arg := range os.Args[1:] {
 		if arg == "--json" {
