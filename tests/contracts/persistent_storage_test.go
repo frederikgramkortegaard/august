@@ -48,17 +48,17 @@ func TestPersistentStorage(t *testing.T) {
 	// Contract that stores and retrieves values in persistent storage
 	code := `
 	define init() : int {
-		persistent["counter"] = "0"
-		persistent["owner"] = "deployer"
+		persistent[string(1)] = string(0)
+		persistent[string(2)] = string(100)
 		emit(42)
 		return 1
 	}
 
 	define call() : int {
 		// Increment counter
-		current = persistent["counter"]
+		current = persistent[string(1)]
 		newValue = int(current) + 1
-		persistent["counter"] = string(newValue)
+		persistent[string(1)] = string(newValue)
 
 		// Emit the new counter value
 		emit(newValue)
@@ -178,12 +178,12 @@ func TestPersistentStorage(t *testing.T) {
 	}
 
 	// Verify the counter was incremented
-	if finalContractState.Persistent["counter"] != "1" {
-		t.Fatalf("Expected counter to be '1', got '%s'", finalContractState.Persistent["counter"])
+	if finalContractState.Persistent["1"] != "1" {
+		t.Fatalf("Expected counter to be '1', got '%s'", finalContractState.Persistent["1"])
 	}
 
-	if finalContractState.Persistent["owner"] != "deployer" {
-		t.Fatalf("Expected owner to be 'deployer', got '%s'", finalContractState.Persistent["owner"])
+	if finalContractState.Persistent["2"] != "100" {
+		t.Fatalf("Expected owner to be '100', got '%s'", finalContractState.Persistent["2"])
 	}
 
 	t.Logf("Test passed: Persistent storage working correctly")
