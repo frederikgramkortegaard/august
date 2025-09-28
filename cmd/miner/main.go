@@ -212,7 +212,6 @@ func (m *SimpleMiner) createAndMineBlock(chainInfo *blockchain.ChainHead) (block
 		Signature:        blockchain.Signature{}, // Empty for coinbase
 		ChainID:          config.MainnetChainID,
 		Instructions:     nil,
-		InitInstructions: nil,
 		GasLimit:         0, // Coinbase doesn't consume gas
 		GasPrice:         0, // Coinbase doesn't pay gas
 	}

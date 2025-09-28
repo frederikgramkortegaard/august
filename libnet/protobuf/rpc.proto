@@ -53,11 +53,10 @@ message TransactionData{
   uint64 nonce=  5;
   uint64 timestamp = 6;
   uint64 chainid = 7;
-  repeated InstructionData callInstructions =8;
-  repeated InstructionData initInstructions=9;
-  uint64 gasLimit=10;
-  uint64 gasPrice=11;
-  bytes data=12;
+  repeated InstructionData instructions = 8;
+  uint64 gasLimit = 9;
+  uint64 gasPrice = 10;
+  bytes data = 11;
 }
 
 message BlockData{

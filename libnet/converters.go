@@ -28,29 +28,23 @@ func ProtoInstructionToInstruction(protoInstr *protobuf.InstructionData) blockch
 }
 
 func TransactionToProtoTransaction(tx blockchain.Transaction) *protobuf.TransactionData {
-	callInstructions := make([]*protobuf.InstructionData, len(tx.Instructions))
+	instructions := make([]*protobuf.InstructionData, len(tx.Instructions))
 	for i, instr := range tx.Instructions {
-		callInstructions[i] = InstructionToProtoInstruction(instr)
-	}
-
-	initInstructions := make([]*protobuf.InstructionData, len(tx.InitInstructions))
-	for i, instr := range tx.InitInstructions {
-		initInstructions[i] = InstructionToProtoInstruction(instr)
+		instructions[i] = InstructionToProtoInstruction(instr)
 	}
 
 	return &protobuf.TransactionData{
-		Frompk:           tx.From[:],
-		Topk:             tx.To[:],
-		Amount:           tx.Amount,
-		Signature:        tx.Signature[:],
-		Nonce:            tx.Nonce,
-		Timestamp:        tx.Timestamp,
-		Chainid:          tx.ChainID,
-		CallInstructions: callInstructions,
-		InitInstructions: initInstructions,
-		GasLimit:         tx.GasLimit,
-		GasPrice:         tx.GasPrice,
-		Data:             tx.Data,
+		Frompk:       tx.From[:],
+		Topk:         tx.To[:],
+		Amount:       tx.Amount,
+		Signature:    tx.Signature[:],
+		Nonce:        tx.Nonce,
+		Timestamp:    tx.Timestamp,
+		Chainid:      tx.ChainID,
+		Instructions: instructions,
+		GasLimit:     tx.GasLimit,
+		GasPrice:     tx.GasPrice,
+		Data:         tx.Data,
 	}
 }
 
@@ -61,29 +55,23 @@ func ProtoTransactionToTransaction(protoTx *protobuf.TransactionData) blockchain
 	copy(to[:], protoTx.Topk)
 	copy(sig[:], protoTx.Signature)
 
-	callInstructions := make([]blockchain.Instruction, len(protoTx.CallInstructions))
-	for i, protoInstr := range protoTx.CallInstructions {
-		callInstructions[i] = ProtoInstructionToInstruction(protoInstr)
-	}
-
-	initInstructions := make([]blockchain.Instruction, len(protoTx.InitInstructions))
-	for i, protoInstr := range protoTx.InitInstructions {
-		initInstructions[i] = ProtoInstructionToInstruction(protoInstr)
+	instructions := make([]blockchain.Instruction, len(protoTx.Instructions))
+	for i, protoInstr := range protoTx.Instructions {
+		instructions[i] = ProtoInstructionToInstruction(protoInstr)
 	}
 
 	return blockchain.Transaction{
-		From:             from,
-		To:               to,
-		Amount:           protoTx.Amount,
-		Signature:        sig,
-		Nonce:            protoTx.Nonce,
-		Timestamp:        protoTx.Timestamp,
-		ChainID:          protoTx.Chainid,
-		Instructions:     callInstructions,
-		InitInstructions: initInstructions,
-		GasLimit:         protoTx.GasLimit,
-		GasPrice:         protoTx.GasPrice,
-		Data:             protoTx.Data,
+		From:         from,
+		To:           to,
+		Amount:       protoTx.Amount,
+		Signature:    sig,
+		Nonce:        protoTx.Nonce,
+		Timestamp:    protoTx.Timestamp,
+		ChainID:      protoTx.Chainid,
+		Instructions: instructions,
+		GasLimit:     protoTx.GasLimit,
+		GasPrice:     protoTx.GasPrice,
+		Data:         protoTx.Data,
 	}
 }
 

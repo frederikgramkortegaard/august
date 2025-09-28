@@ -34,7 +34,6 @@ func CreateCoinbaseTransaction(beneficiary blockchain.PublicKey, blockHeight uin
 		Timestamp:        uint64(time.Now().Unix()),
 		ChainID:          config.MainnetChainID,
 		Instructions:     []blockchain.Instruction{},
-		InitInstructions: []blockchain.Instruction{},
 		GasLimit:         0, // Coinbase doesn't consume gas
 		GasPrice:         0,
 		Data:             []byte{},
@@ -52,7 +51,6 @@ func CreateTestTransaction(from, to blockchain.PublicKey, amount uint64, nonce u
 		Timestamp:        uint64(time.Now().Unix()),
 		ChainID:          config.TestnetChainID,
 		Instructions:     []blockchain.Instruction{},
-		InitInstructions: []blockchain.Instruction{},
 		GasLimit:         config.GasTransfer,
 		GasPrice:         1,
 		Data:             []byte{},

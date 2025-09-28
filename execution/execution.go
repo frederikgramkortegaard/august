@@ -48,16 +48,16 @@ func executeContractDeployment(tsx *blockchain.Transaction, accountStates map[ty
 		CodeHash:     blockchain.ComputeCodeHash(tsx.Instructions),
 	}
 
-	// Execute initialization instructions if present
-	if len(tsx.InitInstructions) > 0 {
+	// Execute initialization (init function at IC=0)
+	if len(tsx.Instructions) > 0 {
 		// Check if we have enough gas remaining for init execution
 		remainingGas := tsx.GasLimit - gasUsed
 		if remainingGas == 0 {
 			return gasUsed, fmt.Errorf("no gas remaining for contract initialization")
 		}
 
-		// Create AVM runtime for initialization using remaining gas
-		runtime := avm.NewRuntime(remainingGas, tsx.InitInstructions, blockContext)
+		// Create AVM runtime starting at IC=0 (init entry point)
+		runtime := avm.NewRuntimeWithIC(remainingGas, tsx.Instructions, blockContext, 0)
 
 		// Execute initialization code
 		initGasUsed, err := runtime.StartExecution()
@@ -105,15 +105,15 @@ func executeContractCall(tsx *blockchain.Transaction, accountStates map[types.Pu
 		// Check if we have enough gas remaining for contract execution
 		remainingGas := tsx.GasLimit - gasUsed
 		if remainingGas > 0 {
-			// Create AVM runtime for contract execution using remaining gas
-			runtime := avm.NewRuntime(remainingGas, toState.Instructions, blockContext)
+			// Create AVM runtime starting at IC=2 (call entry point)
+			runtime := avm.NewRuntimeWithIC(remainingGas, toState.Instructions, blockContext, 2)
 
 			// Initialize runtime with existing persistent storage from contract
 			for key, value := range toState.Persistent {
 				runtime.Persistent[key] = value
 			}
 
-			// Execute contract runtime code
+			// Execute contract call code
 			runtimeGasUsed, err := runtime.StartExecution()
 
 			// Gas is consumed regardless of success/failure

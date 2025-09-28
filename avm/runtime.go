@@ -235,7 +235,9 @@ func (m *memory) Load(address uint64) (*big.Int, error) {
 type Runtime struct {
 	Stack        *stack
 	Memory       *memory
+	FramePointer int // Points to base of current call frame on stack
 	IC           int // Instruction Counter
+	StartIC      int // Initial instruction counter for validation
 	GasAvailable uint64
 	GasUsed      uint64
 	Instructions []types.Instruction
@@ -263,10 +265,16 @@ func NewTestRuntimeWithLimits(gasAvailable uint64, instructions []types.Instruct
 }
 
 func NewRuntime(gasAvailable uint64, instructions []types.Instruction, context *BlockchainContext) *Runtime {
+	return NewRuntimeWithIC(gasAvailable, instructions, context, 0)
+}
+
+func NewRuntimeWithIC(gasAvailable uint64, instructions []types.Instruction, context *BlockchainContext, startIC int) *Runtime {
 	return &Runtime{
 		Stack:        NewStack(config.AVMMaxStackSize),
 		Memory:       NewMemory(config.AVMMaxMemorySize),
-		IC:           0,
+		FramePointer: 0,
+		IC:           startIC,
+		StartIC:      startIC,
 		GasAvailable: gasAvailable,
 		GasUsed:      0,
 		Instructions: instructions,
@@ -296,9 +304,9 @@ var MockBlockchainContext = BlockchainContext{
 }
 
 func (r *Runtime) StartExecution() (uint64, error) {
-	// Validate that the stack is clean
-	if r.IC != 0 {
-		return 0, errors.New("Instruction counter is not zero, runtime is not clean")
+	// Validate that the runtime is clean
+	if r.IC != r.StartIC {
+		return 0, fmt.Errorf("Instruction counter is %d, expected %d, runtime is not clean", r.IC, r.StartIC)
 	}
 
 	if len(r.Stack.s) != 0 {
@@ -399,6 +407,19 @@ func (r *Runtime) ExecuteInstruction() error {
 			// Perform signed division with two's complement
 			res := signedDiv(v2, v1)
 			err = r.Stack.Push(res)
+		}
+	case MOD:
+		v1, v2, popErr := r.Stack.Pop2()
+		if popErr != nil {
+			err = popErr
+		} else {
+			// Modulo operation
+			if v1.Sign() == 0 {
+				err = r.Stack.Push(big.NewInt(0))
+			} else {
+				res := new(big.Int).Mod(v2, v1)
+				err = r.Stack.Push(res)
+			}
 		}
 	case AND:
 		v1, v2, popErr := r.Stack.Pop2()
@@ -551,6 +572,51 @@ func (r *Runtime) ExecuteInstruction() error {
 				err = r.Stack.Push(value)
 			}
 		}
+	case LOAD_LOCAL:
+		offset, convertErr := ins.GetValueAsBigInt()
+		if convertErr != nil {
+			err = convertErr
+		} else {
+			stackIndex := r.FramePointer + int(offset.Uint64())
+			if stackIndex >= len(r.Stack.s) || stackIndex < 0 {
+				err = errors.New("LOAD_LOCAL: invalid offset")
+			} else {
+				value := r.Stack.s[stackIndex]
+				err = r.Stack.Push(value)
+			}
+		}
+	case STORE_LOCAL:
+		offset, convertErr := ins.GetValueAsBigInt()
+		if convertErr != nil {
+			err = convertErr
+		} else {
+			value, popErr := r.Stack.Pop()
+			if popErr != nil {
+				err = popErr
+			} else {
+				stackIndex := r.FramePointer + int(offset.Uint64())
+				if stackIndex >= len(r.Stack.s) || stackIndex < 0 {
+					err = errors.New("STORE_LOCAL: invalid offset")
+				} else {
+					r.Stack.s[stackIndex] = value
+				}
+			}
+		}
+	case CALL:
+		// Simple calling convention for single-level calls
+		// Args are already on stack
+		// FramePointer will be set by caller before jumping
+		functionAddr, convertErr := ins.GetValueAsBigInt()
+		if convertErr != nil {
+			err = convertErr
+		} else {
+			// For now, just jump (caller handles FramePointer setup in test)
+			r.IC = int(functionAddr.Uint64()) - 1 // -1 because IC will be incremented after
+		}
+	case RETURN:
+		// Simple return: just stop execution
+		// This works for entry-point functions (init/call) which don't need to return anywhere
+		return ErrProgramStopped
 	case STOP:
 		return ErrProgramStopped
 

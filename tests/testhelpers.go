@@ -20,7 +20,6 @@ func CreateTestBlockWithCoinbase(parent *blockchain.BlockHeader, beneficiary blo
 		Timestamp:        uint64(time.Now().UnixNano()), // Use actual time for realistic timestamps
 		ChainID:          config.MainnetChainID,
 		Instructions:     []blockchain.Instruction{},
-		InitInstructions: []blockchain.Instruction{},
 		GasLimit:         0, // Coinbase doesn't consume gas
 		GasPrice:         0,
 		Data:             []byte{},

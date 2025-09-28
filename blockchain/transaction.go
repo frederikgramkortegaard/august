@@ -12,13 +12,12 @@ type Transaction struct {
 	Amount           uint64        `json:"amount"`
 	Signature        Signature     `json:"signature"`
 	Nonce            uint64        `json:"nonce"`
-	Timestamp        uint64        `json:"timestamp"`         // Unix timestamp when transaction was created
-	ChainID          uint64        `json:"chain_id"`          // Chain identifier for replay protection
-	Instructions     []Instruction `json:"instructions"`      // Contract runtime code (empty for regular transfers)
-	InitInstructions []Instruction `json:"init_instructions"` // Constructor code that runs once at deployment
-	GasLimit         uint64        `json:"gas_limit"`         // Maximum gas this transaction is willing to consume
-	GasPrice         uint64        `json:"gas_price"`         // Price per unit of gas in leaf units
-	Data             []byte        `json:"data"`              // Custom data for contract calls
+	Timestamp        uint64        `json:"timestamp"`    // Unix timestamp when transaction was created
+	ChainID          uint64        `json:"chain_id"`     // Chain identifier for replay protection
+	Instructions     []Instruction `json:"instructions"` // Contract bytecode with init at IC=0, call at IC=2
+	GasLimit         uint64        `json:"gas_limit"`    // Maximum gas this transaction is willing to consume
+	GasPrice         uint64        `json:"gas_price"`    // Price per unit of gas in leaf units
+	Data             []byte        `json:"data"`         // Custom data for contract calls
 }
 
 // GetHash returns the hash of this transaction
@@ -37,12 +36,6 @@ func (t *Transaction) GetHash() Hash32 {
 	if len(t.Instructions) > 0 {
 		codeHash := ComputeCodeHash(t.Instructions)
 		h.Write(codeHash[:])
-	}
-
-	// Hash the init instructions if present
-	if len(t.InitInstructions) > 0 {
-		initHash := ComputeCodeHash(t.InitInstructions)
-		h.Write(initHash[:])
 	}
 
 	// Hash the data if present

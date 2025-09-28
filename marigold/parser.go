@@ -743,7 +743,7 @@ func parsePower(ctx *ParserContext) *Expression {
 
 func parseFactor(ctx *ParserContext) *Expression {
 	// Handle unary operators
-	if ctx.peek() != nil && ctx.peek().Type == Minus {
+	if ctx.peek() != nil && (ctx.peek().Type == Minus || ctx.peek().Type == Not) {
 		op := ctx.consume()
 		return &Expression{
 			Type:     UnaryExpr,

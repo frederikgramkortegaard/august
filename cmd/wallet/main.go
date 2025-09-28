@@ -93,17 +93,16 @@ func main() {
 		amount := deployCmd.Uint64("amount", 0, "Amount to send to contract")
 		gasLimit := deployCmd.Uint64("gas-limit", 50000, "Gas limit for deployment")
 		gasPrice := deployCmd.Uint64("gas-price", 100, "Gas price")
-		initFile := deployCmd.String("init", "", "Path to init bytecode file (.avmbc)")
-		bodyFile := deployCmd.String("body", "", "Path to runtime bytecode file (.avmbc)")
+		bytecodeFile := deployCmd.String("bytecode", "", "Path to contract bytecode file (.avmbc)")
 		deployCmd.Parse(args[1:])
 
-		if *initFile == "" || *bodyFile == "" {
-			fmt.Println("Error: both --init and --body flags are required")
+		if *bytecodeFile == "" {
+			fmt.Println("Error: --bytecode flag is required")
 			deployCmd.Usage()
 			os.Exit(1)
 		}
 
-		err := deployContract(&pub, &priv, *amount, *gasLimit, *gasPrice, *nodeAddr, *initFile, *bodyFile)
+		err := deployContract(&pub, &priv, *amount, *gasLimit, *gasPrice, *nodeAddr, *bytecodeFile)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -284,7 +283,7 @@ func sendMoneyWithData(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount 
 	return nil
 }
 
-func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string, initFile, bodyFile string) error {
+func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, gasLimit, gasPrice uint64, nodeaddr string, bytecodeFile string) error {
 	// Get current balance and nonce
 	keyAsHex := hex.EncodeToString(*pub)
 	url := fmt.Sprintf("http://%s/balance/%s", nodeaddr, keyAsHex)
@@ -319,25 +318,15 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 			balanceResp.Balance, totalCost, amount, maxGasCost)
 	}
 
-	// Get contract code
-	// Load initialization code from file
-	initData, err := ioutil.ReadFile(initFile)
+	// Get contract code from bytecode file
+	// The bytecode should contain both init (at IC=0) and call (at IC=2) entry points
+	bodyData, err := ioutil.ReadFile(bytecodeFile)
 	if err != nil {
-		return fmt.Errorf("failed to read init file %s: %v", initFile, err)
+		return fmt.Errorf("failed to read bytecode file %s: %v", bytecodeFile, err)
 	}
-	initInstructions, err := avm.ParseInstructionsFromString(string(initData))
+	instructions, err := avm.ParseInstructionsFromString(string(bodyData))
 	if err != nil {
-		return fmt.Errorf("failed to parse init code: %v", err)
-	}
-
-	// Load runtime code from file
-	bodyData, err := ioutil.ReadFile(bodyFile)
-	if err != nil {
-		return fmt.Errorf("failed to read body file %s: %v", bodyFile, err)
-	}
-	runtimeInstructions, err := avm.ParseInstructionsFromString(string(bodyData))
-	if err != nil {
-		return fmt.Errorf("failed to parse runtime code: %v", err)
+		return fmt.Errorf("failed to parse bytecode: %v", err)
 	}
 
 	// Create contract deployment transaction
@@ -346,17 +335,16 @@ func deployContract(pub *ed25519.PublicKey, priv *ed25519.PrivateKey, amount, ga
 		amount, gasLimit, gasPrice, nextNonce)
 
 	tsx := blockchain.Transaction{
-		From:             blockchain.PublicKey(*pub),
-		To:               blockchain.PublicKey{}, // Empty address = contract deployment
-		Amount:           amount,
-		GasLimit:         gasLimit,
-		GasPrice:         gasPrice,
-		Signature:        blockchain.Signature{},
-		Nonce:            nextNonce,
-		Timestamp:        uint64(time.Now().Unix()),
-		Instructions:     runtimeInstructions, // Runtime code
-		InitInstructions: initInstructions,    // Initialization code
-		Data:             nil,                 // No data for deployment
+		From:         blockchain.PublicKey(*pub),
+		To:           blockchain.PublicKey{}, // Empty address = contract deployment
+		Amount:       amount,
+		GasLimit:     gasLimit,
+		GasPrice:     gasPrice,
+		Signature:    blockchain.Signature{},
+		Nonce:        nextNonce,
+		Timestamp:    uint64(time.Now().Unix()),
+		Instructions: instructions, // Bytecode with init at IC=0, call at IC=2
+		Data:         nil,          // No data for deployment
 	}
 
 	tsx.Signature = tsx.GetSignature(*priv)

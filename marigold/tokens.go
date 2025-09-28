@@ -19,6 +19,7 @@ const (
 	Assign                  = "Assign"
 	Equal                   = "Equal"
 	NotEqual                = "NotEqual"
+	Not                     = "Not"
 	LessThan                = "LessThan"
 	LessEqual               = "LessEqual"
 	GreaterThan             = "GreaterThan"
@@ -72,6 +73,7 @@ var TokenTypeMap = map[string]TokenType{
 	"=":        Assign,
 	"==":       Equal,
 	"!=":       NotEqual,
+	"!":        Not,
 	"<":        LessThan,
 	"<=":       LessEqual,
 	">":        GreaterThan,

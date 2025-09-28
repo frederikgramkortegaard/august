@@ -23,7 +23,6 @@ func init() {
 		Timestamp:        1704067200,       // Fixed timestamp for genesis (Jan 1, 2024)
 		ChainID:          1,                // Main network chain ID
 		Instructions:     nil,              // No contract code
-		InitInstructions: nil,              // No init code
 		GasLimit:         0,                // Coinbase doesn't consume gas
 		GasPrice:         0,                // Coinbase doesn't pay gas
 	}

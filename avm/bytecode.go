@@ -15,6 +15,7 @@ const (
 	SUB           = types.SUB
 	MUL           = types.MUL
 	DIV           = types.DIV
+	MOD           = types.MOD
 	AND           = types.AND
 	OR            = types.OR
 	EQ            = types.EQ
@@ -27,6 +28,10 @@ const (
 	MLOAD         = types.MLOAD
 	PSTORE        = types.PSTORE
 	PLOAD         = types.PLOAD
+	LOAD_LOCAL    = types.LOAD_LOCAL
+	STORE_LOCAL   = types.STORE_LOCAL
+	CALL          = types.CALL
+	RETURN        = types.RETURN
 	STOP          = types.STOP
 	EMIT          = types.EMIT
 	CALLER        = types.CALLER

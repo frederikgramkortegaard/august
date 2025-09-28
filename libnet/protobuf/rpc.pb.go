@@ -379,21 +379,20 @@ func (x *InstructionData) GetValue() []byte {
 }
 
 type TransactionData struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Frompk           []byte                 `protobuf:"bytes,1,opt,name=frompk,proto3" json:"frompk,omitempty"`
-	Topk             []byte                 `protobuf:"bytes,2,opt,name=topk,proto3" json:"topk,omitempty"`
-	Amount           uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	Signature        []byte                 `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
-	Nonce            uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	Timestamp        uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Chainid          uint64                 `protobuf:"varint,7,opt,name=chainid,proto3" json:"chainid,omitempty"`
-	CallInstructions []*InstructionData     `protobuf:"bytes,8,rep,name=callInstructions,proto3" json:"callInstructions,omitempty"`
-	InitInstructions []*InstructionData     `protobuf:"bytes,9,rep,name=initInstructions,proto3" json:"initInstructions,omitempty"`
-	GasLimit         uint64                 `protobuf:"varint,10,opt,name=gasLimit,proto3" json:"gasLimit,omitempty"`
-	GasPrice         uint64                 `protobuf:"varint,11,opt,name=gasPrice,proto3" json:"gasPrice,omitempty"`
-	Data             []byte                 `protobuf:"bytes,12,opt,name=data,proto3" json:"data,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Frompk        []byte                 `protobuf:"bytes,1,opt,name=frompk,proto3" json:"frompk,omitempty"`
+	Topk          []byte                 `protobuf:"bytes,2,opt,name=topk,proto3" json:"topk,omitempty"`
+	Amount        uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Signature     []byte                 `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	Nonce         uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Timestamp     uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Chainid       uint64                 `protobuf:"varint,7,opt,name=chainid,proto3" json:"chainid,omitempty"`
+	Instructions  []*InstructionData     `protobuf:"bytes,8,rep,name=instructions,proto3" json:"instructions,omitempty"`
+	GasLimit      uint64                 `protobuf:"varint,9,opt,name=gasLimit,proto3" json:"gasLimit,omitempty"`
+	GasPrice      uint64                 `protobuf:"varint,10,opt,name=gasPrice,proto3" json:"gasPrice,omitempty"`
+	Data          []byte                 `protobuf:"bytes,11,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TransactionData) Reset() {
@@ -475,16 +474,9 @@ func (x *TransactionData) GetChainid() uint64 {
 	return 0
 }
 
-func (x *TransactionData) GetCallInstructions() []*InstructionData {
+func (x *TransactionData) GetInstructions() []*InstructionData {
 	if x != nil {
-		return x.CallInstructions
-	}
-	return nil
-}
-
-func (x *TransactionData) GetInitInstructions() []*InstructionData {
-	if x != nil {
-		return x.InitInstructions
+		return x.Instructions
 	}
 	return nil
 }
@@ -703,7 +695,7 @@ const file_libnet_protobuf_rpc_proto_rawDesc = "" +
 	"headerData\"?\n" +
 	"\x0fInstructionData\x12\x16\n" +
 	"\x06opcode\x18\x01 \x01(\fR\x06opcode\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value\"\xb1\x03\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\xd7\x02\n" +
 	"\x0fTransactionData\x12\x16\n" +
 	"\x06frompk\x18\x01 \x01(\fR\x06frompk\x12\x12\n" +
 	"\x04topk\x18\x02 \x01(\fR\x04topk\x12\x16\n" +
@@ -711,13 +703,12 @@ const file_libnet_protobuf_rpc_proto_rawDesc = "" +
 	"\tsignature\x18\x04 \x01(\fR\tsignature\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12\x1c\n" +
 	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x12\x18\n" +
-	"\achainid\x18\a \x01(\x04R\achainid\x12P\n" +
-	"\x10callInstructions\x18\b \x03(\v2$.protocols.rpcprotos.InstructionDataR\x10callInstructions\x12P\n" +
-	"\x10initInstructions\x18\t \x03(\v2$.protocols.rpcprotos.InstructionDataR\x10initInstructions\x12\x1a\n" +
-	"\bgasLimit\x18\n" +
-	" \x01(\x04R\bgasLimit\x12\x1a\n" +
-	"\bgasPrice\x18\v \x01(\x04R\bgasPrice\x12\x12\n" +
-	"\x04data\x18\f \x01(\fR\x04data\"\x8e\x01\n" +
+	"\achainid\x18\a \x01(\x04R\achainid\x12H\n" +
+	"\finstructions\x18\b \x03(\v2$.protocols.rpcprotos.InstructionDataR\finstructions\x12\x1a\n" +
+	"\bgasLimit\x18\t \x01(\x04R\bgasLimit\x12\x1a\n" +
+	"\bgasPrice\x18\n" +
+	" \x01(\x04R\bgasPrice\x12\x12\n" +
+	"\x04data\x18\v \x01(\fR\x04data\"\x8e\x01\n" +
 	"\tBlockData\x127\n" +
 	"\x06header\x18\x01 \x01(\v2\x1f.protocols.rpcprotos.HeaderDataR\x06header\x12H\n" +
 	"\ftransactions\x18\x02 \x03(\v2$.protocols.rpcprotos.TransactionDataR\ftransactions\"k\n" +
@@ -753,21 +744,20 @@ var file_libnet_protobuf_rpc_proto_goTypes = []any{
 	(*BlocksResponse)(nil),  // 8: protocols.rpcprotos.BlocksResponse
 }
 var file_libnet_protobuf_rpc_proto_depIdxs = []int32{
-	0,  // 0: protocols.rpcprotos.HeadersRequest.messageData:type_name -> protocols.rpcprotos.MessageData
-	0,  // 1: protocols.rpcprotos.HeadersResponse.messageData:type_name -> protocols.rpcprotos.MessageData
-	1,  // 2: protocols.rpcprotos.HeadersResponse.headerData:type_name -> protocols.rpcprotos.HeaderData
-	4,  // 3: protocols.rpcprotos.TransactionData.callInstructions:type_name -> protocols.rpcprotos.InstructionData
-	4,  // 4: protocols.rpcprotos.TransactionData.initInstructions:type_name -> protocols.rpcprotos.InstructionData
-	1,  // 5: protocols.rpcprotos.BlockData.header:type_name -> protocols.rpcprotos.HeaderData
-	5,  // 6: protocols.rpcprotos.BlockData.transactions:type_name -> protocols.rpcprotos.TransactionData
-	0,  // 7: protocols.rpcprotos.BlocksRequest.messageData:type_name -> protocols.rpcprotos.MessageData
-	0,  // 8: protocols.rpcprotos.BlocksResponse.messageData:type_name -> protocols.rpcprotos.MessageData
-	6,  // 9: protocols.rpcprotos.BlocksResponse.blockData:type_name -> protocols.rpcprotos.BlockData
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	0, // 0: protocols.rpcprotos.HeadersRequest.messageData:type_name -> protocols.rpcprotos.MessageData
+	0, // 1: protocols.rpcprotos.HeadersResponse.messageData:type_name -> protocols.rpcprotos.MessageData
+	1, // 2: protocols.rpcprotos.HeadersResponse.headerData:type_name -> protocols.rpcprotos.HeaderData
+	4, // 3: protocols.rpcprotos.TransactionData.instructions:type_name -> protocols.rpcprotos.InstructionData
+	1, // 4: protocols.rpcprotos.BlockData.header:type_name -> protocols.rpcprotos.HeaderData
+	5, // 5: protocols.rpcprotos.BlockData.transactions:type_name -> protocols.rpcprotos.TransactionData
+	0, // 6: protocols.rpcprotos.BlocksRequest.messageData:type_name -> protocols.rpcprotos.MessageData
+	0, // 7: protocols.rpcprotos.BlocksResponse.messageData:type_name -> protocols.rpcprotos.MessageData
+	6, // 8: protocols.rpcprotos.BlocksResponse.blockData:type_name -> protocols.rpcprotos.BlockData
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_libnet_protobuf_rpc_proto_init() }

@@ -347,12 +347,11 @@ func ApplyTransaction(tsx *Transaction, accountStates map[PublicKey]*AccountStat
 		dataGasCost := uint64(len(tsx.Data)) * config.GasDataPerByte
 		gasUsed += dataGasCost
 
-		// Validate initialization instructions if present
-		if len(tsx.InitInstructions) > 0 {
-			// Validate initialization instructions
-			for _, instr := range tsx.InitInstructions {
+		// Validate contract instructions if present
+		if len(tsx.Instructions) > 0 {
+			for _, instr := range tsx.Instructions {
 				if err := instr.ValidateInstruction(); err != nil {
-					return gasUsed, fmt.Errorf("invalid initialization instruction: %v", err)
+					return gasUsed, fmt.Errorf("invalid instruction: %v", err)
 				}
 			}
 		}

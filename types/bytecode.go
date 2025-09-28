@@ -33,6 +33,7 @@ const (
 	SUB
 	MUL
 	DIV
+	MOD
 	AND
 	OR
 
@@ -50,7 +51,13 @@ const (
 	PSTORE
 	PLOAD
 
+	// Frame-based locals
+	LOAD_LOCAL
+	STORE_LOCAL
+
 	// PROG CTRL
+	CALL
+	RETURN
 	STOP
 
 	// Debug
@@ -85,6 +92,7 @@ var opcodeNames = [...]string{
 	SUB:           "SUB",
 	MUL:           "MUL",
 	DIV:           "DIV",
+	MOD:           "MOD",
 	AND:           "AND",
 	OR:            "OR",
 	EQ:            "EQ",
@@ -97,6 +105,10 @@ var opcodeNames = [...]string{
 	MLOAD:         "MLOAD",
 	PLOAD:         "PLOAD",
 	PSTORE:        "PSTORE",
+	LOAD_LOCAL:    "LOAD_LOCAL",
+	STORE_LOCAL:   "STORE_LOCAL",
+	CALL:          "CALL",
+	RETURN:        "RETURN",
 	STOP:          "STOP",
 	EMIT:          "EMIT",
 	CALLER:        "CALLER",
@@ -135,6 +147,7 @@ var opcodeGasPrices = [...]uint16{
 	SUB:           3,
 	MUL:           5,
 	DIV:           5,
+	MOD:           5,
 	AND:           3,
 	OR:            3,
 	EQ:            3,
@@ -147,6 +160,10 @@ var opcodeGasPrices = [...]uint16{
 	MLOAD:         15,
 	PSTORE:        1000,
 	PLOAD:         1000,
+	LOAD_LOCAL:    3,
+	STORE_LOCAL:   3,
+	CALL:          10,
+	RETURN:        8,
 	STOP:          0,
 	EMIT:          100,
 	CALLER:        2,
@@ -181,6 +198,7 @@ var OpcodeMap = map[string]OPCODE{
 	"SUB":           SUB,
 	"MUL":           MUL,
 	"DIV":           DIV,
+	"MOD":           MOD,
 	"AND":           AND,
 	"OR":            OR,
 	"EQ":            EQ,
@@ -193,6 +211,10 @@ var OpcodeMap = map[string]OPCODE{
 	"MLOAD":         MLOAD,
 	"PLOAD":         PLOAD,
 	"PSTORE":        PSTORE,
+	"LOAD_LOCAL":    LOAD_LOCAL,
+	"STORE_LOCAL":   STORE_LOCAL,
+	"CALL":          CALL,
+	"RETURN":        RETURN,
 	"STOP":          STOP,
 	"EMIT":          EMIT,
 	"CALLER":        CALLER,
