@@ -573,11 +573,12 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 		}
 	case LOAD_LOCAL:
-		offset, convertErr := ins.GetValueAsBigInt()
-		if convertErr != nil {
-			err = convertErr
+		offsetBig, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
 		} else {
-			stackIndex := r.FramePointer + int(offset.Uint64())
+			offset := int(offsetBig.Uint64())
+			stackIndex := r.FramePointer + offset
 			if stackIndex >= len(r.Stack.s) || stackIndex < 0 {
 				err = errors.New("LOAD_LOCAL: invalid offset")
 			} else {
@@ -586,20 +587,23 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 		}
 	case STORE_LOCAL:
-		offset, convertErr := ins.GetValueAsBigInt()
-		if convertErr != nil {
-			err = convertErr
+		offsetBig, popErr1 := r.Stack.Pop()
+		value, popErr2 := r.Stack.Pop()
+		if popErr1 != nil {
+			err = popErr1
+		} else if popErr2 != nil {
+			err = popErr2
 		} else {
-			value, popErr := r.Stack.Pop()
-			if popErr != nil {
-				err = popErr
+			offset := int(offsetBig.Uint64())
+			stackIndex := r.FramePointer + offset
+			if stackIndex < 0 {
+				err = errors.New("STORE_LOCAL: invalid offset")
 			} else {
-				stackIndex := r.FramePointer + int(offset.Uint64())
-				if stackIndex >= len(r.Stack.s) || stackIndex < 0 {
-					err = errors.New("STORE_LOCAL: invalid offset")
-				} else {
-					r.Stack.s[stackIndex] = value
+				// Expand stack if necessary
+				for len(r.Stack.s) <= stackIndex {
+					r.Stack.s = append(r.Stack.s, big.NewInt(0))
 				}
+				r.Stack.s[stackIndex] = value
 			}
 		}
 	case CALL:
