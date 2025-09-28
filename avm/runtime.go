@@ -243,6 +243,8 @@ type Runtime struct {
 	Instructions []types.Instruction
 	Persistent   map[string]string
 	Context      *BlockchainContext // Immutable blockchain context data
+	ReturnStack  []int // Stack of return addresses for function calls
+	FrameStack   []int // Stack of frame pointers for function calls
 }
 
 // NewTestRuntime creates a Runtime with minimal blockchain context for testing
@@ -280,6 +282,8 @@ func NewRuntimeWithIC(gasAvailable uint64, instructions []types.Instruction, con
 		Instructions: instructions,
 		Persistent:   make(map[string]string),
 		Context:      context,
+		ReturnStack:  make([]int, 0),
+		FrameStack:   make([]int, 0),
 	}
 }
 
@@ -607,20 +611,68 @@ func (r *Runtime) ExecuteInstruction() error {
 			}
 		}
 	case CALL:
-		// Simple calling convention for single-level calls
-		// Args are already on stack
-		// FramePointer will be set by caller before jumping
-		functionAddr, convertErr := ins.GetValueAsBigInt()
-		if convertErr != nil {
-			err = convertErr
-		} else {
-			// For now, just jump (caller handles FramePointer setup in test)
-			r.IC = int(functionAddr.Uint64()) - 1 // -1 because IC will be incremented after
+		// Pop function address from stack
+		functionAddr, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+			break
 		}
+
+		// Save current frame pointer
+		r.FrameStack = append(r.FrameStack, r.FramePointer)
+
+		// Set new frame pointer to point to the function arguments
+		// After popping function address, the arguments are on top of stack
+		// For add(a, b), stack now has: [..., arg0, arg1]
+		// We want FramePointer to point to arg0
+		numParams := 2 // TODO: get actual parameter count from function metadata
+		r.FramePointer = len(r.Stack.s) - numParams
+
+		// Push return address onto return stack
+		returnAddr := r.IC + 1 // Next instruction after CALL
+		r.ReturnStack = append(r.ReturnStack, returnAddr)
+
+		// Jump to function address
+		r.IC = int(functionAddr.Uint64()) - 1 // -1 because IC will be incremented after
 	case RETURN:
-		// Simple return: just stop execution
-		// This works for entry-point functions (init/call) which don't need to return anywhere
-		return ErrProgramStopped
+		// Pop return address from return stack and jump back
+		if len(r.ReturnStack) == 0 {
+			// No return address - this is a top-level function return, stop execution
+			return ErrProgramStopped
+		}
+
+		// The return value should be on top of the stack
+		// We need to preserve it across the frame restoration
+		returnValue, popErr := r.Stack.Pop()
+		if popErr != nil {
+			err = popErr
+			break
+		}
+
+		// Restore frame pointer
+		if len(r.FrameStack) > 0 {
+			r.FramePointer = r.FrameStack[len(r.FrameStack)-1]
+			r.FrameStack = r.FrameStack[:len(r.FrameStack)-1]
+		}
+
+		// Clear function parameters from stack (restore to pre-call state)
+		// For add(a, b), we need to pop the 2 parameters that were pushed by caller
+		for i := 0; i < 2; i++ { // TODO: get actual parameter count
+			if len(r.Stack.s) > 0 {
+				r.Stack.Pop()
+			}
+		}
+
+		// Push return value back onto stack for caller
+		err = r.Stack.Push(returnValue)
+		if err != nil {
+			break
+		}
+
+		// Pop return address and jump back
+		returnAddr := r.ReturnStack[len(r.ReturnStack)-1]
+		r.ReturnStack = r.ReturnStack[:len(r.ReturnStack)-1]
+		r.IC = returnAddr - 1 // -1 because IC will be incremented after
 	case STOP:
 		return ErrProgramStopped
 

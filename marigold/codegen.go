@@ -280,7 +280,6 @@ func GenerateFunctionDefinition(ctx *CodegenContext, f *Function) {
 
 	// Record function start address
 	ctx.FunctionIndex[f.Name] = len(ctx.Instructions)
-
 	// Backup current context
 	backFunc := ctx.CurrentFunction
 	backScope := ctx.CurrentScope

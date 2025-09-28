@@ -53,12 +53,18 @@ func TestContractDeploymentIntegration(t *testing.T) {
 		return 1
 	}
 
-	define call() : int {
-		// Test direct integer comparison first
-		value = 75
+	define add(a: int, b: int) : int {
+		result = a + b
+		persistent[string(200)] = string(result)
+		return result
+	}
 
-		// Basic if test - should execute if branch since value = 75
-		if value == 75 {
+	define call() : int {
+		// Test function with parameters
+		sum = add(25, 50)
+
+		// Test control flow with the result
+		if sum == 75 {
 			persistent[string(100)] = string(200)
 			emit(200)
 		} else {
@@ -66,8 +72,8 @@ func TestContractDeploymentIntegration(t *testing.T) {
 			emit(300)
 		}
 
-		emit(value)
-		return value
+		emit(sum)
+		return sum
 	}
 	`
 
