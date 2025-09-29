@@ -108,68 +108,90 @@ go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
 
 ## Language Features
 
-### Marigold Syntax
+### Marigold Smart Contract Language
+
+Here's a complete fungible token contract demonstrating the language features:
+
 ```go
-// Basic contract with string operations and function calls
 define init() : int {
-  // Store numeric values in persistent storage
-  persistent[string(45)] = string(75)
-  persistent[string(99)] = string(1)
-
-  // String operations with blockchain variables
-  persistent["deployer"] = @caller
-  persistent["deploy_value"] = string(@callvalue)
-  persistent["deploy_height"] = string(@height)
-
-  // String concatenation (2-operand steps)
-  name: string = "TestContract"
-  space: string = " "
-  nameWithSpace: string = name + space
-  fullName: string = nameWithSpace + version
-  persistent["full_name"] = fullName
-
-  // Emit strings and numbers
-  emit(fullName)
-  emit(@callvalue)
-  return 1
-}
-
-define add(a: int, b: int) : int {
-  result: int = a + b
-  persistent[string(200)] = string(result)
-  return result
+  // Contract deployer receives initial token supply
+  persistent[@caller] = string(@callvalue)
+  return 0
 }
 
 define call() : int {
-  // Function calls with parameters
-  sum: int = add(25, 50)
-  emit(sum)
-
-  // String concatenation and length operations
-  greeting: string = "Hello"
-  world: string = " World"
-  message: string = greeting + world
-  persistent["message"] = message
-  emit(message)
-
-  msgLen: int = len(message)
-  emit(msgLen)
-  persistent["message_length"] = string(msgLen)
-
-  // Control flow with computed values
-  if sum == 75 {
-    persistent[string(100)] = string(200)
-    success: string = "Success"
-    emit(success)
-  } else {
-    persistent[string(100)] = string(300)
-    fail: string = "Failed"
-    emit(fail)
+  // Buy tokens with AUG
+  if len(@tsxdata) == 3 {
+    command: string = @tsxdata[:3]
+    if command == "buy" {
+      balanceStr: string = persistent[@caller]
+      currentBalance: int = 0
+      if len(balanceStr) > 0 {
+        currentBalance = int(balanceStr)
+      }
+      newBalance: int = currentBalance + @callvalue
+      persistent[@caller] = string(newBalance)
+      return 0
+    }
   }
 
-  return sum
+  // Transfer tokens between addresses
+  if len(@tsxdata) >= 73 {
+    command: string = @tsxdata[:8]
+    if command == "transfer" {
+      // Extract recipient address (64 hex chars)
+      recipient: string = @tsxdata[8:72]
+      if len(recipient) != 64 {
+        return 1 // Invalid address length
+      }
+
+      // Extract transfer amount
+      amountStr: string = @tsxdata[72:]
+      if len(amountStr) == 0 {
+        return 1 // No amount specified
+      }
+      amount: int = int(amountStr)
+      if amount <= 0 {
+        return 1 // Invalid amount
+      }
+
+      // Check sender balance
+      senderBalanceStr: string = persistent[@caller]
+      senderBalance: int = 0
+      if len(senderBalanceStr) > 0 {
+        senderBalance = int(senderBalanceStr)
+      }
+      if senderBalance < amount {
+        return 1 // Insufficient balance
+      }
+
+      // Execute transfer
+      newSenderBalance: int = senderBalance - amount
+      persistent[@caller] = string(newSenderBalance)
+
+      recipientBalanceStr: string = persistent[recipient]
+      recipientBalance: int = 0
+      if len(recipientBalanceStr) > 0 {
+        recipientBalance = int(recipientBalanceStr)
+      }
+      newRecipientBalance: int = recipientBalance + amount
+      persistent[recipient] = string(newRecipientBalance)
+
+      return 0
+    }
+  }
+
+  // Query balance (default behavior)
+  return 0
 }
 ```
+
+**Key Language Features:**
+- **String operations**: Slicing `@tsxdata[:8]`, concatenation, length checking
+- **Type conversions**: `int(string)` and `string(int)` for storage
+- **Persistent storage**: Key-value storage that persists between calls
+- **Blockchain context**: `@caller`, `@callvalue`, `@tsxdata` for transaction data
+- **Control flow**: If statements, comparisons, early returns
 
 ### Blockchain Context Variables
 The language provides blockchain context variables for contract interaction:
@@ -192,11 +214,11 @@ The language provides blockchain context variables for contract interaction:
 ```
 Stack:      PUSH <hex>, POP, DUP, SWAP
 Arithmetic: ADD, SUB, MUL, DIV, AND, OR
-Comparison: EQ, LT, GT, ISZERO
+Comparison: EQ, LT, GT, ISZERO (EQ supports string content comparison)
 Memory:     MSTORE, MLOAD (temporary)
 Storage:    PSTORE, PLOAD (persistent)
 Control:    JUMP, JUMPC, STOP
-Strings:    STRCONCAT, STRLEN, EMITSTR
+Strings:    STRCONCAT, STRLEN, STRINDEX, STRSLICE, STRTOINT, INTTOSTR, EMITSTR
 ```
 
 ### Blockchain Context Instructions
@@ -208,6 +230,7 @@ TIMESTAMP   - Push block timestamp (2 gas)
 HEIGHT      - Push block number (2 gas)
 GASPRICE    - Push gas price (2 gas)
 CALLVALUE   - Push call value (2 gas)
+TSXDATA     - Push transaction data as string (20 gas)
 ```
 
 ## HTTP API
