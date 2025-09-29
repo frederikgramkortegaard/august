@@ -22,9 +22,13 @@ func TestCodegenSimpleLiteral(t *testing.T) {
 	}
 
 	ctx := &marigold.CodegenContext{
-		Ast:          ast,
-		InLoop:       false,
-		Instructions: make([]types.Instruction, 0),
+		Ast:              ast,
+		Instructions:     make([]types.Instruction, 0),
+		FunctionIndex:    make(map[string]int),
+		LocalOffsets:     make(map[string]int),
+		StringTable:      make(map[string]uint64),
+		StringLiterals:   make([]string, 0),
+		LoopStack:        make([]marigold.LoopContext, 0),
 	}
 
 	marigold.GenerateExpression(ctx, intExpr)
@@ -72,9 +76,13 @@ func TestCodegenBinaryExpression(t *testing.T) {
 	}
 
 	ctx := &marigold.CodegenContext{
-		Ast:          ast,
-		InLoop:       false,
-		Instructions: make([]types.Instruction, 0),
+		Ast:              ast,
+		Instructions:     make([]types.Instruction, 0),
+		FunctionIndex:    make(map[string]int),
+		LocalOffsets:     make(map[string]int),
+		StringTable:      make(map[string]uint64),
+		StringLiterals:   make([]string, 0),
+		LoopStack:        make([]marigold.LoopContext, 0),
 	}
 
 	marigold.GenerateExpression(ctx, binaryExpr)
@@ -115,13 +123,11 @@ func TestCodegenIdentifier(t *testing.T) {
 	ctx := &marigold.CodegenContext{
 		Ast:          ast,
 		CurrentScope: ast.Scope,
-		InLoop:       false,
-		Output:       "",
 	}
 
 	marigold.GenerateExpression(ctx, identExpr)
 
-	t.Logf("Generated code: %s", ctx.Output)
+	t.Logf("Generated %d instructions", len(ctx.Instructions))
 }
 
 func TestCodegenFunctionCall(t *testing.T) {
@@ -164,13 +170,11 @@ func TestCodegenFunctionCall(t *testing.T) {
 	ctx := &marigold.CodegenContext{
 		Ast:          ast,
 		CurrentScope: ast.Scope,
-		InLoop:       false,
-		Output:       "",
 	}
 
 	marigold.GenerateExpression(ctx, callExpr)
 
-	t.Logf("Generated code: %s", ctx.Output)
+	t.Logf("Generated %d instructions", len(ctx.Instructions))
 }
 
 func TestCodegenArrayLiteral(t *testing.T) {
@@ -207,13 +211,11 @@ func TestCodegenArrayLiteral(t *testing.T) {
 
 	ctx := &marigold.CodegenContext{
 		Ast:    ast,
-		InLoop: false,
-		Output: "",
 	}
 
 	marigold.GenerateExpression(ctx, arrayExpr)
 
-	t.Logf("Generated code for array [1, 2, 3]: %s", ctx.Output)
+	t.Logf("Generated code for array [1, 2, 3]: %d instructions", len(ctx.Instructions))
 }
 
 func TestCodegenUnaryExpression(t *testing.T) {
@@ -239,13 +241,11 @@ func TestCodegenUnaryExpression(t *testing.T) {
 
 	ctx := &marigold.CodegenContext{
 		Ast:    ast,
-		InLoop: false,
-		Output: "",
 	}
 
 	marigold.GenerateExpression(ctx, unaryExpr)
 
-	t.Logf("Generated code for -42: %s", ctx.Output)
+	t.Logf("Generated code for -42: %d instructions", len(ctx.Instructions))
 }
 
 func TestCodegenIndexExpression(t *testing.T) {
@@ -282,13 +282,11 @@ func TestCodegenIndexExpression(t *testing.T) {
 	ctx := &marigold.CodegenContext{
 		Ast:          ast,
 		CurrentScope: ast.Scope,
-		InLoop:       false,
-		Output:       "",
 	}
 
 	marigold.GenerateExpression(ctx, indexingExpr)
 
-	t.Logf("Generated code for arr[0]: %s", ctx.Output)
+	t.Logf("Generated code for arr[0]: %d instructions", len(ctx.Instructions))
 }
 
 func TestCodegenMapLiteral(t *testing.T) {
@@ -319,11 +317,9 @@ func TestCodegenMapLiteral(t *testing.T) {
 
 	ctx := &marigold.CodegenContext{
 		Ast:    ast,
-		InLoop: false,
-		Output: "",
 	}
 
 	marigold.GenerateExpression(ctx, mapExpr)
 
-	t.Logf("Generated code for map literal: %s", ctx.Output)
+	t.Logf("Generated code for map literal: %d instructions", len(ctx.Instructions))
 }

@@ -285,7 +285,7 @@ func NewRuntimeWithIC(gasAvailable uint64, instructions []types.Instruction, con
 		Context:        context,
 		ReturnStack:    make([]int, 0),
 		FrameStack:     make([]int, 0),
-		NextMemoryAddr: 0,
+		NextMemoryAddr: 100, // Start at 100 to avoid overwriting string literals
 	}
 }
 
@@ -450,10 +450,32 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			if v2.Cmp(v1) == 0 {
-				err = r.Stack.Push(big.NewInt(1))
+			// Check if both values might be string addresses
+			addr1 := v1.Uint64()
+			addr2 := v2.Uint64()
+			// Try to read strings from both addresses (with safety checks)
+			var str1, str2 string
+			if addr1 < 1000000 { // Basic bounds check
+				str1 = r.readStringFromMemory(addr1)
+			}
+			if addr2 < 1000000 { // Basic bounds check
+				str2 = r.readStringFromMemory(addr2)
+			}
+
+			// If both addresses contain valid strings, compare string contents
+			if str1 != "" && str2 != "" {
+				if str1 == str2 {
+					err = r.Stack.Push(big.NewInt(1))
+				} else {
+					err = r.Stack.Push(big.NewInt(0))
+				}
 			} else {
-				err = r.Stack.Push(big.NewInt(0))
+				// Fall back to numeric comparison
+				if v2.Cmp(v1) == 0 {
+					err = r.Stack.Push(big.NewInt(1))
+				} else {
+					err = r.Stack.Push(big.NewInt(0))
+				}
 			}
 		}
 	case LT:
@@ -580,7 +602,19 @@ func (r *Runtime) ExecuteInstruction() error {
 		if popErr != nil {
 			err = popErr
 		} else {
-			key := fmt.Sprintf("%d", address.Uint64())
+			// Check if address points to a string in memory (same logic as PSTORE)
+			var key string
+			addressUint := address.Uint64()
+
+			// Try to read string from memory at this address
+			if stringContent := r.readStringFromMemory(addressUint); stringContent != "" {
+				// Use actual string content as key
+				key = stringContent
+			} else {
+				// Fallback to numeric key for non-string addresses
+				key = fmt.Sprintf("%d", addressUint)
+			}
+
 			valueStr, ok := r.Persistent[key]
 			fmt.Printf("PLOAD: looking for key='%s', found=%t", key, ok)
 			if ok {
@@ -1105,11 +1139,16 @@ func (r *Runtime) readStringFromMemory(addr uint64) string {
 	// Try to read the length from the first slot
 	lenVal, err := r.Memory.Load(addr)
 	if err != nil {
-		return ""
+			return ""
 	}
 
 	length := lenVal.Uint64()
 	if length == 0 {
+		return ""
+	}
+
+	// Add bounds checking to prevent memory issues
+	if length > 1000000 { // Reasonable limit for string length
 		return ""
 	}
 

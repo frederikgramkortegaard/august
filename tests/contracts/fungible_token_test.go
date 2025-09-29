@@ -73,8 +73,7 @@ define call() : int {
   // Buy tokens with AUG
   if len(@tsxdata) == 3 {
     command: string = @tsxdata[:3]
-    // Buy command is exactly 3 characters (workaround for string comparison bug)
-    if len(command) == 3 {
+    if command == "buy" {
       // Get current balance (defaults to 0 if not exists)
       balanceStr: string = persistent[@caller]
       currentBalance: int = 0
@@ -90,8 +89,11 @@ define call() : int {
   // Transfer tokens to other addresses
   if len(@tsxdata) >= 73 {
     command: string = @tsxdata[:8]
-    // Transfer command is exactly 8 characters
-    if len(command) == 8 {
+    emit(len(@tsxdata)) // Debug: transaction data length
+    emit(len(command)) // Debug: command length
+    if command == "transfer" {
+      emit(999) // Debug: transfer comparison succeeded
+
       // Extract recipient address (64 chars after "transfer")
       recipient: string = @tsxdata[8:72]
 

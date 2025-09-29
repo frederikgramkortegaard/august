@@ -708,24 +708,8 @@ func generateAssignment(ctx *CodegenContext, stmt *Statement) {
 	if stmt.Lhs.Type == IndexExpr {
 		// Check if this is persistent storage assignment
 		if stmt.Lhs.Lhs.Type == IdentifierExpr && stmt.Lhs.Lhs.Value.(string) == "persistent" {
-			// For persistent storage, we need to convert string keys to numeric addresses
-			// Check if the key is a string literal
-			if stmt.Lhs.Rhs.Type == LiteralExpr && stmt.Lhs.Rhs.ValueType == String {
-				// Convert string literal to a hash-like numeric key
-				stringKey := stmt.Lhs.Rhs.Value.(string)
-				// Simple hash: use absolute value to avoid negatives
-				var hash uint64 = 0
-				for _, char := range stringKey {
-					hash = (hash*31 + uint64(char)) & 0x7FFFFFFFFFFFFFFF // Ensure positive
-				}
-				if hash == 0 {
-					hash = 1 // Avoid zero keys
-				}
-				ctx.EmitPush(hash)
-			} else {
-				// For non-literal keys, generate the expression normally
-				GenerateExpression(ctx, stmt.Lhs.Rhs)
-			}
+			// Generate the key expression (string address for string literals)
+			GenerateExpression(ctx, stmt.Lhs.Rhs)
 			// Stack now has: [value, key]
 			// Emit PSTORE to store value with key
 			ctx.Emit(types.PSTORE)

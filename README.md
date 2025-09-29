@@ -95,15 +95,15 @@ go run cmd/marigold/main.go token.mg
 
 # Deploy to blockchain
 go run cmd/wallet/main.go --privkey <key> --node localhost:8080 deploy \
-  --init empty.avmbc --body token.avmbc --amount 0 --gas-limit 100000
+  --bytecode token.avmbc --amount 1000000 --gas-limit 100000
 
-# Mint tokens by sending AUG to contract
+# Call contract with transaction data
 go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
-  --contract <address> --amount 1000 --gas-limit 50000
+  --contract <address> --amount 500 --data "627579" --gas-limit 50000
 
-# Query token balance
+# Transfer tokens between addresses
 go run cmd/wallet/main.go --privkey <key> --node localhost:8080 call \
-  --contract <address> --amount 0 --gas-limit 50000
+  --contract <address> --amount 0 --data "7472616e73666572<recipient_address>200" --gas-limit 50000
 ```
 
 ## Language Features
@@ -264,19 +264,18 @@ curl http://localhost:8080/mempool?limit=10
 
 ### Comprehensive Test Suite
 ```bash
-# Run all tests
-go test ./tests/...
+# Run working tests (contracts and networking)
+go test ./tests/contracts/...   # Smart contract integration tests
+go test ./tests/node/...        # Node networking and consensus tests
+go test ./tests/peerservice/... # P2P communication tests
 
-# Component-specific testing
-go test ./tests/avm/...         # Virtual machine tests
-go test ./tests/storage/...     # Persistence layer tests
-go test ./tests/mempool/...     # Transaction pool tests
-go test ./tests/contracts/...   # Smart contract integration
-go test ./marigold/tests/...    # Programming language tests
+# Smart contract specific tests
+go test ./tests/contracts/ -run TestFungibleTokenContract    # Token contract test
+go test ./tests/contracts/ -run TestContractDeployment       # Contract deployment
+go test ./tests/contracts/ -run TestStringOperations         # String manipulation
 
-# End-to-end integration testing
-go test ./tests/e2e/single_node_manual -v
-python3 scripts/deploy_and_call_contract.py
+# Note: Some test suites are currently under maintenance
+# go test ./marigold/tests/...    # Language tests (temporarily disabled)
 ```
 
 ### Multi-Node Network Simulation
@@ -313,7 +312,6 @@ august/
 │   ├── chainidents.go      # Blockchain context integration
 │   └── tests/              # Language test suite
 ├── networking/             # P2P protocol implementation
-├── storage/                # Persistent state management (PebbleDB)
 ├── cmd/                    # Command-line tools
 │   ├── marigold/           # Language compiler
 │   ├── wallet/             # Transaction and contract tools
@@ -327,7 +325,7 @@ august/
 
 - **Block Time**: Configurable difficulty targeting (default ~10 seconds)
 - **TPS**: Limited by block size and gas limits (similar to Ethereum)
-- **Storage**: PebbleDB backend with atomic state transitions
+- **Storage**: In-memory state with persistent contract storage
 - **Memory**: Bounded VM execution with configurable limits
 - **Network**: TCP-based with connection pooling and timeout management
 

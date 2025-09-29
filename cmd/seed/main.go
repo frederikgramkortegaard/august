@@ -20,7 +20,7 @@ func main() {
 
 	// Auto-generate seed node ID if not provided
 	if *nodeID == "" {
-		*nodeID = fmt.Sprintf("seed-%s-%d", *port, time.Now().Unix()%10000)
+		*nodeID = fmt.Sprintf("seed-%d-%d", *port, time.Now().Unix()%10000)
 	}
 
 	// Parse seed peers if provided
@@ -46,7 +46,7 @@ func main() {
 	// Create and start seed node
 	seedNode := node.NewNode(config)
 
-	log.Printf("%s\tStarting SEED node: Network on :%s", *nodeID, *port)
+	log.Printf("%s\tStarting SEED node: Network on :%d", *nodeID, *port)
 	if len(seedPeers) > 0 {
 		log.Printf("%s\tConnecting to %d seed peers: %v", *nodeID, len(seedPeers), seedPeers)
 	} else {
