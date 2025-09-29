@@ -262,20 +262,29 @@ curl http://localhost:8080/mempool?limit=10
 
 ## Testing Framework
 
-### Comprehensive Test Suite
+### Primary Integration Test
+Run the complete end-to-end test to see the full blockchain stack in action:
 ```bash
-# Run working tests (contracts and networking)
-go test ./tests/contracts/...   # Smart contract integration tests
+go test ./tests/integration/ -v
+```
+This demonstrates:
+- Complete blockchain node startup with HTTP API
+- Marigold smart contract compilation to AVM bytecode
+- Contract deployment with persistent storage initialization
+- Contract execution with state transitions (42 → 43 → 44)
+- Detailed chain state logging at each step
+
+### Additional Test Suites
+```bash
+# Smart contract and blockchain tests
+go test ./tests/contracts/...   # Contract deployment and execution tests
 go test ./tests/node/...        # Node networking and consensus tests
 go test ./tests/peerservice/... # P2P communication tests
 
-# Smart contract specific tests
+# Specific contract functionality
 go test ./tests/contracts/ -run TestFungibleTokenContract    # Token contract test
 go test ./tests/contracts/ -run TestContractDeployment       # Contract deployment
 go test ./tests/contracts/ -run TestStringOperations         # String manipulation
-
-# Note: Some test suites are currently under maintenance
-# go test ./marigold/tests/...    # Language tests (temporarily disabled)
 ```
 
 ### Multi-Node Network Simulation
