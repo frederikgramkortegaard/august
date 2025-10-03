@@ -9,50 +9,49 @@ August is a blockchain platform implementing the technology stack from consensus
 
 The blockchain uses SHA-256 proof-of-work with dynamic difficulty adjustment and longest-chain fork resolution. Smart contracts execute on AVM, a stack-based bytecode runtime with 256-bit arithmetic and gas-metered execution. Marigold provides a high-level syntax that compiles to AVM bytecode through a complete compiler pipeline with lexer, parser, type checker, and code generator.
 
-The P2P network implements decentralized peer discovery and headers-first synchronization without hardcoded seed nodes. The toolchain includes wallet, miner, compiler, and HTTP API for development and interaction.
+The P2P network uses libp2p for peer discovery via DHT and headers-first synchronization. The toolchain includes wallet, miner, compiler, and HTTP API for development and interaction.
 
 ## Architecture
 
 ```
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   Marigold      │─▶│       AVM       │─▶│   Blockchain    │
+│   Marigold      │->│       AVM       │->│   Blockchain    │
 │   Language      │  │  Virtual Machine│  │     Core        │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
-         │                       │                   │
-         ▼                       ▼                   ▼
+         |                       |                   |
+         v                       v                   v
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
 │   Compiler      │  │  Gas Metering   │  │  P2P Network    │
 │   Toolchain     │  │  & Storage      │  │   Protocol      │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
-## Key Technical Achievements
+## Features
 
-### Blockchain Implementation
-- **Consensus Protocol**: Proof-of-work with SHA-256 and dynamic difficulty adjustment maintaining target block times
-- **Fork Resolution**: Longest-chain rule with cumulative work calculation and automatic chain reorganization
-- **Transaction Model**: Account-based state with Ed25519 digital signatures and nonce-based replay protection
-- **Mempool Management**: Fee-based priority queue with automatic cleanup and transaction validation pipeline
+### Blockchain
+- Proof-of-work consensus with SHA-256 and dynamic difficulty adjustment
+- Account-based state model with Ed25519 signatures
+- Longest-chain fork resolution with automatic reorganization
+- Mempool with fee-based transaction ordering
 
-### Virtual Machine Design
-- **Stack Architecture**: 256-bit arithmetic using Go's `big.Int` with configurable stack and memory limits
-- **Instruction Set**: Opcodes including arithmetic, memory, storage, control flow, string operations, and blockchain context operations
-- **String Table Optimization**: Efficient string literal management eliminating bytecode bloat for long strings
-- **Gas System**: Per-instruction gas accounting with overflow protection and execution limits
-- **Persistent Storage**: Contract state management with PSTORE/PLOAD instructions for key-value storage
+### AVM (August Virtual Machine)
+- Stack-based bytecode runtime with 256-bit arithmetic
+- Opcodes for arithmetic, memory, storage, control flow, strings, blockchain context
+- Gas metering to prevent infinite loops
+- Persistent storage with PSTORE/PLOAD for contract state
+- String table optimization for efficient string literal handling
 
-### Programming Language (Marigold)
-- **Type System**: Static typing with int, float, string, bool, arrays, and maps with full type checking
-- **String Operations**: String manipulation with concatenation, length operations, and efficient memory management
-- **Control Structures**: High-level syntax with if/else, while loops, break/continue statements, and function definitions
-- **Blockchain Integration**: Built-in access to blockchain context via @-prefixed variables (@caller, @balance, @timestamp, etc.)
-- **Compiler Pipeline**: Complete lexer->parser->typechecker->codegen pipeline
+### Marigold Language
+- Static type system: int, float, string, bool (arrays and maps WIP)
+- String operations: slicing, concatenation, length, conversions
+- Control flow: if/else, while, break/continue, functions
+- Blockchain context via @ variables: @caller, @balance, @timestamp, etc.
+- Full compiler: lexer -> parser -> typechecker -> codegen
 
-### Networking & Distribution
-- **Peer Discovery**: Decentralized bootstrap mechanism without hardcoded seed nodes
-- **Message Protocol**: Custom TCP-based protocol with JSON serialization and request-response correlation
-- **Chain Synchronization**: Headers-first initial block download with efficient peer coordination
-- **Node Management**: Automatic connection handling, timeout management, and peer cleanup
+### Networking
+- libp2p for P2P networking with DHT peer discovery
+- Protobuf message serialization
+- Headers-first chain synchronization
 
 ## Quick Start
 
@@ -201,7 +200,7 @@ The language provides blockchain context variables for contract interaction:
 - `@difficulty` - Current mining difficulty
 - `@coinbase` - Block miner address
 - `@gaslimit` - Block gas limit
-- `@tsxdata` - Transaction data (partial implementation)
+- `@tsxdata` - Transaction data
 
 ## AVM Instruction Set
 
@@ -266,7 +265,7 @@ This demonstrates:
 - Complete blockchain node startup with HTTP API
 - Marigold smart contract compilation to AVM bytecode
 - Contract deployment with persistent storage initialization
-- Contract execution with state transitions (42 → 43 → 44)
+- Contract execution with state transitions (42 -> 43 -> 44)
 - Detailed chain state logging at each step
 
 ### Additional Test Suites
@@ -300,7 +299,7 @@ go run cmd/miner/main.go --privkey <key2> --node localhost:8081
 ```
 august/
 ├── avm/                    # Virtual machine implementation
-│   ├── bytecode.go         # Instruction definitions (35+ opcodes)
+│   ├── bytecode.go         # Instruction definitions
 │   ├── runtime.go          # Stack-based execution engine
 │   ├── gas.go              # Gas metering and pricing
 │   └── parser.go           # Bytecode parsing and validation
@@ -314,8 +313,21 @@ august/
 │   ├── parser.go           # AST construction and syntax parsing
 │   ├── typechecker.go      # Static type analysis
 │   ├── chainidents.go      # Blockchain context integration
+│   ├── codegen.go          # AVM bytecode generation
 │   └── tests/              # Language test suite
-├── networking/             # P2P protocol implementation
+├── libnet/                 # libp2p networking layer
+│   ├── peerservice.go      # P2P service management
+│   ├── rpc/                # RPC protocol handlers
+│   └── protobuf/           # Protocol buffer definitions
+├── node/                   # Full node implementation
+│   ├── node.go             # Node lifecycle and coordination
+│   ├── api.go              # HTTP API server
+│   ├── header_processing.go # Block header validation
+│   └── mempool.go          # Transaction pool management
+├── types/                  # Shared type definitions
+├── execution/              # Transaction execution engine
+├── config/                 # Network configuration
+├── utils/                  # Utility functions
 ├── cmd/                    # Command-line tools
 │   ├── marigold/           # Language compiler
 │   ├── wallet/             # Transaction and contract tools
@@ -323,6 +335,9 @@ august/
 │   ├── seed/               # Full node with HTTP API
 │   └── avm/                # Bytecode execution environment
 └── tests/                  # Integration and unit tests
+    ├── integration/        # End-to-end tests
+    ├── contracts/          # Smart contract tests
+    └── node/               # Node and consensus tests
 ```
 
 ## Performance Characteristics
@@ -331,7 +346,7 @@ august/
 - **TPS**: Limited by block size and gas limits (similar to Ethereum)
 - **Storage**: In-memory state with persistent contract storage
 - **Memory**: Bounded VM execution with configurable limits
-- **Network**: TCP-based with connection pooling and timeout management
+- **Network**: libp2p-based with DHT peer discovery and connection management
 
 ## Technical Implementation Notes
 
