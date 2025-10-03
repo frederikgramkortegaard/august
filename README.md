@@ -342,7 +342,7 @@ august/
 
 ## Performance Characteristics
 
-- **Block Time**: Configurable difficulty targeting (default ~10 seconds)
+- **Block Time**: Configurable difficulty targeting (default 10 minutes)
 - **TPS**: Limited by block size and gas limits (similar to Ethereum)
 - **Storage**: In-memory state with persistent contract storage
 - **Memory**: Bounded VM execution with configurable limits
