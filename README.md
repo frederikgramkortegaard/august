@@ -121,24 +121,19 @@ define init() : int {
 
 define call() : int {
   // Buy tokens with AUG
-  if len(@tsxdata) == 3 {
-    command: string = @tsxdata[:3]
-    if command == "buy" {
-      balanceStr: string = persistent[@caller]
-      currentBalance: int = 0
-      if len(balanceStr) > 0 {
-        currentBalance = int(balanceStr)
-      }
-      newBalance: int = currentBalance + @callvalue
-      persistent[@caller] = string(newBalance)
-      return 0
+  if len(@tsxdata) == 3 && @tsxdata[:3] == "buy" {
+    balanceStr: string = persistent[@caller]
+    currentBalance: int = 0
+    if len(balanceStr) > 0 {
+      currentBalance = int(balanceStr)
     }
+    newBalance: int = currentBalance + @callvalue
+    persistent[@caller] = string(newBalance)
+    return 0
   }
 
   // Transfer tokens between addresses
-  if len(@tsxdata) >= 73 {
-    command: string = @tsxdata[:8]
-    if command == "transfer" {
+  if len(@tsxdata) >= 73 && @tsxdata[:8] == "transfer" {
       // Extract recipient address (64 hex chars)
       recipient: string = @tsxdata[8:72]
       if len(recipient) != 64 {
